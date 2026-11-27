@@ -1,17 +1,15 @@
 "use client"
 
-import dynamic from "next/dynamic"
 import { useId, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { useComfyUISettings } from "@/hooks/use-comfyui-settings"
+import { needsSetup } from "@/lib/comfyui/setup-steps"
 import { shortStatusLine, useComfyStatus, type StatusTone } from "@/lib/comfyui/status"
 import type { Diagnosis } from "@/lib/comfyui/types"
 import { cn } from "@/lib/utils"
+import { ComfyUIDialog, preloadComfyDialogs } from "./comfyui-panel-host"
 import { ComfyStatusDot } from "./comfyui-status"
-
-const loadPanel = () => import("./comfyui-panel")
-const ComfyUIPanel = dynamic(() => loadPanel().then((m) => m.ComfyUIPanel), { ssr: false, loading: () => null })
 
 /** The row's status line and dot: why it can't be on, or how the connection is while it is. */
 function rowStatus(
@@ -24,7 +22,7 @@ function rowStatus(
   if (!enabled) {
     return {
       tone: null,
-      hint: canTurnOn ? "Send prompts to ComfyUI on your computer instead of copying" : "Set up a workflow first to turn this on",
+      hint: canTurnOn ? "Send prompts to ComfyUI on your computer instead of copying" : "Run the setup first to turn this on",
     }
   }
   if (!workflowName) return { tone: "problem", hint: "Choose a workflow to start sending" }
@@ -42,14 +40,19 @@ function rowStatus(
  * workflow is saved, since Send has nothing to send with before that.
  */
 export function ComfyUISettingRow() {
-  const { enabled, url, activeWorkflow, workflows, setEnabled } = useComfyUISettings()
+  const { enabled, url, activeWorkflow, workflows, setupDone, setEnabled } = useComfyUISettings()
   const { diagnosis, checking } = useComfyStatus(url, enabled)
   const [open, setOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
   const id = useId()
 
   const canTurnOn = workflows.length > 0
-  const setUp = !enabled && !canTurnOn
+  // Until a test has passed once, the button and the switch open the setup guide.
+  const setUp = !enabled && needsSetup({ workflows, setupDone })
+  const openDialog = () => {
+    setMounted(true)
+    setOpen(true)
+  }
 
   const { tone, hint } = rowStatus(enabled, canTurnOn, activeWorkflow?.name ?? null, diagnosis, checking)
 
@@ -85,12 +88,9 @@ export function ComfyUISettingRow() {
           type="button"
           variant={setUp ? "default" : "outline"}
           size="sm"
-          onPointerEnter={() => void loadPanel()}
-          onFocus={() => void loadPanel()}
-          onClick={() => {
-            setMounted(true)
-            setOpen(true)
-          }}
+          onPointerEnter={preloadComfyDialogs}
+          onFocus={preloadComfyDialogs}
+          onClick={openDialog}
           aria-haspopup="dialog"
           aria-label={setUp ? "Set up ComfyUI" : "Edit ComfyUI settings"}
           className={cn(
@@ -104,12 +104,15 @@ export function ComfyUISettingRow() {
           id={`${id}-switch`}
           checked={enabled}
           disabled={!enabled && !canTurnOn}
-          onCheckedChange={(v) => setEnabled(v)}
+          onCheckedChange={(v) => {
+            if (v && setUp) openDialog()
+            else setEnabled(v)
+          }}
           aria-describedby={`${id}-hint`}
           className="shrink-0"
         />
       </div>
-      {mounted && <ComfyUIPanel open={open} onOpenChange={setOpen} />}
+      {mounted && <ComfyUIDialog open={open} onOpenChange={setOpen} />}
     </div>
   )
 }
