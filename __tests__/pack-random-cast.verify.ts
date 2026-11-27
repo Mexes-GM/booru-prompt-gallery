@@ -23,7 +23,7 @@ import { briefIdentity, briefPackArgs, type ResolvedLook } from "../lib/pack/bri
 import { castCandidates, isKnownCharacter, readCharacterIndex, type StoredCharacterIndex } from "../lib/pack/cast-picker"
 import { assignTurns, generateTurnsAsync } from "../lib/pack/cast-turns"
 import { normalizeTagForPack } from "../lib/pack/pack-generator"
-import { castBrief, drawKey, drawRandomCast, drawsCast, needsRedraw, randomCastGender, setRandomCast } from "../lib/pack/random-cast"
+import { castBrief, drawKey, drawRandomCast, drawsCast, needsRedraw, randomCastGender, redrawUsable, setRandomCast } from "../lib/pack/random-cast"
 import { readSavedPack, savedPackToStore, savedResultOf, type LiveResult } from "../lib/pack/saved-pack"
 import { createPermanence } from "../lib/pack/scene/permanence"
 import { buildScenePool } from "../lib/pack/scene/scene-pool"
@@ -123,6 +123,21 @@ check("the shipped index: known characters only, and Rule34 names where Rule34 d
   assert.ok(girls.length >= 100 && girls.every((c) => c.role === "girl"))
   const drawn = drawRandomCast(index, { source: { kind: "popular" }, gender: "girls", count: 50, seed: 3, provider: "rule34" })
   assert.equal(new Set(drawn.map((m) => m.tag)).size, 50)
+})
+
+check("a redraw is usable only when it adds a character beyond the kept ones", () => {
+  const args = { source: { kind: "popular" } as const, gender: "girls" as const, count: 5, seed: 4, provider: "danbooru" as const }
+  const drawn = drawRandomCast(INDEX, args)
+  assert.equal(redrawUsable(drawn, []), true, "a fresh draw")
+  assert.equal(redrawUsable(drawn, drawn.slice(0, 2)), true, "kept rows plus new characters")
+  assert.equal(redrawUsable([], []), false, "nobody drawn")
+  assert.equal(redrawUsable([], drawn.slice(0, 2)), false, "nothing drawn")
+  assert.equal(redrawUsable(drawn.slice(0, 2), drawn.slice(0, 2)), false, "only the kept rows")
+  // A series with every character locked has nobody left to draw: the draw is only the kept ones.
+  const series = { kind: "series", series: "final fantasy vii" } as const
+  const all = drawRandomCast(INDEX, { ...args, source: series, count: 5 })
+  const exhausted = drawRandomCast(INDEX, { ...args, source: series, count: 5, keep: all })
+  assert.equal(redrawUsable(exhausted, all), false)
 })
 
 // ── 3. The brief ──────────────────────────────────────────────────────────────
