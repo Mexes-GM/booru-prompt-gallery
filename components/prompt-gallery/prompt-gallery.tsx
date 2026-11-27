@@ -1330,9 +1330,39 @@ export function PromptGallery() {
     await copyToClipboardRef.current(content, postId, isPrompt, thumbnailUrl, format)
   }, [])
 
+  const recordPromptUseRef = useRef<(postId: number) => void>(() => {})
+  const stableRecordPromptUse = useCallback((postId: number) => recordPromptUseRef.current(postId), [])
+
   const stableDownloadImage = useCallback(async (post: BooruPost) => {
     return downloadImageRef.current(post)
   }, [])
+
+  // The bookkeeping of a use (History entry, support-prompt counter), shared by
+  // Copy and Send so both count the same. Does not touch the clipboard.
+  const recordPromptUse = useCallback((postId: number) => {
+    // Merge mode's combined prompt calls copyToClipboard with postId=0 (no
+    // single real post backs it) — skip history in that case since
+    // useHistoryPosts needs a real (provider, postId) pair to hydrate later.
+    if (postId) {
+      // Snapshot the post the user just copied so History can render it later
+      // with ZERO network hydration (immune to transient booru/API failures).
+      // The copied card is always present in one of the currently-visible,
+      // provider-scoped lists — find it there. If somehow absent, we still
+      // store the {postId, provider} pointer and fall back to network fetch.
+      const snapshot =
+        search.allPosts?.find(p => p.id === postId) ||
+        favs.favoritePosts?.find(p => p.id === postId) ||
+        historyPosts?.find(p => p.id === postId)
+      // Use the snapshot's OWN provider, not the currently-selected provider
+      // tab. They can differ (favorites/history views, merge mode, etc.), and
+      // getting this wrong permanently mislabels the post — e.g. a Gelbooru
+      // post copied while the AIbooru tab is active would otherwise be stored
+      // as an AIbooru post, so "View original post" later builds an
+      // aibooru.com/<gelbooru-id> link instead of the real gelbooru.com one.
+      addToHistory({ postId, provider: (snapshot?._provider as BooruProvider) || search.booruProvider, post: snapshot })
+    }
+    recordPromptCopy()
+  }, [addToHistory, search.booruProvider, search.allPosts, favs.favoritePosts, historyPosts])
 
   const copyToClipboard = useCallback(async (content: string, postId: number, isPrompt: boolean = false, thumbnailUrl?: string, format: PromptFormat = 'tags') => {
     try {
@@ -1348,27 +1378,7 @@ export function PromptGallery() {
 
       setCopiedId(postId)
 
-      // Merge mode's combined prompt calls copyToClipboard with postId=0 (no
-      // single real post backs it) — skip history in that case since
-      // useHistoryPosts needs a real (provider, postId) pair to hydrate later.
-      if (postId) {
-        // Snapshot the post the user just copied so History can render it later
-        // with ZERO network hydration (immune to transient booru/API failures).
-        // The copied card is always present in one of the currently-visible,
-        // provider-scoped lists — find it there. If somehow absent, we still
-        // store the {postId, provider} pointer and fall back to network fetch.
-        const snapshot =
-          search.allPosts?.find(p => p.id === postId) ||
-          favs.favoritePosts?.find(p => p.id === postId) ||
-          historyPosts?.find(p => p.id === postId)
-        // Use the snapshot's OWN provider, not the currently-selected provider
-        // tab. They can differ (favorites/history views, merge mode, etc.), and
-        // getting this wrong permanently mislabels the post — e.g. a Gelbooru
-        // post copied while the AIbooru tab is active would otherwise be stored
-        // as an AIbooru post, so "View original post" later builds an
-        // aibooru.com/<gelbooru-id> link instead of the real gelbooru.com one.
-        addToHistory({ postId, provider: (snapshot?._provider as BooruProvider) || search.booruProvider, post: snapshot })
-      }
+      recordPromptUse(postId)
 
       // On touch screens the card's own "Copied" overlay is the feedback; the
       // top toast only covered the next row of cards.
@@ -1381,7 +1391,6 @@ export function PromptGallery() {
         })
       }
       setTimeout(() => setCopiedId(null), 2000)
-      recordPromptCopy()
       return true
     } catch (error) {
       toastError({
@@ -1392,7 +1401,7 @@ export function PromptGallery() {
       })
       return false
     }
-  }, [toast, addToHistory, search.booruProvider, search.allPosts, favs.favoritePosts, historyPosts, isAiConvertMode])
+  }, [toast, recordPromptUse, search.booruProvider, isAiConvertMode])
 
   const downloadImage = useCallback(async (post: BooruPost) => {
     try {
@@ -1495,6 +1504,7 @@ export function PromptGallery() {
   // Sincronizar refs con los callbacks reales (asignación barata, sin efecto)
   useLayoutEffect(() => {
     copyToClipboardRef.current = copyToClipboard
+    recordPromptUseRef.current = recordPromptUse
     downloadImageRef.current = downloadImage
   })
 
@@ -1644,6 +1654,7 @@ export function PromptGallery() {
       createFolder={favs.createFolder}
       downloadImage={stableDownloadImage}
       copyToClipboard={stableCopyToClipboard}
+      recordPromptUse={stableRecordPromptUse}
       excludeInput={debouncedExcludeInput}
       addInput={debouncedAddInput}
       searchTags={search.debouncedSearchTags}
@@ -1690,7 +1701,7 @@ export function PromptGallery() {
       showCategoryTagBadges={cardShowCategoryTagBadges}
       comfyMode={comfyMode}
     />
-  }, [comfyMode, effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, outfitSettings, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase, handleMakePack])
+  }, [comfyMode, effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, stableRecordPromptUse, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, outfitSettings, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase, handleMakePack])
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 

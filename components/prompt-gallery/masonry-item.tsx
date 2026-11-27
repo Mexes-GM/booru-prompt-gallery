@@ -204,6 +204,8 @@ interface MasonryItemProps {
     downloadImage: (post: BooruPost) => void
     /** `format` is the prompt format the text was written in (tags when omitted). */
     copyToClipboard: (text: string, id: number, isPrompt: boolean, thumb?: string, format?: PromptFormat) => Promise<void>
+    /** Counts a use (History, used mark) without touching the clipboard; Send calls it. */
+    recordPromptUse: (id: number) => void
     excludeInput: string
     addInput: string
     searchTags?: string
@@ -279,6 +281,7 @@ export const MasonryItem = memo(function MasonryItem({
     onMakePack,
     downloadImage,
     copyToClipboard,
+    recordPromptUse,
     excludeInput,
     addInput,
     searchTags,
@@ -482,7 +485,10 @@ export const MasonryItem = memo(function MasonryItem({
                 previousJobId: comfyJob?.jobId,
                 onCopyInstead: () => void copyToClipboard(text, post.id, !!aiPrompt, post.preview_file_url, format),
             })
-            if (sent) setComfyJob(sent)
+            if (sent) {
+                setComfyJob(sent)
+                recordPromptUse(post.id)
+            }
         } catch {
             toast({ description: "Couldn't load Send to ComfyUI. Check your connection and try again.", variant: "destructive", duration: 3000 })
         } finally {
@@ -670,7 +676,7 @@ export const MasonryItem = memo(function MasonryItem({
                     }}
                 >
                     {isPreviouslyCopied && !showComfyStage && (
-                        <div className="absolute top-2 left-2 z-20 pointer-events-none" aria-label="Previously copied">
+                        <div className="absolute top-2 left-2 z-20 pointer-events-none" aria-label="Previously copied or sent">
                             <motion.div
                                 initial={{ opacity: 0, scale: 0.8 }}
                                 animate={{ opacity: 1, scale: 1 }}
