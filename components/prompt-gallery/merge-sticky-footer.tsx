@@ -424,19 +424,17 @@ const MergeStickyFooterComponent = ({
 
                         {/* Shared-tags filter: only useful once there's more than one post to share tags */}
                         {mergeModeType === 'merge' && selectedPosts.size > 1 && (
-                            <div className="flex items-center justify-between gap-2 flex-wrap -mt-1 sm:-mt-2">
-                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                    <span>Tags in at least</span>
-                                    <Stepper
-                                        value={minSharedPosts}
-                                        min={1}
-                                        max={maxSharedPosts}
-                                        onChange={onMinSharedPostsChange}
-                                        ariaLabel="minimum posts per tag"
-                                    />
-                                    <span>of {selectedPosts.size} posts</span>
-                                </div>
-                                <span className="text-xs text-muted-foreground tabular-nums" aria-live="polite">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground -mt-1 sm:-mt-2">
+                                <span>Tags in at least</span>
+                                <Stepper
+                                    value={minSharedPosts}
+                                    min={1}
+                                    max={maxSharedPosts}
+                                    onChange={onMinSharedPostsChange}
+                                    ariaLabel="minimum posts per tag"
+                                />
+                                <span>of {selectedPosts.size} posts</span>
+                                <span className="sr-only" aria-live="polite">
                                     {hiddenTagCount > 0 ? `${hiddenTagCount} ${hiddenTagCount === 1 ? 'tag' : 'tags'} hidden` : ''}
                                 </span>
                             </div>
@@ -533,6 +531,15 @@ const MergeStickyFooterComponent = ({
                                                     />
                                                 ))}
                                             </AnimatePresence>
+                                            {hiddenTagCount > 0 && (
+                                                <span
+                                                    className="inline-flex items-center px-1.5 py-1.5 sm:py-0.5 rounded border border-dashed border-border text-xs text-muted-foreground tabular-nums select-none"
+                                                    title="Tags in fewer posts than the minimum. They're left out of the copied prompt."
+                                                    aria-hidden="true"
+                                                >
+                                                    +{hiddenTagCount} hidden
+                                                </span>
+                                            )}
                                         </div>
                                     ) : (
                                         <motion.span
