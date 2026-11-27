@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, memo, useCallback, useMemo } from 'react'
 import { Button } from "@/components/ui/button"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
-import { X, Copy, Trash2, Check, Shuffle, Type, Dices, Settings2, Send, Loader2 } from "lucide-react"
+import { X, Copy, Trash2, Check, Shuffle, Type, Dices, Settings2 } from "lucide-react"
 import { BooruPost } from '@/lib/booru/types'
 import { SelectedPostParts, MergeModeType, RandomSettings, MergedPromptSegment } from '@/hooks/use-merge-mode'
 import { TagCategory } from '@/lib/tag-classifier'
@@ -10,7 +10,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useLowMotion } from '@/hooks/use-low-motion'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { useComfySend } from '@/hooks/use-comfyui-send'
-import { ComfyInlineJob } from './comfyui-inline-job'
+import { ComfyInlineJob, ComfyInlineJobPresence } from './comfyui-inline-job'
+import { SendGlyph } from './comfyui-motion'
 import Image from 'next/image'
 import { getPostThumbnailUrl } from "@/lib/proxy-url"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -534,16 +535,15 @@ const MergeStickyFooterComponent = ({
 
                             {/* ComfyUI mode: the job's status and Send sit in a row under the tags, so neither covers them. */}
                             <div className={comfy.enabled ? "mt-2 flex min-h-8 items-center justify-end gap-2" : "absolute bottom-2 right-2 flex gap-2 z-10"}>
-                                {comfy.enabled && comfy.job && (
+                                <ComfyInlineJobPresence show={comfy.enabled && (comfy.job !== null || comfy.sending)}>
                                     <ComfyInlineJob
-                                        key={comfy.job.jobId}
-                                        jobId={comfy.job.jobId}
-                                        api={comfy.job.api}
+                                        jobId={comfy.job?.jobId ?? null}
+                                        api={comfy.job?.api ?? null}
+                                        launching={comfy.sending}
                                         onDismiss={comfy.dismiss}
                                         returnFocus={focusSend}
-                                        className="mr-auto"
                                     />
-                                )}
+                                </ComfyInlineJobPresence>
                                 {comfy.enabled ? (
                                     <Button
                                         ref={sendRef}
@@ -554,11 +554,7 @@ const MergeStickyFooterComponent = ({
                                         aria-label="Send prompt to ComfyUI"
                                         className="shrink-0 shadow-sm"
                                     >
-                                        {comfy.sending ? (
-                                            <Loader2 className="w-4 h-4 mr-2 motion-safe:animate-spin" aria-hidden="true" />
-                                        ) : (
-                                            <Send className="w-4 h-4 mr-2" aria-hidden="true" />
-                                        )}
+                                        <SendGlyph sending={comfy.sending} className="w-4 h-4 mr-2 [&_svg]:size-full!" />
                                         Send
                                     </Button>
                                 ) : (

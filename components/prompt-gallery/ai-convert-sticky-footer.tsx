@@ -16,7 +16,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useLowMotion } from '@/hooks/use-low-motion'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { useComfySend } from '@/hooks/use-comfyui-send'
-import { ComfyInlineJob } from './comfyui-inline-job'
+import { ComfyInlineJob, ComfyInlineJobPresence } from './comfyui-inline-job'
+import { SendGlyph } from './comfyui-motion'
 import { cn } from '@/lib/utils'
 import { OpenAIIcon, AnthropicIcon, GoogleIcon, DeepSeekIcon, OpenRouterIcon, CloudflareIcon } from "@/components/icons/brand-icons"
 import { track } from '@/lib/analytics'
@@ -698,16 +699,15 @@ const AiConvertStickyFooterComponent = ({
               {/* Action buttons row — pinned at bottom, never overlapping text */}
               {(hasConverted || error) && !isLoading && (
                 <div className="flex justify-end gap-2 px-3 pb-3 pt-1 shrink-0">
-                  {comfy.enabled && comfy.job && (
+                  <ComfyInlineJobPresence show={comfy.enabled && (comfy.job !== null || comfy.sending)}>
                     <ComfyInlineJob
-                      key={comfy.job.jobId}
-                      jobId={comfy.job.jobId}
-                      api={comfy.job.api}
+                      jobId={comfy.job?.jobId ?? null}
+                      api={comfy.job?.api ?? null}
+                      launching={comfy.sending}
                       onDismiss={comfy.dismiss}
                       returnFocus={focusSend}
-                      className="mr-auto"
                     />
-                  )}
+                  </ComfyInlineJobPresence>
                   <Button
                     variant="outline"
                     size="sm"
@@ -729,11 +729,7 @@ const AiConvertStickyFooterComponent = ({
                       aria-label="Send prompt to ComfyUI"
                       className="h-8 px-3 rounded-lg text-xs font-bold transition-colors shadow-sm bg-primary hover:bg-primary/90 text-primary-foreground"
                     >
-                      {comfy.sending ? (
-                        <Loader2 className="w-3.5 h-3.5 mr-1 motion-safe:animate-spin" aria-hidden="true" />
-                      ) : (
-                        <Send className="w-3.5 h-3.5 mr-1" aria-hidden="true" />
-                      )}
+                      <SendGlyph sending={comfy.sending} className="w-3.5 h-3.5 mr-1 [&_svg]:size-full!" />
                       Send
                     </Button>
                   )}
