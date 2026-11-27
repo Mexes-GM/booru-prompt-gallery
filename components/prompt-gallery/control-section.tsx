@@ -132,7 +132,9 @@ export function ControlSection({
   // handles its own dismissal first.
   useEffect(() => {
     if (!open || isMobile) return
-    const hasOpenLayer = () => document.querySelector(PORTALED_LAYER_SELECTOR) !== null
+    // Layers inside an inert part of the page (a closed screen kept mounted) aren't open.
+    const hasOpenLayer = () =>
+      Array.from(document.querySelectorAll(PORTALED_LAYER_SELECTOR)).some((el) => !el.closest("[inert]"))
     const onPointerDown = (e: PointerEvent) => {
       const target = e.target as Element | null
       if (!target) return

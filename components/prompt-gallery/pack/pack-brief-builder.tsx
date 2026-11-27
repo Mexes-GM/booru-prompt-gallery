@@ -38,9 +38,8 @@ import { usePackPromptSettings } from "@/hooks/use-pack-prompt-settings"
 import { PackPromptOptions } from "./prompt-options"
 import { packPromptFormat } from "@/lib/pack/pack-config-migration"
 import { storedPackRating, withPackRating } from "@/lib/pack/pack-rating"
-import { track } from "@/lib/analytics"
+import { safeTrack, track } from "@/lib/analytics"
 import { recordPromptCopy } from "@/lib/support-prompt"
-import { toastError } from "@/lib/toast-error"
 import { copyText } from "@/lib/clipboard"
 import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
 import type { BooruPost, BooruProvider } from "@/lib/booru/types"
@@ -441,9 +440,11 @@ export const PackBriefBuilder = memo(function PackBriefBuilder(props: PackBriefB
         />
         <div
           ref={screenRef}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby={titleId}
+          // A dialog only while open: closed, it stays mounted (inert, then hidden), and the page's
+          // checks for an open dialog (the option dropdowns, the release dialog) would find it.
+          role={open ? "dialog" : undefined}
+          aria-modal={open ? true : undefined}
+          aria-labelledby={open ? titleId : undefined}
           inert={!open}
           // A click on an empty part of the panel gives focus to the panel itself, as a dialog does:
           // with nowhere to go, focus would fall to the page and be brought back to the last control,
@@ -1791,18 +1792,14 @@ function startNoteText(note: StartNote, poolPending: boolean): string | null {
 
 /**
  * Copies a pack's text without the gallery: no card is marked copied and no gallery state changes.
- * The rows and the toolbar say it was copied; a failure says so here.
+ * The rows and the toolbar say whether it was copied, a failure included (COPY_FAILED), so this
+ * shows nothing of its own.
  */
 async function copyPackText(text: string, format: PromptFormat, provider: BooruProvider): Promise<boolean> {
   try {
     await copyText(text)
   } catch {
-    toastError({
-      title: "Couldn't copy the prompt",
-      description: "The browser didn't allow clipboard access. Try again.",
-      errorSource: "copy_to_clipboard",
-      context: { provider, postId: 0, isPrompt: true },
-    })
+    safeTrack("error_shown", { error_source: "copy_to_clipboard", provider, postId: 0, isPrompt: true })
     return false
   }
   track("prompt_copied", {
