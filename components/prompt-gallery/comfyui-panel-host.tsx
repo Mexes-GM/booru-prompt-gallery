@@ -14,8 +14,10 @@ const getServerRequest = () => null
  */
 export function ComfyUIPanelHost() {
   const request = useSyncExternalStore(subscribeComfyPanel, getComfyPanelRequest, getServerRequest)
-  // Each request opens the panel until the user closes it.
-  const [closedId, setClosedId] = useState<number | null>(null)
+  // Each request opens the panel until the user closes it. A request made
+  // before this host mounted (the mode was off, or an earlier session of it)
+  // counts as closed, so turning the mode on doesn't reopen an old panel.
+  const [closedId, setClosedId] = useState<number | null>(() => getComfyPanelRequest()?.id ?? null)
 
   if (!request) return null
   return (
