@@ -273,29 +273,117 @@ export const PackBriefBuilder = memo(function PackBriefBuilder(props: PackBriefB
 
   // Focus goes into the screen when it opens and back where it was when it closes. The element
   // that opened it is read before the gallery is hidden (a layout effect runs before the browser
-  // moves focus off hidden elements).
+  // moves focus off hidden elements); an item of a menu or a dialog that goes away with it hands
+  // over to the control that opened that menu or dialog (a card's "More actions").
   const headingRef = useRef<HTMLHeadingElement>(null)
   const screenRef = useRef<HTMLDivElement>(null)
-  const returnRef = useRef<Element | null>(null)
-  useLayoutEffect(() => {
-    if (open) returnRef.current = document.activeElement
-  }, [open])
+  const returnRef = useRef<HTMLElement | null>(null)
+  const wasOpenRef = useRef(false)
+  const handingOverRef = useRef(false)
+  const openClassic = useCallback(() => {
+    handingOverRef.current = true
+    onOpenClassic?.()
+  }, [onOpenClassic])
+  // While closed: the last control used in the page, read as it gets focus (a menu item is then
+  // still in its open menu, and resolves to the menu's trigger).
+  const lastOutsideRef = useRef<HTMLElement | null>(null)
   useEffect(() => {
+    if (open) return
+    const onFocusIn = (e: FocusEvent) => {
+      lastOutsideRef.current = returnTargetOf(e.target instanceof Element ? e.target : null)
+    }
+    document.addEventListener("focusin", onFocusIn)
+    return () => document.removeEventListener("focusin", onFocusIn)
+  }, [open])
+  useLayoutEffect(() => {
+    const wasOpen = wasOpenRef.current
+    wasOpenRef.current = open
     if (open) {
-      headingRef.current?.focus()
+      if (wasOpen) return
+      const active = returnTargetOf(document.activeElement)
+      const last = lastOutsideRef.current
+      // An opener inside a menu or dialog that is closing gives way to the control read before.
+      returnRef.current = active && !active.closest("[role='menu'], [role='dialog'], [role='alertdialog']") ? active : last ?? active
       return
     }
+    if (!wasOpen) return
+    // Another builder or dialog took over (the classic builder): it places focus itself, and focus
+    // moved into the page behind it would leave it there.
+    const handedOver = handingOverRef.current
+    handingOverRef.current = false
+    if (handedOver || otherModalOpen(screenRef.current)) return
+    // Without scrolling: the gallery puts its own scroll back right after this (PromptGallery).
     const back = returnRef.current
-    if (back instanceof HTMLElement && back.isConnected && back !== document.body) back.focus()
-    else document.querySelector<HTMLElement>('[role="radiogroup"][aria-label="Mode"] [data-mode="pack"]')?.focus()
+    returnRef.current = null
+    if (back && isFocusable(back)) back.focus({ preventScroll: true })
+    else document.querySelector<HTMLElement>('[role="radiogroup"][aria-label="Mode"] [data-mode="pack"]')?.focus({ preventScroll: true })
+  }, [open])
+  useEffect(() => {
+    if (open) headingRef.current?.focus({ preventScroll: true })
   }, [open])
   // Tab and Shift+Tab go round inside the screen: the guards at each end send focus to the other end.
   const focusEdge = useCallback((edge: "first" | "last") => {
     const items = tabbablesIn(screenRef.current)
     const item = edge === "first" ? items[0] : items[items.length - 1]
-    ;(item ?? headingRef.current)?.focus()
+    ;(item ?? headingRef.current)?.focus({ preventScroll: true })
   }, [])
   const titleId = useId()
+
+  // While open, focus never rests outside the screen and Escape closes it wherever focus is.
+  // Focus that leaves for something outside (the page's skip link, the body after a dialog over
+  // the pack closes) comes back to the last control used in the screen, or to its title; menus,
+  // dialogs over the pack and the notifications keep theirs. Escape is heard on the document,
+  // after everything inside: whatever handles it first (a list, a menu, a dialog over the pack)
+  // stops it or marks it handled, and the pack stays.
+  const lastInsideRef = useRef<HTMLElement | null>(null)
+  const onExitRef = useRef(onExit)
+  useLayoutEffect(() => {
+    onExitRef.current = onExit
+  })
+  useEffect(() => {
+    if (!open) return
+    const screen = screenRef.current
+    if (!screen) return
+    const bringBack = () => {
+      const last = lastInsideRef.current
+      if (last && screen.contains(last) && isFocusable(last)) last.focus({ preventScroll: true })
+      else headingRef.current?.focus({ preventScroll: true })
+    }
+    const onFocusIn = (e: FocusEvent) => {
+      const target = e.target instanceof HTMLElement ? e.target : null
+      if (target && screen.contains(target)) {
+        if (!target.hasAttribute("data-focus-guard")) lastInsideRef.current = target
+        return
+      }
+      if (!focusAllowedOutside(target)) bringBack()
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const onFocusOut = (e: FocusEvent) => {
+      if (e.relatedTarget) return
+      // Focus going nowhere (to the body): checked once the move is over.
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        const active = document.activeElement
+        if (!active || active === document.body || !(screen.contains(active) || focusAllowedOutside(active))) bringBack()
+      }, 0)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return
+      const target = e.target instanceof Element ? e.target : null
+      const owner = target?.closest(LAYER)
+      if (owner && owner !== screen) return
+      onExitRef.current()
+    }
+    document.addEventListener("focusin", onFocusIn)
+    document.addEventListener("focusout", onFocusOut, true)
+    document.addEventListener("keydown", onKeyDown)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener("focusin", onFocusIn)
+      document.removeEventListener("focusout", onFocusOut, true)
+      document.removeEventListener("keydown", onKeyDown)
+    }
+  }, [open])
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -305,15 +393,6 @@ export const PackBriefBuilder = memo(function PackBriefBuilder(props: PackBriefB
         aria-modal="true"
         aria-labelledby={titleId}
         inert={!open}
-        onKeyDown={(e) => {
-          // Lists, menus, a marked chip, the scene picker and dialogs over the pack close first
-          // (they stop the key or own it).
-          if (e.key !== "Escape" || e.defaultPrevented || e.isPropagationStopped()) return
-          const target = e.target instanceof Element ? e.target : null
-          const owner = target?.closest("[role='menu'], [role='listbox'], [role='dialog'], [data-radix-popper-content-wrapper]")
-          if (owner && owner !== e.currentTarget) return
-          onExit()
-        }}
         className={cn(
           // The whole app's area: nothing of the gallery shows or can be reached behind it.
           "fixed inset-0 z-50 flex flex-col overflow-clip bg-background",
@@ -325,12 +404,14 @@ export const PackBriefBuilder = memo(function PackBriefBuilder(props: PackBriefB
       >
         <span tabIndex={open ? 0 : -1} aria-hidden="true" data-focus-guard="" className="sr-only" onFocus={() => focusEdge("last")} />
         <header className="flex-shrink-0 border-b border-border/60">
-          <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-3 py-2">
+          {/* On a phone the title and the close button share the first line and the rest wraps
+              below them, so the close button is always in view; from sm up, one line. */}
+          <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-wrap items-center gap-x-2 gap-y-1.5 px-3 py-2">
           <Package className="size-5 shrink-0 text-mode-pack-text" aria-hidden />
           <h2 id={titleId} ref={headingRef} tabIndex={-1} className="text-base font-semibold leading-tight text-foreground focus-visible:outline-none">
             {BUILDER_TEXT.title}
           </h2>
-          <div className="ml-auto flex items-center gap-1">
+          <div className="order-3 flex w-full min-w-0 flex-wrap items-center gap-1 sm:order-none sm:ml-auto sm:w-auto sm:flex-nowrap">
             <Button
               type="button"
               variant="ghost"
@@ -346,7 +427,7 @@ export const PackBriefBuilder = memo(function PackBriefBuilder(props: PackBriefB
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={onOpenClassic}
+                onClick={openClassic}
                 title={BUILDER_SWITCH_TEXT.classicHint}
                 aria-label={BUILDER_SWITCH_TEXT.classic}
                 className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground pointer-coarse:h-11"
@@ -357,6 +438,7 @@ export const PackBriefBuilder = memo(function PackBriefBuilder(props: PackBriefB
             )}
             <ProviderMenu value={startSource.provider} rating={rating} onChange={onProviderChange} />
             <RatingMenu value={rating} onChange={changeRating} />
+          </div>
             <Button
               type="button"
               variant="ghost"
@@ -364,11 +446,10 @@ export const PackBriefBuilder = memo(function PackBriefBuilder(props: PackBriefB
               onClick={onExit}
               aria-label={BUILDER_TEXT.close}
               title={BUILDER_TEXT.closeHint}
-              className="size-9 text-muted-foreground hover:text-foreground pointer-coarse:size-11"
+              className="ml-auto size-9 shrink-0 text-muted-foreground hover:text-foreground pointer-coarse:size-11 sm:ml-0"
             >
               <X className="size-4" aria-hidden />
             </Button>
-          </div>
           </div>
         </header>
         <div data-pack-scroll="" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
@@ -381,6 +462,36 @@ export const PackBriefBuilder = memo(function PackBriefBuilder(props: PackBriefB
     </TooltipProvider>
   )
 })
+
+/** Layers over or inside the pack that own their keys and their focus: menus, lists, dialogs, popovers. */
+const LAYER = "[role='menu'], [role='listbox'], [role='dialog'], [role='alertdialog'], [data-radix-popper-content-wrapper]"
+
+/** Outside the screen, focus may rest in a layer over it or in the notifications, nowhere else. */
+function focusAllowedOutside(el: Element | null): boolean {
+  return !!el && el !== document.body && !!el.closest(`${LAYER}, [role='region'][aria-label^='Notifications']`)
+}
+
+/** A modal dialog open besides the pack's screen (another builder took over). */
+function otherModalOpen(screen: HTMLElement | null): boolean {
+  return Array.from(document.querySelectorAll("[role='dialog'][data-state='open'], [role='alertdialog'][data-state='open']")).some((el) => el !== screen)
+}
+
+const isFocusable = (el: HTMLElement) => el.isConnected && el !== document.body && !el.closest("[inert]") && el.getClientRects().length > 0
+
+/**
+ * Where focus goes back to when the pack closes: the element that opened it, or, when that is an
+ * item of a menu or a dialog that closes with it, the control that opened that menu or dialog.
+ */
+function returnTargetOf(active: Element | null): HTMLElement | null {
+  if (!(active instanceof HTMLElement) || active === document.body) return null
+  const layer = active.closest<HTMLElement>("[role='menu'], [role='dialog'], [role='alertdialog']")
+  if (!layer) return active
+  // The trigger names the layer it opens; a menu also names its trigger.
+  const byControls = layer.id ? document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(layer.id)}"]`) : null
+  const labelledBy = layer.getAttribute("role") === "menu" ? layer.getAttribute("aria-labelledby") : null
+  const byLabel = labelledBy ? document.getElementById(labelledBy) : null
+  return byControls ?? byLabel ?? active
+}
 
 const TABBABLE = "a[href], button:not([disabled]), input:not([disabled]):not([type='hidden']), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"
 

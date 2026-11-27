@@ -83,7 +83,8 @@ export function GalleryToolbar({
   const activeMode = MODES.find((m) => m.id === mode)!
 
   const selectMode = (next: Mode) => {
-    if (next === mode) return
+    // Pack again while in Pack Mode still opens the pack screen (it may be closed behind a bar).
+    if (next === mode && next !== "pack") return
     const prev = committedMode
     startTransition(() => {
       setOptimisticMode(next)
