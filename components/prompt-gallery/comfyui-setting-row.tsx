@@ -6,11 +6,34 @@ import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { useComfyUISettings } from "@/hooks/use-comfyui-settings"
 import { shortStatusLine, useComfyStatus, type StatusTone } from "@/lib/comfyui/status"
+import type { Diagnosis } from "@/lib/comfyui/types"
 import { cn } from "@/lib/utils"
 import { ComfyStatusDot } from "./comfyui-status"
 
 const loadPanel = () => import("./comfyui-panel")
 const ComfyUIPanel = dynamic(() => loadPanel().then((m) => m.ComfyUIPanel), { ssr: false, loading: () => null })
+
+/** The row's status line and dot: why it can't be on, or how the connection is while it is. */
+function rowStatus(
+  enabled: boolean,
+  canTurnOn: boolean,
+  workflowName: string | null,
+  diagnosis: Diagnosis | null,
+  checking: boolean,
+): { tone: StatusTone | null; hint: string } {
+  if (!enabled) {
+    return {
+      tone: null,
+      hint: canTurnOn ? "Send prompts to ComfyUI on your computer instead of copying" : "Set up a workflow first to turn this on",
+    }
+  }
+  if (!workflowName) return { tone: "problem", hint: "Choose a workflow to start sending" }
+  const line = shortStatusLine(diagnosis)
+  const tone = checking && !diagnosis ? "checking" : line.tone
+  if (line.tone === "ok") return { tone, hint: `Connected · ${workflowName}` }
+  if (line.tone === "checking") return { tone, hint: `Checking ComfyUI · ${workflowName}` }
+  return { tone, hint: line.text }
+}
 
 /**
  * The "Send to ComfyUI" row of Customize prompt's Output column: a switch for
@@ -28,18 +51,7 @@ export function ComfyUISettingRow() {
   const canTurnOn = workflows.length > 0
   const setUp = !enabled && !canTurnOn
 
-  let tone: StatusTone | null = null
-  let hint: string
-  if (!enabled) {
-    hint = canTurnOn ? "Send prompts to ComfyUI on your computer instead of copying" : "Set up a workflow first to turn this on"
-  } else if (!activeWorkflow) {
-    tone = "problem"
-    hint = "Choose a workflow to start sending"
-  } else {
-    const line = shortStatusLine(diagnosis)
-    tone = checking && !diagnosis ? "checking" : line.tone
-    hint = line.tone === "ok" ? `Connected · ${activeWorkflow.name}` : line.tone === "checking" ? `Checking ComfyUI · ${activeWorkflow.name}` : line.text
-  }
+  const { tone, hint } = rowStatus(enabled, canTurnOn, activeWorkflow?.name ?? null, diagnosis, checking)
 
   return (
     <div

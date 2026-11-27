@@ -1047,6 +1047,76 @@ function notReadyReasonFor(connected: boolean, workflow: SavedComfyWorkflow | nu
   return "Choose the Output node in Roles to run a test."
 }
 
+/** The setup steps for the panel as it is now. `go` holds what each step's button does. */
+function setupSteps({
+  diagnosis,
+  checking,
+  workflow,
+  test,
+  ready,
+  go,
+}: {
+  diagnosis: Diagnosis | null
+  checking: boolean
+  workflow: SavedComfyWorkflow | null
+  test: Pick<TestJob, "running" | "failed">
+  ready: boolean
+  go: Record<"check" | "workflows" | "promptInGraph" | "outputInGraph" | "runTest" | "showTest", () => void>
+}): SetupStep[] {
+  const connected = diagnosis?.state === "ok"
+  const waiting = checking || !diagnosis
+  const connect: SetupStep = {
+    key: "connect",
+    title: "Connect to ComfyUI",
+    done: connected,
+    doneText: diagnosis?.state === "ok" && diagnosis.comfyVersion ? `ComfyUI ${diagnosis.comfyVersion}` : undefined,
+    hint: diagnosis ? statusCopy(diagnosis).text : "Checking the connection…",
+    action: diagnosis?.state === "unsupported-browser" ? null : { label: waiting ? "Checking…" : "Check again", onClick: go.check, busy: waiting },
+  }
+  const choose: SetupStep = {
+    key: "workflow",
+    title: "Choose a workflow",
+    done: !!workflow,
+    doneText: workflow?.name,
+    hint: connected
+      ? "Use one published from ComfyUI, or add a .png or .json file."
+      : "Add a .png or .json file, or connect to use one published from ComfyUI.",
+    action: { label: "Show workflows", onClick: go.workflows },
+  }
+  const prompt: SetupStep | null =
+    workflow && !workflow.roles.prompt
+      ? {
+          key: "prompt",
+          title: "Choose the Prompt input",
+          done: false,
+          hint: REASON_HINT["prompt-role"],
+          action: { label: "Choose in graph", onClick: go.promptInGraph },
+        }
+      : null
+  const run: SetupStep = {
+    key: "test",
+    title: "Run a test",
+    done: !!workflow?.testedAt && !test.failed,
+    doneText: "Passed",
+    hint: testStepHint(test, ready, connected, workflow),
+    action: test.running
+      ? { label: "Show the test", onClick: go.showTest }
+      : ready
+        ? { label: test.failed ? "Run again" : "Run a test", onClick: go.runTest }
+        : workflow && !workflow.roles.output
+          ? { label: "Choose in graph", onClick: go.outputInGraph }
+          : null,
+  }
+  return prompt ? [connect, choose, prompt, run] : [connect, choose, run]
+}
+
+function testStepHint(test: Pick<TestJob, "running" | "failed">, ready: boolean, connected: boolean, workflow: SavedComfyWorkflow | null): string {
+  if (test.running) return "The test is running. Its progress shows under Test."
+  if (test.failed) return "The last test didn't work. The reason shows under Test."
+  if (ready) return "Sends a sample prompt and shows the image ComfyUI makes."
+  return notReadyReasonFor(connected, workflow)
+}
+
 export function ComfyUIPanel({ open, onOpenChange, reason = null, requestId, returnFocusTo }: ComfyUIPanelProps) {
   const settings = useComfyUISettings()
   const { enabled, url, workflows, activeWorkflow, options } = settings
@@ -1112,67 +1182,27 @@ export function ComfyUIPanel({ open, onOpenChange, reason = null, requestId, ret
     onOpenChange(false)
   }
 
-  const tested = !!activeWorkflow?.testedAt && !test.failed
-  const steps: SetupStep[] = [
-    {
-      key: "connect",
-      title: "Connect to ComfyUI",
-      done: connected,
-      doneText: diagnosis?.state === "ok" && diagnosis.comfyVersion ? `ComfyUI ${diagnosis.comfyVersion}` : undefined,
-      hint: diagnosis ? statusCopy(diagnosis).text : "Checking the connection…",
-      action:
-        diagnosis?.state === "unsupported-browser"
-          ? null
-          : { label: checking || !diagnosis ? "Checking…" : "Check again", onClick: () => void check(), busy: checking || !diagnosis },
+  const steps = setupSteps({
+    diagnosis,
+    checking,
+    workflow: activeWorkflow,
+    test,
+    ready,
+    go: {
+      check: () => void check(),
+      workflows: () => jumpTo(ids.workflows),
+      promptInGraph: chooseInGraph,
+      outputInGraph: () => {
+        setShowGraph(true)
+        jumpTo(ids.roles)
+      },
+      runTest: () => {
+        void test.start()
+        jumpTo(ids.test)
+      },
+      showTest: () => jumpTo(ids.test),
     },
-    {
-      key: "workflow",
-      title: "Choose a workflow",
-      done: !!activeWorkflow,
-      doneText: activeWorkflow?.name,
-      hint: connected
-        ? "Use one published from ComfyUI, or add a .png or .json file."
-        : "Add a .png or .json file, or connect to use one published from ComfyUI.",
-      action: { label: "Show workflows", onClick: () => jumpTo(ids.workflows) },
-    },
-    ...(activeWorkflow && !activeWorkflow.roles.prompt
-      ? [
-          {
-            key: "prompt",
-            title: "Choose the Prompt input",
-            done: false,
-            hint: REASON_HINT["prompt-role"],
-            action: { label: "Choose in graph", onClick: chooseInGraph },
-          },
-        ]
-      : []),
-    {
-      key: "test",
-      title: "Run a test",
-      done: tested,
-      doneText: "Passed",
-      hint: test.running
-        ? "The test is running. Its progress shows under Test."
-        : test.failed
-          ? "The last test didn't work. The reason shows under Test."
-          : ready
-            ? "Sends a sample prompt and shows the image ComfyUI makes."
-            : notReadyReasonFor(connected, activeWorkflow),
-      action: test.running
-        ? { label: "Show the test", onClick: () => jumpTo(ids.test) }
-        : ready
-          ? {
-              label: test.failed ? "Run again" : "Run a test",
-              onClick: () => {
-                void test.start()
-                jumpTo(ids.test)
-              },
-            }
-          : activeWorkflow && !activeWorkflow.roles.output
-            ? { label: "Choose in graph", onClick: () => { setShowGraph(true); jumpTo(ids.roles) } }
-            : null,
-    },
-  ]
+  })
   const allSet = steps.every((step) => step.done)
 
   return (

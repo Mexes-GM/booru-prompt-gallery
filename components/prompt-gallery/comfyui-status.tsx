@@ -30,7 +30,7 @@ export function ComfyStatusDot({ tone, className }: { tone: StatusTone; classNam
 }
 
 /** Turns the mode off, with a toast that can undo it. */
-export function turnComfyOffWithUndo(setEnabled: (enabled: boolean) => boolean) {
+function turnComfyOffWithUndo(setEnabled: (enabled: boolean) => boolean) {
   if (!setEnabled(false)) return
   toast({
     title: "Send to ComfyUI is off",
