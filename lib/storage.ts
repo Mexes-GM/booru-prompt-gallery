@@ -9,7 +9,7 @@ import type { PackLearningModel } from '@/lib/pack/pack-learning'
 import type { AxisTagMode } from '@/lib/pack/pack-generator'
 import type { ScenePackSettings } from '@/lib/pack/scene-pack'
 import { isPromptFormat, type PromptFormat } from '@/lib/prompt/prompt-format'
-import { canonicalProvider } from '@/lib/booru/retired-providers'
+import { canonicalProvider, migrateRetiredArtist } from '@/lib/booru/retired-providers'
 import { readSavedPack, savedPackToStore, type SavedPack, type SavedPackInput } from '@/lib/pack/saved-pack'
 import { normalizeComfyUrl } from '@/lib/comfyui/url'
 import type { ComfyOptions, Roles, SavedComfyWorkflow } from '@/lib/comfyui/types'
@@ -612,25 +612,25 @@ export const userPreferences = {
 
   // Saved Artists (local fallback when not authenticated)
   getSavedArtists: (): SavedArtist[] =>
-    storage.get<SavedArtist[]>(STORAGE_KEYS.SAVED_ARTISTS, []),
+    storage.get<SavedArtist[]>(STORAGE_KEYS.SAVED_ARTISTS, []).map(migrateRetiredArtist),
 
   setSavedArtists: (artists: SavedArtist[]) =>
     storage.set(STORAGE_KEYS.SAVED_ARTISTS, artists),
 
   addSavedArtist: (artist: Omit<SavedArtist, 'timestamp'>): SavedArtist[] => {
-    const current = storage.get<SavedArtist[]>(STORAGE_KEYS.SAVED_ARTISTS, [])
+    const current = userPreferences.getSavedArtists()
     // Dedupe by (provider, artistTag)
-    const exists = current.some(a => a.provider === artist.provider && a.artistTag === artist.artistTag)
+    const exists = current.some(a => a.provider === canonicalProvider(artist.provider) && a.artistTag === artist.artistTag)
     if (exists) return current
-    const newArtist: SavedArtist = { ...artist, timestamp: Date.now() }
+    const newArtist: SavedArtist = migrateRetiredArtist({ ...artist, timestamp: Date.now() })
     const updated = [newArtist, ...current]
     storage.set(STORAGE_KEYS.SAVED_ARTISTS, updated)
     return updated
   },
 
   removeSavedArtist: (provider: string, artistTag: string): SavedArtist[] => {
-    const current = storage.get<SavedArtist[]>(STORAGE_KEYS.SAVED_ARTISTS, [])
-    const updated = current.filter(a => !(a.provider === provider && a.artistTag === artistTag))
+    const current = userPreferences.getSavedArtists()
+    const updated = current.filter(a => !(a.provider === canonicalProvider(provider) && a.artistTag === artistTag))
     storage.set(STORAGE_KEYS.SAVED_ARTISTS, updated)
     return updated
   },

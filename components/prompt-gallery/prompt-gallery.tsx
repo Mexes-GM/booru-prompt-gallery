@@ -74,6 +74,7 @@ import {
   hasMultipleTags, getFinalQueryTagsWithMeta, getProviderTagLimit, isTagCountSupportedProvider, detectMisusedMetatags, BooruPost, BooruProvider, isAibooruPost, apiUrl,
 } from "@/lib/api-client"
 import { urlHasHost } from "@/lib/booru/urls"
+import { canonicalProvider } from "@/lib/booru/retired-providers"
 import { favKey } from "@/lib/favorites-logic"
 
 import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
@@ -2506,7 +2507,7 @@ export function PromptGallery() {
               // Switch to the provider the artist was originally saved from
               // so results come from the correct source.
               if (provider) {
-                const normalized = provider.toLowerCase() as BooruProvider
+                const normalized = canonicalProvider(provider) as BooruProvider
                 if (normalized !== search.booruProvider) {
                   search.setBooruProvider(normalized)
                   trackProviderChange(normalized)

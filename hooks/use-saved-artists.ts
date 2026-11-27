@@ -5,6 +5,7 @@ import { useUser } from "@/hooks/use-user"
 import { userPreferences, type SavedArtist } from "@/lib/storage"
 import { toast } from "@/hooks/use-toast"
 import { toastError } from "@/lib/toast-error"
+import { canonicalProvider, migrateRetiredArtist } from "@/lib/booru/retired-providers"
 
 export type { SavedArtist }
 
@@ -29,16 +30,17 @@ export interface UseSavedArtistsReturn {
   removeArtist: (provider: string, artistTag: string) => Promise<void>
 }
 
-const buildKey = (provider: string, tag: string) => `${provider.toLowerCase()}:${tag.toLowerCase()}`
+const buildKey = (provider: string, tag: string) => `${canonicalProvider(provider)}:${tag.toLowerCase()}`
 
+// Rows saved on a retired provider (e6ai) read as the provider that replaced it.
 function rowToArtist(row: DbSavedArtistRow): SavedArtist {
-  return {
+  return migrateRetiredArtist({
     provider: row.provider,
     artistTag: row.artist_tag,
     thumbnailUrl: row.thumbnail_url,
     thumbnailPostId: row.thumbnail_post_id,
     timestamp: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
-  }
+  })
 }
 
 function useSavedArtistsInternal(): UseSavedArtistsReturn {
@@ -81,7 +83,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
       return
     }
 
-    const rows = local.map((a) => ({
+    const rows = local.map(migrateRetiredArtist).map((a) => ({
       user_id: userId,
       provider: a.provider,
       artist_tag: a.artistTag,
@@ -146,7 +148,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
         const { error } = await supabase.from("saved_artists").upsert(
           {
             user_id: userId,
-            provider: artist.provider,
+            provider: canonicalProvider(artist.provider),
             artist_tag: artist.artistTag,
             thumbnail_url: artist.thumbnailUrl,
             thumbnail_post_id: artist.thumbnailPostId,
@@ -181,7 +183,9 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
         const { error } = await supabase
           .from("saved_artists")
           .delete()
-          .match({ user_id: userId, provider, artist_tag: artistTag })
+          .eq("user_id", userId)
+          .in("provider", canonicalProvider(provider) === "floofgens" ? ["floofgens", "e6ai"] : [provider])
+          .eq("artist_tag", artistTag)
         if (error) {
           console.error("[useSavedArtists] remove error:", error)
           toastError({ title: "Couldn't remove the artist", description: "Try again in a moment.", errorSource: "remove_artist", context: { message: error.message } })

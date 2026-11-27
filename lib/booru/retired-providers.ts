@@ -40,6 +40,14 @@ export function migrateRetiredImageUrl(url: string): string {
   }
 }
 
+/** A saved artist with its provider and thumbnail moved off a retired provider. */
+export function migrateRetiredArtist<T extends { provider: string; thumbnailUrl: string | null }>(artist: T): T {
+  const provider = canonicalProvider(artist.provider)
+  const thumbnailUrl = artist.thumbnailUrl ? migrateRetiredImageUrl(artist.thumbnailUrl) : artist.thumbnailUrl
+  if (provider === artist.provider && thumbnailUrl === artist.thumbnailUrl) return artist
+  return { ...artist, provider, thumbnailUrl }
+}
+
 /** A saved post with its provider and image URLs moved off a retired provider. */
 export function migrateRetiredPost<T extends Pick<BooruPost, "file_url" | "large_file_url" | "preview_file_url" | "_provider">>(post: T): T {
   const provider = post._provider ? canonicalProvider(post._provider) : post._provider
