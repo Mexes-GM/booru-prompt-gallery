@@ -28,6 +28,8 @@ import { useInfinitePosts, isRandomOrderSafeProvider, type BooruPost } from "@/l
 import type { BooruProvider } from "@/lib/booru/types"
 import { useScrollRateLimiter } from "./use-scroll-rate-limiter"
 import { useRandomPageOrder } from "./use-random-page-order"
+import { sitePacer } from "@/lib/booru/request-pacer"
+import type { PackRequestBudget } from "@/lib/pack/request-budget"
 import { useToast } from "./use-toast"
 
 export type PackRatingMode = "sfw" | "questionable" | "explicit" | "both"
@@ -69,18 +71,74 @@ function buildTags(searchTags: string): string {
 }
 
 /**
+ * A feed's first page waits for the site's Pack pace (lib/booru/request-pacer.ts). Feeds
+ * with the same query at the same moment (an unused slot copies a running one) share
+ * one wait and one request: SWR dedupes them for this long (useInfinitePosts).
+ */
+const FIRST_PAGE_SHARE_MS = 15_000
+const firstPageGrants = new Map<string, Promise<void>>()
+
+function grantFirstPage(key: string, provider: BooruProvider, budget: PackRequestBudget | null, signal: AbortSignal): Promise<void> {
+  const had = firstPageGrants.get(key)
+  if (had) return had
+  const grant = sitePacer(provider).acquire(signal).then(() => { budget?.record(1) })
+  firstPageGrants.set(key, grant)
+  grant.then(
+    () => { setTimeout(() => { if (firstPageGrants.get(key) === grant) firstPageGrants.delete(key) }, FIRST_PAGE_SHARE_MS) },
+    () => { if (firstPageGrants.get(key) === grant) firstPageGrants.delete(key) },
+  )
+  return grant
+}
+
+export interface SingleRatingFeedOptions {
+  /** The pack's request budget: the feed's first page and its page-range requests count in it. */
+  budget?: PackRequestBudget | null
+}
+
+/**
  * One rating's worth of paging state — mirrors the SWR-backed shape
  * useBooruSearch keeps for the main search, scoped down to just what seeding
  * needs (automatically defaults to "random" order on providers where it poses
  * no tag-count or pagination limitations like Gelbooru/Rule34, and "recent" on
  * providers with strict limits like Danbooru/Aibooru/e621 for stable pagination).
  * On Danbooru/Aibooru those "recent" pages are visited in a random order
- * (useRandomPageOrder), so the pool isn't just the newest uploads.
+ * (useRandomPageOrder), so the pool isn't just the newest uploads. The range is
+ * asked for with the second page: a search that never pages costs no count.
+ *
+ * `addPages(n)` asks for n more pages; on Danbooru/Aibooru they wait for the range.
+ * The caller counts those pages in its budget; the feed counts its first page and
+ * the range requests.
  */
-export function useSingleRatingFeed(tags: string, ratingFilter: string, provider: BooruProvider, seed: number) {
+export function useSingleRatingFeed(tags: string, ratingFilter: string, provider: BooruProvider, seed: number, { budget = null }: SingleRatingFeedOptions = {}) {
   const isRandomSafe = isRandomOrderSafeProvider(provider)
   const order = isRandomSafe ? "random" : "recent"
-  const pageOrder = useRandomPageOrder(tags, ratingFilter, provider, seed)
+  const resetKey = `${tags}-${ratingFilter}-${provider}-${isRandomSafe ? seed : ""}`
+
+  // More pages asked for before the range is known: they wait for it (per query).
+  const [pending, setPending] = useState<{ key: string; pages: number } | null>(null)
+  const pendingNow = pending && pending.key === resetKey ? pending.pages : 0
+  const [rangeWantedFor, setRangeWantedFor] = useState<string | null>(null)
+  const { pageOrder, settled: rangeSettled } = useRandomPageOrder(tags, ratingFilter, provider, seed, { wanted: rangeWantedFor === resetKey, budget })
+
+  // The first page goes once the pace allows it.
+  const [grantedKey, setGrantedKey] = useState<string | null>(null)
+  const budgetRef = useRef(budget)
+  useEffect(() => { budgetRef.current = budget }, [budget])
+  useEffect(() => {
+    if (grantedKey === resetKey) return
+    const controller = new AbortController()
+    let alive = true
+    const ask = () => {
+      grantFirstPage(resetKey, provider, budgetRef.current, controller.signal).then(
+        () => { if (alive) setGrantedKey(resetKey) },
+        // A shared wait given up by the feed that started it: wait again.
+        () => { if (alive) ask() },
+      )
+    }
+    ask()
+    return () => { alive = false; controller.abort() }
+  }, [resetKey, provider, grantedKey])
+  const paused = grantedKey !== resetKey
 
   // size/setSize must be SWR's own: a separate useState counter never told
   // SWR to fetch past page 1, so every source stopped at its first page.
@@ -94,18 +152,34 @@ export function useSingleRatingFeed(tags: string, ratingFilter: string, provider
     undefined,
     'off',
     pageOrder,
+    paused,
   )
 
   // Reset pagination whenever the query itself changes (new tags/rating/
   // provider/seed) — mirrors useBooruSearch's own reset effect.
   const resetKeyRef = useRef("")
-  const resetKey = `${tags}-${ratingFilter}-${provider}-${isRandomSafe ? seed : ""}`
   useEffect(() => {
     if (resetKeyRef.current !== resetKey) {
       resetKeyRef.current = resetKey
       void setSize(1)
     }
   }, [resetKey, setSize])
+
+  // Pages that waited for the range go once it is known (or known not to come).
+  // They count as loading until they arrive, so no other page is asked for in between. (Pages
+  // left from an earlier query are ignored: pendingNow, and the next addPages replaces them.)
+  const appliedRef = useRef<typeof pending>(null)
+  useEffect(() => {
+    if (!pending || pending.key !== resetKey || !rangeSettled || appliedRef.current === pending) return
+    appliedRef.current = pending
+    void setSize((s) => s + pending.pages).finally(() => setPending((p) => (p === pending ? null : p)))
+  }, [pending, resetKey, rangeSettled, setSize])
+
+  const addPages = useCallback((n = 1) => {
+    if (rangeSettled) { void setSize((s) => s + n); return }
+    setRangeWantedFor(resetKey)
+    setPending((p) => ({ key: resetKey, pages: (p && p.key === resetKey ? p.pages : 0) + n }))
+  }, [rangeSettled, setSize, resetKey])
 
   const allPosts = useMemo(() => {
     if (!pages) return []
@@ -118,7 +192,8 @@ export function useSingleRatingFeed(tags: string, ratingFilter: string, provider
     })
   }, [pages])
 
-  const isLoadingMore = isValidating && size > 0
+  // Waiting for the pace (first page) or the range (later pages) counts as loading.
+  const isLoadingMore = paused || pendingNow > 0 || (isValidating && size > 0)
   const lastPage = pages && pages.length > 0 ? pages[pages.length - 1] : null
   // A random page order ends when every page in range has been fetched.
   const noMoreResults = !!pages && pages.length > 0 && (
@@ -131,7 +206,7 @@ export function useSingleRatingFeed(tags: string, ratingFilter: string, provider
   // Pages that have arrived (size counts the ones asked for, before they come).
   const loadedPages = pages?.length ?? 0
 
-  return { allPosts, isLoadingMore, noMoreResults, size, loadedPages, setSize, failed, retry }
+  return { allPosts, isLoadingMore, noMoreResults, size, loadedPages, addPages, failed, retry }
 }
 
 /**
@@ -216,9 +291,9 @@ export function usePackSeedSearch(args: UsePackSeedSearchArgs): UsePackSeedSearc
     if (!rateLimiter.canLoadMore(feedA.size)) return
 
     loadMoreGuardRef.current = true
-    feedA.setSize((s) => s + 1)
-    if (isBoth) feedB.setSize((s) => s + 1)
-  }, [rateLimiter.canLoadMore, feedA.size, feedA.setSize, feedB.setSize, isBoth])
+    feedA.addPages(1)
+    if (isBoth) feedB.addPages(1)
+  }, [rateLimiter.canLoadMore, feedA.size, feedA.addPages, feedB.addPages, isBoth])
 
   // Interleave so a "both" pack doesn't skew toward whichever rating's page
   // happens to load first — sampling downstream (extractAxisValues) ranks by

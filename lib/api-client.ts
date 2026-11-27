@@ -12,6 +12,7 @@ import { takePrefetchedPosts } from './booru/posts-prefetch'
 import { getAuthHeader } from './booru/auth-header'
 import { transformAibooruPost, transformDanbooruPost, transformE621Post } from './booru/post-transformers'
 import { relaxScoreFloorInUrl, SCORE_FLOOR_BY_PROVIDER, type BooruProvider as TagLimitsBooruProvider, type ScoreTier } from './booru/tag-limits'
+import { sitePacer } from './booru/request-pacer'
 
 export { transformAibooruPost, transformE621Post }
 
@@ -544,15 +545,21 @@ export { buildBooruQuery }
  */
 export async function fetchPostsPage(query: Parameters<typeof createPostsKey>[0]): Promise<BooruPost[]> {
   const url = createPostsKey(query)(0, null)
-  return url ? fetcher(url) : []
+  if (!url) return []
+  // Pack Mode's own request: it goes at the site's Pack pace (lib/booru/request-pacer.ts).
+  await sitePacer(query.provider).acquire()
+  return fetcher(url)
 }
 
+const PAUSED_KEY = () => null
+
 /**
- * `pageOrder`: see PostsQuery in lib/booru/posts-key.ts.
+ * `pageOrder`: see PostsQuery in lib/booru/posts-key.ts. `paused`: fetch nothing yet
+ * (Pack Mode holds a feed's first page until its pace allows it).
  */
-export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular', randomSeed?: number, provider: BooruProvider = 'danbooru', hasPrompt: boolean = false, tagCountFilter?: string, scoreTier: ScoreTier = 'off', pageOrder?: number[]) => {
+export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular', randomSeed?: number, provider: BooruProvider = 'danbooru', hasPrompt: boolean = false, tagCountFilter?: string, scoreTier: ScoreTier = 'off', pageOrder?: number[], paused = false) => {
   return useSWRInfinite<BooruPost[]>(
-    createPostsKey({ tags, ratingFilter, order, randomSeed, provider, hasPrompt, tagCountFilter, scoreTier, pageOrder }),
+    paused ? PAUSED_KEY : createPostsKey({ tags, ratingFilter, order, randomSeed, provider, hasPrompt, tagCountFilter, scoreTier, pageOrder }),
     fetcher,
     {
       revalidateFirstPage: false, // Don't revalidate first page when loading more
