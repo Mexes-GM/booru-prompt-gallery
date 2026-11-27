@@ -149,8 +149,13 @@ export function createComfyClient(baseUrl: string, options: ComfyClientOptions =
     /** Running and pending jobs. Entries are `[number, prompt_id, ...]`. */
     queue: () => readJson<{ queue_running?: unknown[][]; queue_pending?: unknown[][] }>("/queue"),
 
-    async interrupt(): Promise<void> {
-      const res = await send("/interrupt", { method: "POST" })
+    /**
+     * With a prompt id, ComfyUI stops only that prompt and only if it is the
+     * one running; without one it stops whatever runs, which may be a job the
+     * user queued from ComfyUI itself.
+     */
+    async interrupt(promptId?: string): Promise<void> {
+      const res = promptId ? await postJson("/interrupt", { prompt_id: promptId }) : await send("/interrupt", { method: "POST" })
       if (!res.ok) throw new ComfyError("http", `HTTP ${res.status} for /interrupt`, { status: res.status })
     },
 

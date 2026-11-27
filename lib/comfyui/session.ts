@@ -594,8 +594,14 @@ export function createComfySession(options: SessionOptions) {
     const rec = recs.get(jobId)
     if (!rec || isTerminal(rec.job.status)) return
     if (rec.job.id.startsWith("local-")) return
-    if (rec.job.status === "running") await client.interrupt()
-    else await client.deleteFromQueue([jobId])
+    if (rec.job.status === "running") {
+      await client.interrupt(jobId)
+    } else {
+      await client.deleteFromQueue([jobId])
+      // It may have left the queue and started since we last heard; a targeted
+      // interrupt stops it then, and does nothing to any other prompt.
+      await client.interrupt(jobId)
+    }
     if (!isTerminal(rec.job.status)) settle(rec, { status: "cancelled" })
   }
 

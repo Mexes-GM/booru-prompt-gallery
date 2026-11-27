@@ -108,8 +108,8 @@ function fakeClient(opts: FakeClientOptions = {}) {
       return { queue_running: [], queue_pending: (opts.pending ?? []).map((id, i) => [i + 10, id]).reverse() }
     },
     viewUrl: (f: { filename: string }) => `http://127.0.0.1:8188/view?filename=${f.filename}`,
-    async interrupt() {
-      calls.push({ name: "interrupt", args: [] })
+    async interrupt(promptId?: string) {
+      calls.push({ name: "interrupt", args: [promptId] })
     },
     async deleteFromQueue(ids: string[]) {
       calls.push({ name: "deleteFromQueue", args: [ids] })
@@ -290,7 +290,7 @@ async function main() {
     lastWs().text("execution_start", { prompt_id: a })
     await session.cancel(a)
     await session.cancel(b)
-    same(calls.filter((c) => c.name === "interrupt").length, 1, "running job => interrupt")
+    same(calls.filter((c) => c.name === "interrupt").map((c) => c.args[0]), [a, b], "interrupts target their own prompt only")
     same(calls.filter((c) => c.name === "deleteFromQueue").map((c) => c.args[0]), [[b]], "queued job => deleteFromQueue")
     assert(session.getJob(a)?.status === "cancelled" && session.getJob(b)?.status === "cancelled", "both marked cancelled")
     session.dispose()

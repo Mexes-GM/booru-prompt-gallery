@@ -135,6 +135,8 @@ async function main() {
 
     await client.interrupt()
     assert(Boolean(calls.at(-1)?.url.endsWith("/interrupt")) && calls.at(-1)?.init?.method === "POST", "interrupt POSTs /interrupt")
+    await client.interrupt("p9")
+    same(JSON.parse(String(calls.at(-1)?.init?.body)), { prompt_id: "p9" }, "targeted interrupt names the prompt")
     await client.deleteFromQueue(["p1", "p2"])
     same(JSON.parse(String(calls.at(-1)?.init?.body)), { delete: ["p1", "p2"] }, "deleteFromQueue body")
 
