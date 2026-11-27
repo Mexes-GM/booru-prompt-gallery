@@ -15,8 +15,8 @@ export const CHAPTERS = [
   },
   {
     id: "publish",
-    title: "Publish your workflow",
-    body: "In ComfyUI, click Use in Booru Prompt Gallery next to Run. The workflow shows up in the setup guide.",
+    title: "Add your workflow",
+    body: "In ComfyUI, click Use in Booru Prompt Gallery next to Run. The workflow stays on your computer and shows up in the setup guide.",
     from: 195,
   },
   {

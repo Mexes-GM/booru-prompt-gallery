@@ -6,14 +6,9 @@ import {
   GraphHint,
   MANAGER,
   ManagerDialog,
-  NamePill,
-  NEW_ROW_NAME,
-  NEW_ROW_USE,
   PublishButton,
-  PublishedList,
   RunButton,
   WINDOW,
-  arc,
   clicksAt,
   ease,
   pointerOn,
@@ -23,10 +18,10 @@ import {
 } from "./comfy-ui"
 import { ClickRing, Pointer } from "./ui"
 
-// Short loops for the setup guide's "Install the node" and "Publish your
+// Short loops for the setup guide's "Install the node" and "Add your
 // workflow" steps (components/prompt-gallery/comfyui-setup-wizard.tsx). They
 // play muted on repeat, so each one ends exactly where it starts: the same
-// empty search, the same list, the pointer back at rest.
+// empty search, the same button, the pointer back at rest.
 
 export const LOOP = { width: 960, height: 480, fps: 30 }
 
@@ -130,20 +125,20 @@ export function InstallLoop({ staticFrame }: { staticFrame?: number }) {
 }
 
 // ---------------------------------------------------------------------------
-// Publish: the button next to Run, the name lands in the site's list, Use;
-// then the new row folds away and the button resets.
+// Add your workflow: the pointer clicks the button next to Run, a check shows
+// it worked, then the check fades and the pointer goes back to rest. Only
+// ComfyUI is drawn: the setup guide shows its own list right under the loop.
 // ---------------------------------------------------------------------------
 
-export const PUBLISH_LOOP_FRAMES = 180
-/** Poster: the new workflow just landed in the list. */
-export const PUBLISH_POSTER_FRAME = 92
+export const PUBLISH_LOOP_FRAMES = 120
+/** Poster (and reduced motion): the check on the button, the pointer on it. */
+export const PUBLISH_POSTER_FRAME = 58
 
-const PL = { publishClick: 34, useClick: 110, fold: 140 }
-const PL_PILL_FROM = PL.publishClick + 4
-const PL_PILL_LAND = PL_PILL_FROM + 30
-
-const WIN = { x: 24, y: 14, width: 912, height: WINDOW.titleHeight + WINDOW.barHeight + 96 }
-const LIST_BOX = { x: 200, y: WIN.y + WIN.height + 22, width: 560 }
+const PL = { click: 34, reset: 86 }
+/** Drawn 1.4× so the top bar reads at the step's ~530 px width. */
+const PL_ZOOM = 1.4
+const PL_VIEW = { width: LOOP.width / PL_ZOOM, height: LOOP.height / PL_ZOOM }
+const WIN = { x: 16, y: 18, width: PL_VIEW.width - 32, height: PL_VIEW.height - 36 }
 
 export function PublishLoop({ staticFrame }: { staticFrame?: number }) {
   const current = useCurrentFrame()
@@ -154,66 +149,42 @@ export function PublishLoop({ staticFrame }: { staticFrame?: number }) {
   const runWidth = 32 + 15 + 8 + textWidth("Run", 18, 500)
   const publishX = WIN.x + WIN.width - 16 - runWidth - 10 - publishWidth / 2
   const barY = WIN.y + WINDOW.titleHeight + WINDOW.barHeight / 2
-  const use = { x: LIST_BOX.x + LIST_BOX.width + NEW_ROW_USE.dx, y: LIST_BOX.y + NEW_ROW_USE.dy }
-  const rest = { x: 790, y: 440 }
+  const rest = { x: publishX + 40, y: WIN.y + WIN.height - 40 }
   const path: Key[] = [
     [0, rest.x, rest.y],
-    [8, rest.x, rest.y],
-    [PL.publishClick - 4, publishX + 10, barY + 6],
-    [PL.publishClick + 30, publishX + 10, barY + 6],
-    [PL.useClick - 4, use.x + 4, use.y + 6],
-    [PL.useClick + 18, use.x + 4, use.y + 6],
-    [PUBLISH_LOOP_FRAMES - 6, rest.x, rest.y],
+    [6, rest.x, rest.y],
+    [PL.click - 4, publishX + 10, barY + 6],
+    [PL.reset + 4, publishX + 10, barY + 6],
+    [PUBLISH_LOOP_FRAMES - 8, rest.x, rest.y],
   ]
   const pointer = pointerOn(path, frame)
-  const { press, ring } = clicksAt([PL.publishClick, PL.useClick], frame)
+  const { press, ring } = clicksAt([PL.click], frame)
 
-  const fold = ease(frame, PL.fold, PL.fold + 18, EASE.inOut)
-  const published = ease(frame, PL.publishClick + 4, PL.publishClick + 14, EASE.springy) * (1 - ease(frame, PL.fold + 6, PL.fold + 16))
-  const publishPress = Math.min(ease(frame, PL.publishClick, PL.publishClick + 3), 1 - ease(frame, PL.publishClick + 4, PL.publishClick + 8))
-  const arrive = ease(frame, PL_PILL_LAND - 16, PL_PILL_LAND + 2, EASE.inOut) * (1 - fold)
-  const rowContent = ease(frame, PL_PILL_LAND - 2, PL_PILL_LAND + 8) * (1 - ease(frame, PL.fold - 2, PL.fold + 8))
-  const flash = 1 - ease(frame, PL_PILL_LAND + 2, PL_PILL_LAND + 50, EASE.inOut)
-  const inUse = frame >= PL.fold + 18 ? 0 : ease(frame, PL.useClick + 2, PL.useClick + 10)
-  const usePress = Math.min(ease(frame, PL.useClick, PL.useClick + 3), 1 - ease(frame, PL.useClick + 4, PL.useClick + 8))
-
-  const pillStart = { x: publishX - 70, y: barY + 50 }
-  const pillEnd = { x: LIST_BOX.x + NEW_ROW_NAME.dx, y: LIST_BOX.y + NEW_ROW_NAME.dy }
-  const flight = ease(frame, PL_PILL_FROM, PL_PILL_LAND, EASE.inOut)
-  const pillAt = arc(flight, pillStart, { x: pillStart.x - 60, y: pillEnd.y - 20 }, pillEnd)
-  const pillPop = ease(frame, PL_PILL_FROM, PL_PILL_FROM + 9, EASE.springy)
-  const pillOn = frame >= PL_PILL_FROM && frame < PL_PILL_LAND + 8
+  const done = ease(frame, PL.click + 4, PL.click + 14, EASE.springy) * (1 - ease(frame, PL.reset, PL.reset + 12, EASE.inOut))
+  const buttonPress = Math.min(ease(frame, PL.click, PL.click + 3), 1 - ease(frame, PL.click + 4, PL.click + 8))
+  // The ring round the button breathes once with the check, then settles.
+  const glow = 1 + 0.6 * Math.min(ease(frame, PL.click + 4, PL.click + 12), 1 - ease(frame, PL.click + 20, PL.click + 44, EASE.inOut))
 
   return (
     <AbsoluteFill style={{ background: "oklch(0.27 0.022 250)" }}>
-      <ComfyWindow
-        x={WIN.x}
-        y={WIN.y}
-        width={WIN.width}
-        height={WIN.height}
-        barRight={
-          <>
-            <PublishButton press={publishPress} done={published} />
-            <RunButton />
-          </>
-        }
-      >
-        <GraphHint width={WIN.width} top={18} />
-      </ComfyWindow>
-      <PublishedList
-        x={LIST_BOX.x}
-        y={LIST_BOX.y}
-        width={LIST_BOX.width}
-        arrive={arrive}
-        flash={flash}
-        rowContent={rowContent}
-        inUse={inUse}
-        usePress={usePress}
-        frame={frame}
-      />
-      {pillOn && <NamePill x={pillAt.x} y={pillAt.y} scale={0.9 + 0.1 * pillPop} opacity={Math.min(pillPop, 1 - ease(frame, PL_PILL_LAND, PL_PILL_LAND + 8))} />}
-      <ClickRing x={pointer.x} y={pointer.y} progress={ring} />
-      <Pointer x={pointer.x} y={pointer.y} press={press} />
+      <div style={{ position: "absolute", left: 0, top: 0, width: PL_VIEW.width, height: PL_VIEW.height, transform: `scale(${PL_ZOOM})`, transformOrigin: "0 0" }}>
+        <ComfyWindow
+          x={WIN.x}
+          y={WIN.y}
+          width={WIN.width}
+          height={WIN.height}
+          barRight={
+            <>
+              <PublishButton press={buttonPress} done={done} glow={glow} />
+              <RunButton />
+            </>
+          }
+        >
+          <GraphHint width={WIN.width} top={44} />
+        </ComfyWindow>
+        <ClickRing x={pointer.x} y={pointer.y} progress={ring} />
+        <Pointer x={pointer.x} y={pointer.y} press={press} />
+      </div>
     </AbsoluteFill>
   )
 }

@@ -107,12 +107,13 @@ between the overlays and the Copy button, as in the script above).
   `src/send-to-comfy-chapters.ts`, which also holds the chapter text the dialog lists. Keep `CHAPTERS` in
   `components/prompt-gallery/feature-intro-dialog.tsx` in step with it (seconds = frames / 30).
 - `src/comfy-ui.tsx` — the pieces it shares with the loops: an abstract ComfyUI window (neutral greys, no logo; shapes
-  and the few labels the setup guide names), the Manager search, the setup guide's "Published from ComfyUI" list, and
+  and the few labels the setup guide names), the Manager search, the setup guide's "From your ComfyUI" list, and
   the card's job surface from `components/prompt-gallery/comfyui-card-job.tsx`, with the curves from
   `comfyui-motion.tsx`. The generated image is drawn there too (`MeadowArt`), so the video shows no one's artwork as
   ComfyUI's output.
 - The card reuses the first video's post (`public/danbooru-5513008.jpg`) and its tags from `src/data.ts`.
-- `src/SetupLoops.tsx` — `ComfyInstallLoop` and `ComfyPublishLoop` (960×480, 5 s and 6 s) for the setup guide's
-  "Install the node" and "Publish your workflow" steps. Each one ends exactly on its first frame, so it repeats without
+- `src/SetupLoops.tsx` — `ComfyInstallLoop` and `ComfyPublishLoop` (960×480, 5 s and 4 s) for the setup guide's
+  "Install the node" and "Add your workflow" steps. The second shows only ComfyUI (the button clicked, then its check),
+  since the step has the real list right under it. Each one ends exactly on its first frame, so it repeats without
   a cut. `npm run render -- setup-loops` writes `install` and `publish` (`.webm`, `.mp4` and a `.jpg` poster, also shown
   with reduced motion) to `public/comfyui-setup/`.

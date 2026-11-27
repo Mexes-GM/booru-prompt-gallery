@@ -18,7 +18,7 @@ const VIDEO = "/whats-new/10.9.0-send-to-comfyui"
  */
 const CHAPTERS = [
   { at: 0, title: "Install the node", body: "In ComfyUI Manager, search for Booru Prompt Gallery and install it. Then restart ComfyUI." },
-  { at: 6.5, title: "Publish your workflow", body: "In ComfyUI, click Use in Booru Prompt Gallery next to Run. The workflow shows up in the setup guide." },
+  { at: 6.5, title: "Add your workflow", body: "In ComfyUI, click Use in Booru Prompt Gallery next to Run. The workflow stays on your computer and shows up in the setup guide." },
   { at: 14, title: "Turn on Send to ComfyUI", body: "It's in Customize prompt. Copy buttons on the cards become Send." },
   { at: 18, title: "Send from any card", body: "The card shows the queue, the steps and a live preview. The post moves to a corner thumbnail you can switch to." },
   { at: 28, title: "Send as another format", body: "The ▾ menu next to Send sends the card once in another prompt format." },

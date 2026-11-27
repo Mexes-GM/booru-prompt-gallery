@@ -35,3 +35,6 @@ export const BRIDGE_CONSOLE_LINE = "Booru Prompt Gallery bridge installed"
 
 /** The publish command's label in ComfyUI. */
 export const BRIDGE_PUBLISH_LABEL = "Use in Booru Prompt Gallery"
+
+/** Shown where people add a workflow from ComfyUI: nothing is uploaded, the site reads it through the add-on. */
+export const BRIDGE_LOCAL_NOTE = "Your workflow stays on your computer. The site reads it from ComfyUI."

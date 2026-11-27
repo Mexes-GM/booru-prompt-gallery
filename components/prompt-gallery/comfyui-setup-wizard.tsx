@@ -19,6 +19,7 @@ import {
   BRIDGE_GIT_COMMAND,
   BRIDGE_INSTALL_URL,
   BRIDGE_MANAGER_NAME,
+  BRIDGE_LOCAL_NOTE,
   BRIDGE_PUBLISH_LABEL,
 } from "@/lib/comfyui/bridge"
 import { DEFAULT_COMFY_PORT } from "@/lib/comfyui/url"
@@ -70,7 +71,7 @@ const FOUND_PAUSE_MS = 1600
 const STEP_TITLE: Record<SetupStepId, string> = {
   start: "Before you start",
   install: "Install the node",
-  publish: "Publish your workflow",
+  publish: "Add your workflow",
   prompt: "Check the prompt input",
   test: "Run a test",
   done: "You're all set",
@@ -382,7 +383,7 @@ function PublishedList({
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-border/70 px-3 py-3 sm:px-4">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-medium text-foreground">Published from ComfyUI</span>
+        <span className="text-sm font-medium text-foreground">From your ComfyUI</span>
         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-primary motion-safe:animate-pulse" />
           Watching for new ones
@@ -399,9 +400,9 @@ function PublishedList({
           Loading…
         </p>
       ) : items.length === 0 ? (
-        <p className="text-pretty text-sm leading-relaxed text-muted-foreground">Nothing yet. Your workflow shows up here as soon as you publish it.</p>
+        <p className="text-pretty text-sm leading-relaxed text-muted-foreground">Nothing yet. Your workflow shows up here as soon as you click {BRIDGE_PUBLISH_LABEL}.</p>
       ) : (
-        <ul className="flex flex-col" aria-label="Workflows published from ComfyUI">
+        <ul className="flex flex-col" aria-label="Workflows from your ComfyUI">
           {[...items].reverse().map((item) => {
             const isNew = fresh.some((f) => f.id === item.id)
             const inUse = item.id === activeBridgeId
@@ -472,6 +473,10 @@ function PublishStep({
         Open the workflow you want to use in ComfyUI. Then click <strong className="font-semibold text-foreground">{BRIDGE_PUBLISH_LABEL}</strong> in
         the top bar, next to Run. It&apos;s also in the File menu.
       </Lead>
+      <p className="-mt-2 flex items-start gap-2 text-pretty text-xs leading-relaxed text-muted-foreground">
+        <Monitor aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        {BRIDGE_LOCAL_NOTE}
+      </p>
       <SetupLoop name="publish" />
       {connected ? (
         <PublishedList

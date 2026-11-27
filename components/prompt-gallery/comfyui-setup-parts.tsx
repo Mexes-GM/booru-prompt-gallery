@@ -274,7 +274,7 @@ export function BridgeList({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-medium text-muted-foreground">Published from ComfyUI</span>
+        <span className="text-xs font-medium text-muted-foreground">From your ComfyUI</span>
         <Button type="button" variant="ghost" size="sm" onClick={onRefresh} disabled={loading} className="-my-1 h-7 gap-1.5 px-2 text-xs">
           <RefreshCw aria-hidden className={cn("h-3.5 w-3.5", loading && "motion-safe:animate-spin")} />
           Refresh
@@ -285,9 +285,9 @@ export function BridgeList({
       ) : items === null ? (
         <p className="text-xs text-muted-foreground">Loading…</p>
       ) : items.length === 0 ? (
-        <p className="text-xs leading-relaxed text-muted-foreground">Nothing published yet. {BRIDGE_PUBLISH_STEP}</p>
+        <p className="text-xs leading-relaxed text-muted-foreground">No workflows yet. {BRIDGE_PUBLISH_STEP}</p>
       ) : (
-        <ul className="flex flex-col" aria-label="Workflows published from ComfyUI">
+        <ul className="flex flex-col" aria-label="Workflows from your ComfyUI">
           {items.map((item) => {
             const existing = saved.find((w) => w.bridgeId === item.id)
             const when = updatedLabel(item.updated)
