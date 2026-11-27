@@ -243,10 +243,16 @@ async function main() {
       same(r.d, { state: "unsupported-browser" }, `iOS browser is unsupported: ${ua.slice(13, 25)}`)
     }
 
-    // Order: a denied permission beats the bridge check and never touches the network.
-    r = await diag(okRoutes, { permissions: perm("denied") })
+    // A denied permission explains a failed bridge request, without the no-cors probe
+    // (with the permission denied, the probe fails the same way).
+    r = await diag({}, { permissions: perm("denied") })
     same(r.d, { state: "local-network-denied" }, "denied permission")
-    assert(r.calls.length === 0, "denied permission makes no request")
+    assert(r.calls.length === 1 && r.calls[0].url.endsWith("/booru_bridge/info"), "denied permission: one bridge request, no probe")
+    // But a page served from loopback reaches ComfyUI even while Chromium reports "denied".
+    r = await diag(okRoutes, { permissions: perm("denied") })
+    same(r.d, { state: "ok", comfyVersion: "0.44.0", bridgeVersion: "1.2.0" }, "denied permission but the request works: ok")
+    r = await diag({ "/booru_bridge/info": () => new Response("nope", { status: 404 }) }, { permissions: perm("denied") })
+    same(r.d, { state: "bridge-missing" }, "denied permission but an HTTP answer: bridge missing")
 
     r = await diag(okRoutes, { permissions: { query: async () => { throw new TypeError("unsupported") } } })
     assert(r.d.state === "ok", "unsupported Permissions API does not block the check")

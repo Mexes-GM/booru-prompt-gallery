@@ -218,8 +218,9 @@ function isSafari(userAgent: string): boolean {
 
 /**
  * Works out why the connection does or does not work, in this order:
- * unsupported browser, denied local-network permission, then the bridge
- * endpoint, then a no-cors probe to tell "bridge missing" from "ComfyUI down".
+ * unsupported browser, the bridge endpoint (a failure there with a denied
+ * local-network permission means "denied"), then a no-cors probe to tell
+ * "bridge missing" from "ComfyUI down".
  */
 export async function diagnose(baseUrl: string, options: DiagnoseOptions): Promise<Diagnosis> {
   const userAgent = options.userAgent ?? (typeof navigator !== "undefined" ? navigator.userAgent : "")
@@ -235,12 +236,22 @@ export async function diagnose(baseUrl: string, options: DiagnoseOptions): Promi
   } catch {
     permission = null // not supported in this browser: carry on
   }
-  if (permission === "denied") return { state: "local-network-denied" }
   const promptFlag = permission === "prompt" ? ({ localNetworkPrompt: true } as const) : {}
 
   const client = createComfyClient(url, { fetch: options.fetch, timeoutMs: options.timeoutMs })
   try {
-    const info = await client.bridgeInfo()
+    // A "denied" permission is not the last word: pages served from loopback
+    // themselves (local development) reach ComfyUI without it, and Chromium
+    // still reports "denied" there. So try the bridge once; only when that
+    // fails does the denied permission explain why.
+    let info: BridgeInfo
+    try {
+      info = await client.bridgeInfo()
+    } catch (error) {
+      const answered = error instanceof ComfyError && error.kind === "http"
+      if (permission === "denied" && !answered) return { state: "local-network-denied" }
+      throw error
+    }
     if (compareSemver(info.version, options.minBridgeVersion) < 0) {
       return { state: "bridge-outdated", version: info.version }
     }
