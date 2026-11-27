@@ -568,7 +568,7 @@ const PackHeader = memo(function PackHeader({
             </Button>
           )}
           {/* Where the scenes come from: the site and the rating, read together. */}
-          <div className="flex h-8 items-stretch rounded-lg bg-muted/70 p-0.5 pointer-coarse:h-11">
+          <div className="flex h-8 items-stretch rounded-lg bg-muted/70 p-0.5 pointer-coarse:h-11 pointer-coarse:p-0">
             <ProviderMenu value={provider} rating={rating} onChange={onProviderChange} />
             <span aria-hidden className="my-1.5 w-px bg-border" />
             <RatingMenu value={rating} onChange={onRatingChange} />
