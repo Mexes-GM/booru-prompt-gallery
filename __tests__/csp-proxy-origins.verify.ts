@@ -73,17 +73,18 @@ const GELBOORU_CDN = 'https://gelbooru-test.cloudfront.net'
   assert(directives !== undefined, 'config loads with all proxies set')
   if (directives) {
     for (const name of ['img-src', 'connect-src']) {
-      const values = directives[name] ?? []
-      assert(values.includes(WORKER), `${name} allows the Worker origin`)
-      assert(values.includes(DANBOORU_CDN), `${name} allows the Danbooru CDN origin`)
-      assert(values.includes(GELBOORU_CDN), `${name} allows the Gelbooru CDN origin (path dropped)`)
+      // CSP sources are whole tokens: compare them exactly, never as substrings.
+      const values = new Set(directives[name] ?? [])
+      assert(values.has(WORKER), `${name} allows the Worker origin`)
+      assert(values.has(DANBOORU_CDN), `${name} allows the Danbooru CDN origin`)
+      assert(values.has(GELBOORU_CDN), `${name} allows the Gelbooru CDN origin (path dropped)`)
     }
     const all = Object.values(directives).flat()
     assert(!all.some((v) => v.includes('*.workers.dev')), 'no *.workers.dev wildcard anywhere')
     assert(!all.some((v) => v.includes('*.cloudfront.net')), 'no *.cloudfront.net wildcard anywhere')
     const scripts = directives['script-src'] ?? []
     assert(!scripts.some((v) => v.includes('workers.dev') || v.includes('cloudfront')), 'script-src allows no proxy')
-    assert(scripts.includes('https://challenges.cloudflare.com'), 'script-src still allows Turnstile')
+    assert(new Set(scripts).has('https://challenges.cloudflare.com'), 'script-src still allows Turnstile')
   }
 }
 
