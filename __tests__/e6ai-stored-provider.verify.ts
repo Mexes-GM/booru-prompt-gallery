@@ -55,3 +55,5 @@ check(() => {
 })
 
 console.log(`e6ai-stored-provider: ${passed} checks passed`)
+// A BroadcastChannel may be open; do not wait for it.
+process.exit(0)

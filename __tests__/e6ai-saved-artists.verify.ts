@@ -43,3 +43,5 @@ check(() => {
 })
 
 console.log(`e6ai-saved-artists: ${passed} checks passed`)
+// A BroadcastChannel may be open; do not wait for it.
+process.exit(0)
