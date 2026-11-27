@@ -9,7 +9,8 @@
  * profile without searching for their look (lib/pack/source-plan.ts MAX_LOOK_SEARCHES).
  *
  * Content rule: the index leaves out every character the data marks as young (characterAllowed),
- * and the picker checks again when it reads the index.
+ * and the picker checks again when it reads the index. It also holds only known characters of a
+ * series (isKnownCharacter): no original characters, no player's stand-ins.
  *
  * Pure: no React, no requests.
  */
@@ -24,7 +25,7 @@ export const CHARACTER_INDEX_VERSION = 1
 export interface IndexedCharacter {
   /** Danbooru's name, pack-normalized ("raiden shogun"). */
   tag: string
-  /** The series they are from ("genshin impact"), or null. */
+  /** The series they are from ("genshin impact"); null only in an index written by hand. */
   series: string | null
   /** Their posts on Danbooru when the index was built: the popularity order. */
   posts: number
@@ -99,6 +100,23 @@ export function characterAllowed(facts: CharacterFacts): boolean {
   return true
 }
 
+// ── Known characters ──────────────────────────────────────────────────────────
+
+/**
+ * A player's stand-in: a role the game or series gives the viewer ("admiral (kancolle)", "doctor
+ * (arknights)", "trainer (umamusume)"), drawn as anyone. Not a character with a look of their own.
+ */
+const STAND_IN_RE = /^(admiral|doctor|trainer|commander|producer|captain|protagonist|sensei|master|player|manager)( \([^)]*\))+$/
+
+/**
+ * True for a character of a known series with a look of their own: not an original character (no
+ * series, or "original"), and not a player's stand-in. The index keeps only these.
+ */
+export function isKnownCharacter(tag: string, series: string | null | undefined): boolean {
+  if (!series || series === 'original') return false
+  return !STAND_IN_RE.test(tag)
+}
+
 // ── Reading the index ─────────────────────────────────────────────────────────
 
 const ROLE_OF: Record<string, CastRole> = { g: 'girl', b: 'boy' }
@@ -115,7 +133,7 @@ export function readCharacterIndex(raw: unknown): CharacterIndex | null {
     if (!Array.isArray(row) || typeof row[0] !== 'string' || typeof row[2] !== 'number') continue
     const tag = normalizeTagForPack(row[0])
     const series = typeof row[1] === 'number' && row[1] >= 0 ? names[row[1]] || null : null
-    if (!tag || !characterAllowed({ tag, series })) continue
+    if (!tag || !characterAllowed({ tag, series }) || !isKnownCharacter(tag, series)) continue
     const character: IndexedCharacter = { tag, series, posts: row[2], role: ROLE_OF[row[3] as string] ?? null }
     if (typeof row[4] === 'string' && row[4]) character.rule34 = normalizeTagForPack(row[4])
     characters.push(character)

@@ -19,7 +19,7 @@ import { briefFromCharacters } from "../lib/pack/brief-history"
 import { briefIdentity, briefPackArgs, type ResolvedLook } from "../lib/pack/brief-pack"
 import {
   castCandidates, castMembers, characterAllowed, drawCast, drawReach, findSeries, readCharacterIndex, siteCharacterName,
-  YOUNG_SHARE, type CharacterIndex, type StoredCharacterIndex,
+  YOUNG_SHARE, type IndexedCharacter, type StoredCharacterIndex,
 } from "../lib/pack/cast-picker"
 import { assignTurns, generateTurnsAsync, turnShares } from "../lib/pack/cast-turns"
 import { normalizeTagForPack } from "../lib/pack/pack-generator"
@@ -125,7 +125,7 @@ check("the shipped index: Genshin Impact girls include the adults tested with an
 // ── 3. The draw ───────────────────────────────────────────────────────────────
 
 check("random draw: the same seed draws the same characters, another seed others; popular is the top", () => {
-  const many = Array.from({ length: 60 }, (_, i) => ({ tag: `c${String(i).padStart(2, "0")}`, series: null, posts: 1000 - i, role: "girl" as const }))
+  const many: IndexedCharacter[] = Array.from({ length: 60 }, (_, i) => ({ tag: `c${String(i).padStart(2, "0")}`, series: null, posts: 1000 - i, role: "girl" }))
   const a = drawCast(many, 6, "random", 42)
   assert.deepEqual(drawCast(many, 6, "random", 42), a, "deterministic for a seed")
   assert.notDeepEqual(drawCast(many, 6, "random", 43), a)
