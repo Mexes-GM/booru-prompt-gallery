@@ -149,6 +149,7 @@ function isBrief(v: unknown): v is PackBrief {
     && optional(v.baseScene, isNum)
     && optional(v.leftOutVariants, isStrings)
     && optional(v.outfitStyles, isStrings)
+    && optional(v.outfitDetail, (d) => d === 'simple' || d === 'full')
     && optional(v.peopleMix, (m) => Array.isArray(m) && m.every(isPeople))
 }
 

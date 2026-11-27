@@ -36,6 +36,9 @@ import {
   resolveLook,
   sceneEstimate as estimateScenes,
   poseNeedsCompany,
+  packLibraryOutfits,
+  packOutfitDetail,
+  packOutfitStyles,
   type BriefOutfit,
   type ResolvedLook,
 } from "@/lib/pack/brief-pack"
@@ -70,16 +73,15 @@ import {
   type ScenePackIssue,
 } from "@/lib/pack/scene-pack"
 import { clampMaxLongSide } from "@/lib/extension/generation-resolution"
-import { ADULT_OUTFIT_STYLES, OUTFIT_STYLES, outfitPackDraw, outfitTags as libraryOutfitTags, type Outfit, type OutfitDetail, type OutfitStyle } from "@/lib/outfit-swap"
+import type { OutfitStyle } from "@/lib/outfit-swap"
 import type { NaturalPromptSource } from "@/lib/prompt/natural-format"
-import type { PromptFormat } from "@/lib/prompt/prompt-format"
 import { getCharacterTraits, getNoCharacterTraits, loadCharacterTraits, loadTraitAliases, subscribeCharacterTraits } from "@/lib/prompt/natural-prompt-loader"
 import { userPreferences } from "@/lib/storage"
 import { fetchGelbooruTagCategories } from "@/lib/supabase/client-queries"
 import { yieldToPage, nextPaint } from "@/lib/utils/yield-to-page"
 import { useCharacterLooks } from "./use-character-looks"
 import { useDebounce } from "./use-debounce"
-import { useOutfitDescriptions, useOutfitLibrary } from "./use-outfit-settings"
+import { useOutfitLibrary } from "./use-outfit-settings"
 import type { PackRatingMode } from "./use-pack-seed-search"
 import { useTagRelations } from "./use-tag-relations"
 
@@ -90,7 +92,6 @@ const CANDIDATES_DELAY_MS = 150
 const GELBOORU_LOOKUP_TIMEOUT_MS = 8000
 /** New posts wait at most this long for the slots of their tags before the pool takes them anyway. */
 const SLOTS_WAIT_MS = 4000
-const LIBRARY_DRAW_SIZE = 60
 const NO_POSES: PoseComposition[] = []
 const NO_NAMES: string[] = []
 
@@ -115,9 +116,6 @@ export interface UsePackBriefScenesArgs {
   >
   globalWeights: Record<string, number>
   isGlobalWeightsEnabled: boolean
-  outfitOptions: { styles: readonly OutfitStyle[]; detail: OutfitDetail }
-  /** The format the builder shows its prompts in (its own, not the gallery's). */
-  promptFormat: PromptFormat
   /** Posts only the donor searches brought (they lend clothes or a place, never a scene of their own). */
   donorPosts?: readonly number[]
   /**
@@ -203,6 +201,8 @@ export interface UsePackBriefScenesResult {
   allowedStyles: readonly OutfitStyle[]
   /** The first character's official outfits, by name. */
   officialOutfits: string[]
+  /** The first character's usual outfit is known (their outfit data has loaded). */
+  usualOutfitKnown: boolean
   /** The permanence data has loaded. */
   ready: boolean
   /** The permanence lookup once its data has loaded, else null. */
@@ -295,7 +295,7 @@ function postTagNames(posts: readonly BooruPost[]): string[] {
 export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefScenesResult {
   const {
     brief, posts: livePosts, preferredPosts: livePreferred, provider, rating, includeSensitive, gallerySearch, promptCount, outfit, overrides,
-    enrichTagSlots, cleanOptions, globalWeights, isGlobalWeightsEnabled, outfitOptions, donorPosts: liveDonors,
+    enrichTagSlots, cleanOptions, globalWeights, isGlobalWeightsEnabled, donorPosts: liveDonors,
   } = args
   const restoredArgs = args.restored
   const sourceSettled = args.sourceSettled ?? true
@@ -636,6 +636,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   }, [namedKey])
   const firstOutfits = base ? outfitData.get(normalizeTagForPack(base)) ?? null : null
   const officialOutfits = useMemo(() => firstOutfits?.official.map((o) => o.name) ?? NO_NAMES, [firstOutfits])
+  const usualOutfitKnown = !!firstOutfits
   const characterOutfits = useMemo(() => {
     if (outfit.kind !== "usual" && outfit.kind !== "official") return undefined
     const map = new Map<string, string[]>()
@@ -648,25 +649,22 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     return map
   }, [outfit, identity.blocks, outfitData])
 
-  const useLibrary = outfit.kind === "library"
-  // The library also offers its styles in Wearing and lends outfits to the conditions: loaded with the pack.
+  // The library offers its styles in Wearing and lends outfits to the conditions: loaded with the pack.
+  // Every style is offered (not the gallery's Random outfit choice), the adult ones only above Safe.
   const outfitLibrary = useOutfitLibrary(true)
-  const allowedStyles = useMemo(
-    () => OUTFIT_STYLES.filter((style) => rating !== "sfw" || !ADULT_OUTFIT_STYLES.includes(style)),
-    [rating]
-  )
+  const allowedStyles = useMemo(() => packOutfitStyles(rating), [rating])
   const styleCounts = useMemo(() => {
     const out: Partial<Record<OutfitStyle, number>> = {}
     for (const o of outfitLibrary) if (allowedStyles.includes(o.style)) out[o.style] = (out[o.style] ?? 0) + 1
     return out
   }, [outfitLibrary, allowedStyles])
-  // Every outfit allowed at the rating, whole, for the conditions and the styles (ScenePackArgs.outfitLibrary).
-  const conditionLibrary = useMemo<LibraryOutfit[]>(
-    () => outfitLibrary
-      .filter((o) => allowedStyles.includes(o.style))
-      .map((o) => ({ outfitId: o.id, tags: libraryOutfitTags(o, "full").map(normalizeTagForPack), style: o.style })),
+  // Every outfit allowed at the rating, for the conditions and the styles (ScenePackArgs.outfitLibrary):
+  // whole, or at the brief's detail when it asks for styles (packOutfitDetail).
+  const libraries = useMemo<Readonly<Record<"simple" | "full", LibraryOutfit[]>>>(
+    () => ({ simple: packLibraryOutfits(outfitLibrary, allowedStyles, "simple"), full: packLibraryOutfits(outfitLibrary, allowedStyles, "full") }),
     [outfitLibrary, allowedStyles]
   )
+  const conditionLibrary = libraries[packOutfitDetail(coreBrief)]
   const conditions = useMemo(() => briefConditions(coreBrief, overrides), [coreBrief, overrides])
   // Other names of the conditions: asked once, never waited for.
   const conditionsKey = conditions.map(normalizeTagForPack).sort().join("|")
@@ -696,10 +694,6 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
       ...(where.length > 0 ? [conditionSupply({ ...base, role: "where", tags: where })] : []),
     ]
   }, [basePool, requests, conditions, coreBrief.outfitStyles, allowedStyles, conditionLibrary, overrides, conditionAliases, permanence])
-  const libraryStyles = useMemo(
-    () => (rating === "sfw" ? outfitOptions.styles.filter((s) => !ADULT_OUTFIT_STYLES.includes(s)) : outfitOptions.styles),
-    [rating, outfitOptions.styles]
-  )
 
   // ── Arguments ─────────────────────────────────────────────────────────────────
   const characterTags = useMemo(() => named.map(normalizeTagForPack), [named])
@@ -714,10 +708,6 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   )
   const argsFor = useCallback(
     (forBrief: PackBrief, seed: number, count: number, baseScene?: number): ScenePackArgs => {
-      const library: LibraryOutfit[] | undefined = useLibrary && outfitLibrary.length > 0
-        ? outfitPackDraw(outfitLibrary, libraryStyles, outfitOptions.detail, seed, LIBRARY_DRAW_SIZE)
-            .map(({ outfit: o, tags }) => ({ outfitId: o.id, tags: tags.map(normalizeTagForPack) }))
-        : undefined
       const prefs = sizePrefs()
       return briefPackArgs(forBrief, identity, {
         overrides,
@@ -728,19 +718,18 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
         preferredPosts,
         outfit,
         characterOutfits,
-        library,
         clean,
         resolution: (aspect) => resolutionForAspect(aspect, prefs),
         baseScene,
         conditions: briefConditions(forBrief, overrides),
         outfitStyles: (forBrief.outfitStyles ?? []).filter((style) => allowedStyles.includes(style as OutfitStyle)),
         donorPosts,
-        outfitLibrary: conditionLibrary,
+        outfitLibrary: libraries[packOutfitDetail(forBrief)],
         conditionAliases,
         compositions: oneAxis(forBrief) ? [] : briefCompositions(forBrief).filter((p) => holdsCast(p, castPeopleMemo)),
       })
     },
-    [useLibrary, outfitLibrary, libraryStyles, outfitOptions.detail, identity, overrides, permanence, people, preferredPosts, outfit, characterOutfits, clean, allowedStyles, donorPosts, conditionLibrary, conditionAliases, castPeopleMemo]
+    [identity, overrides, permanence, people, preferredPosts, outfit, characterOutfits, clean, allowedStyles, donorPosts, libraries, conditionAliases, castPeopleMemo]
   )
 
   // The pack made last (see "Generating and correcting" below).
@@ -1026,19 +1015,14 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   }, [op, sourceKey, brief, argsFor])
 
   // ── Natural-language formats ──────────────────────────────────────────────────
-  const { promptFormat } = args
-  const outfitDescriptions = useOutfitDescriptions(useLibrary && promptFormat !== "tags" && outfitLibrary.length > 0)
-  const outfitsById = useMemo(() => new Map<number, Outfit>(outfitLibrary.map((o) => [o.id, o])), [outfitLibrary])
   const naturalSourceOf = useCallback(
     (prompt: PackPrompt) => packNaturalSource(prompt, {
       provider,
       character: characterTags[0] ?? null,
       characters: characterTags,
       contentRating: rating,
-      outfits: outfitsById,
-      descriptions: outfitDescriptions,
     }),
-    [provider, characterTags, rating, outfitsById, outfitDescriptions]
+    [provider, characterTags, rating]
   )
 
   return useMemo(() => ({
@@ -1051,6 +1035,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     styleCounts,
     allowedStyles,
     officialOutfits,
+    usualOutfitKnown,
     ready: !!permanence,
     permanence,
     loadFailed: loadFailed && !permanence,
@@ -1081,7 +1066,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     reroll,
     naturalSourceOf,
   }), [
-    plan, looks, identity, replacedLook, othersTag, supply, styleCounts, allowedStyles, officialOutfits, permanence, loadFailed, retryLoad, pool, poses, people, available, peopleLine, peopleSelected, peopleBlocked, candidateState, axis, candidateArgs,
+    plan, looks, identity, replacedLook, othersTag, supply, styleCounts, allowedStyles, officialOutfits, usualOutfitKnown, permanence, loadFailed, retryLoad, pool, poses, people, available, peopleLine, peopleSelected, peopleBlocked, candidateState, axis, candidateArgs,
     candidatesPending, result, op, sourceKey, sceneEstimate, poolBehind, generate, recompose, restore, toggleLock, reroll, naturalSourceOf,
   ])
 }

@@ -10,7 +10,7 @@
  * It does not fetch: the parent hears the query through `onQueryChange` and passes
  * back `suggestions` and their `suggestionStatus`.
  */
-import { memo, useEffect, useId, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react"
+import { memo, useEffect, useId, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode } from "react"
 import { Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { showTag, splitTyped, type SuggestionStatus, type TagSuggestion } from "./slots"
@@ -40,6 +40,8 @@ export interface TagEntryProps {
    * is empty and those whose label matches while typing.
    */
   options?: readonly EntryOption[]
+  /** A control at the end of the field (empty Wearing's outfit menu). */
+  trailing?: ReactNode
   className?: string
 }
 
@@ -70,6 +72,7 @@ export const TagEntry = memo(function TagEntry({
   disabled = false,
   slotId,
   options = NO_OPTIONS,
+  trailing,
   className,
 }: TagEntryProps) {
   const listId = useId()
@@ -238,6 +241,7 @@ export const TagEntry = memo(function TagEntry({
             "placeholder:text-muted-foreground",
           )}
         />
+        {trailing}
       </div>
 
       <ul

@@ -158,10 +158,10 @@ export function tagWeightsButtonText(count: number, paused: boolean): { text: st
 }
 
 /**
- * The outfit library's styles and detail as tiles: Random outfit's tray here, and the pack
- * builder's options. `safeOnly` keeps the adult styles chosen but unused, with `safeNote` saying so.
+ * The outfit library's styles and detail as tiles, in Random outfit's tray. `safeOnly` keeps the
+ * adult styles chosen but unused, and says so.
  */
-export function OutfitStylePicker({
+function OutfitStylePicker({
   idPrefix,
   styles,
   onToggleStyle,
@@ -169,7 +169,6 @@ export function OutfitStylePicker({
   onDetailChange,
   count = null,
   safeOnly = false,
-  safeNote = "Lingerie and Sexy are off while NSFW is off.",
 }: {
   idPrefix: string
   styles: readonly OutfitStyle[]
@@ -179,7 +178,6 @@ export function OutfitStylePicker({
   /** Outfits the chosen styles can draw from; null until the library loads. */
   count?: number | null
   safeOnly?: boolean
-  safeNote?: string
 }) {
   return (
     <>
@@ -215,7 +213,7 @@ export function OutfitStylePicker({
         {safeOnly && (
           <p id={`${idPrefix}-outfit-nsfw-note`} className="flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
             <TriangleAlert className="mt-px h-3 w-3 shrink-0" aria-hidden="true" />
-            {safeNote}
+            Lingerie and Sexy are off while NSFW is off.
           </p>
         )}
       </div>

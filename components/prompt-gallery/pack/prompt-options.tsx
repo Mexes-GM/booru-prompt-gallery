@@ -14,11 +14,10 @@ import { toast } from "@/hooks/use-toast"
 import { usePresetsAndHistory } from "@/hooks/use-presets-and-history"
 import type { PackPromptSettings } from "@/hooks/use-pack-prompt-settings"
 import { MAX_MAX_LONG_SIDE, MIN_MAX_LONG_SIDE } from "@/lib/extension/generation-resolution"
-import { OUTFIT_STYLES, type OutfitStyle } from "@/lib/outfit-swap"
 import { splitCommaSeparatedTags } from "@/lib/utils/tag-utils"
 import { cn } from "@/lib/utils"
 import { loadGlobalWeightsModal } from "../gallery-modals-loader"
-import { OutfitStylePicker, PROMPT_OPTION_TEXT, SwitchRow, tagWeightsButtonText } from "../prompt-generation-options-panel"
+import { PROMPT_OPTION_TEXT, SwitchRow, tagWeightsButtonText } from "../prompt-generation-options-panel"
 import { TagsManagementPanel } from "../tags-management-panel"
 import { PROMPT_OPTIONS_TEXT, promptOptionsSummary } from "./pack-text"
 
@@ -40,14 +39,7 @@ const NO_FILTERS = {
   setAppliedCharacterCountFilter: noop,
 } as const
 
-export const PackPromptOptions = memo(function PackPromptOptions({
-  settings,
-  safeOnly,
-}: {
-  settings: PackPromptSettings
-  /** The pack's rating is Safe: adult outfit styles are kept but not used. */
-  safeOnly: boolean
-}) {
+export const PackPromptOptions = memo(function PackPromptOptions({ settings }: { settings: PackPromptSettings }) {
   const [open, setOpen] = useState(false)
   const bodyId = useId()
   const summary = promptOptionsSummary({
@@ -87,7 +79,7 @@ export const PackPromptOptions = memo(function PackPromptOptions({
       {open && (
         <div id={bodyId} className="space-y-5 border-t border-border/60 px-3.5 pb-4 pt-3">
           <p className="text-xs text-muted-foreground text-pretty">{PROMPT_OPTIONS_TEXT.intro}</p>
-          <PromptOptionsBody settings={settings} safeOnly={safeOnly} />
+          <PromptOptionsBody settings={settings} />
         </div>
       )}
     </section>
@@ -95,17 +87,12 @@ export const PackPromptOptions = memo(function PackPromptOptions({
 })
 
 /** Mounted only while open: the presets and the weights dialog load when asked for. */
-function PromptOptionsBody({ settings, safeOnly }: { settings: PackPromptSettings; safeOnly: boolean }) {
+function PromptOptionsBody({ settings }: { settings: PackPromptSettings }) {
   const presets = usePresetsAndHistory({ isClient: true, addInput: settings.addInput, setAddInput: settings.setAddInput, toast })
   const [weightsOpen, setWeightsOpen] = useState(false)
   const [weightsOpened, setWeightsOpened] = useState(false)
   const weightsButton = tagWeightsButtonText(settings.globalWeightCount, settings.isGlobalWeightsPaused)
   const idPrefix = useId()
-  const toggleStyle = (style: OutfitStyle) => {
-    const chosen = settings.outfitStyles
-    const next = chosen.includes(style) ? chosen.filter((s) => s !== style) : [...chosen, style]
-    settings.setOutfitStyles(OUTFIT_STYLES.filter((s) => next.includes(s)))
-  }
 
   return (
     <>
@@ -171,22 +158,6 @@ function PromptOptionsBody({ settings, safeOnly }: { settings: PackPromptSetting
           </Button>
         </div>
         <SizeRow id={`${idPrefix}-size`} value={settings.maxLongSide} onChange={settings.setMaxLongSide} />
-      </div>
-
-      <div className="flex flex-col gap-3 border-t border-border/60 pt-3">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-sm text-foreground">{PROMPT_OPTIONS_TEXT.outfitLabel}</span>
-          <span className="text-xs text-muted-foreground">{PROMPT_OPTIONS_TEXT.outfitHint}</span>
-        </div>
-        <OutfitStylePicker
-          idPrefix={`${idPrefix}-outfits`}
-          styles={settings.outfitStyles}
-          onToggleStyle={toggleStyle}
-          detail={settings.outfitDetail}
-          onDetailChange={settings.setOutfitDetail}
-          safeOnly={safeOnly}
-          safeNote={PROMPT_OPTIONS_TEXT.outfitSafeNote}
-        />
       </div>
 
       {weightsOpened && (

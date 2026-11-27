@@ -5,7 +5,7 @@ export { TagEntry, type TagEntryProps } from "./tag-entry"
 export { ChoiceGroup, type Choice } from "./choice-group"
 export { PeopleLine, type PeopleLineProps, type PeopleOption } from "./people-line"
 export { ChangesSelect, type ChangesSelectProps } from "./changes-select"
-export { WearingSourceMenu } from "./wearing-source-menu"
+export { OutfitDetailMenu, WearingSourceMenu } from "./wearing-source-menu"
 export { ContactSheet, type ContactSheetProps, type ContactSheetStatus, type SceneThumb } from "./contact-sheet"
 export { FitLine, type FitLineProps } from "./fit-line"
 export { ResultRow, type ResultRowProps } from "./result-row"
@@ -42,7 +42,6 @@ export {
   fitText,
   generateLabel,
   outfitSourceLabel,
-  outfitSourceValue,
   peopleKey,
   poseNeedsText,
   type FitState,

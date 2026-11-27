@@ -4,15 +4,12 @@ import { useCallback, useMemo } from "react"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import { usePromptOptions } from "@/hooks/use-prompt-options"
 import { useGlobalWeights } from "@/hooks/use-global-weights"
-import { useOutfitSettings } from "@/hooks/use-outfit-settings"
 import { useDebounce } from "@/hooks/use-debounce"
-import { useStableCallback } from "@/hooks/use-stable-callback"
 import { toast } from "@/hooks/use-toast"
 import { STORAGE_KEYS, userPreferences } from "@/lib/storage"
 import { MAX_MAX_LONG_SIDE, clampMaxLongSide } from "@/lib/extension/generation-resolution"
 import type { TagAppendRule } from "@/lib/cleanPrompt"
 import type { BulkSendCleanOptions } from "@/lib/pack/bulk-send"
-import type { OutfitDetail, OutfitStyle } from "@/lib/outfit-swap"
 
 /** Typed text waits this long before the prompts follow it, as on the gallery's cards. */
 const TEXT_DELAY_MS = 500
@@ -49,10 +46,6 @@ export interface PackPromptSettings {
   onGlobalWeightChange: (tag: string, weight: number) => void
   onRemoveGlobalWeight: (tag: string) => void
   onClearGlobalWeights: () => void
-  outfitStyles: readonly OutfitStyle[]
-  setOutfitStyles: (styles: OutfitStyle[]) => void
-  outfitDetail: OutfitDetail
-  setOutfitDetail: (detail: OutfitDetail) => void
   /** Longest side of the sizes suggested for each prompt, 512 to 1536. */
   maxLongSide: number
   setMaxLongSide: (value: number) => void
@@ -64,7 +57,6 @@ export interface UsePackPromptSettingsResult {
   cleanOptions: PackCleanOptions
   globalWeights: Record<string, number>
   isGlobalWeightsEnabled: boolean
-  outfitOptions: { styles: readonly OutfitStyle[]; detail: OutfitDetail }
 }
 
 /**
@@ -87,14 +79,11 @@ export function usePackPromptSettings(): UsePackPromptSettingsResult {
   const smartTagExclusion = promptOptions.smartTagExclusion ?? true
   const experimentalPromptRules = promptOptions.experimentalPromptRules ?? false
   const weights = useGlobalWeights(toast)
-  const outfit = useOutfitSettings()
 
   const setIncludeCharacters = useCallback((value: boolean) => setPromptOptions((prev) => ({ ...prev, includeCharacters: value })), [setPromptOptions])
   const setSmartTagExclusion = useCallback((value: boolean) => setPromptOptions((prev) => ({ ...prev, smartTagExclusion: value })), [setPromptOptions])
   const setExperimentalPromptRules = useCallback((value: boolean) => setPromptOptions((prev) => ({ ...prev, experimentalPromptRules: value })), [setPromptOptions])
   const setMaxLongSide = useCallback((value: number) => setStoredMaxLongSide(clampMaxLongSide(value)), [setStoredMaxLongSide])
-  const setOutfitStyles = useStableCallback(outfit.setOutfitStyles)
-  const { outfitStyles, outfitDetail, setOutfitDetail } = outfit
   // Values saved before the 512–1536 limit (e.g. 2048) read as the nearest allowed one.
   const maxLongSide = clampMaxLongSide(storedMaxLongSide)
 
@@ -110,14 +99,13 @@ export function usePackPromptSettings(): UsePackPromptSettingsResult {
     onGlobalWeightChange: weights.handleGlobalWeightChange,
     onRemoveGlobalWeight: weights.handleRemoveGlobalWeight,
     onClearGlobalWeights: weights.handleClearGlobalWeights,
-    outfitStyles, setOutfitStyles, outfitDetail, setOutfitDetail,
     maxLongSide, setMaxLongSide,
   }), [
     addInput, setAddInput, excludeInput, setExcludeInput, findInput, setFindInput, replaceInput, setReplaceInput, tagAppendRules, setTagAppendRules,
     includeCharacters, setIncludeCharacters, smartTagExclusion, setSmartTagExclusion, experimentalPromptRules, setExperimentalPromptRules,
     weights.globalWeights, weights.isGlobalWeightsEnabled, weights.setIsGlobalWeightsEnabled, weights.globalWeightCount, weights.isGlobalWeightsPaused,
     weights.handleGlobalWeightChange, weights.handleRemoveGlobalWeight, weights.handleClearGlobalWeights,
-    outfitStyles, setOutfitStyles, outfitDetail, setOutfitDetail, maxLongSide, setMaxLongSide,
+    maxLongSide, setMaxLongSide,
   ])
 
   const debouncedAdd = useDebounce(addInput, TEXT_DELAY_MS)
@@ -134,7 +122,5 @@ export function usePackPromptSettings(): UsePackPromptSettingsResult {
     smartTagExclusion,
     experimentalPromptRules,
   }), [debouncedExclude, debouncedAdd, debouncedFind, debouncedReplace, includeCharacters, optimizeTags, smartTagExclusion, experimentalPromptRules])
-  const outfitOptions = useMemo(() => ({ styles: outfitStyles, detail: outfitDetail }), [outfitStyles, outfitDetail])
-
-  return { settings, cleanOptions, globalWeights: weights.globalWeights, isGlobalWeightsEnabled: weights.isGlobalWeightsEnabled, outfitOptions }
+  return { settings, cleanOptions, globalWeights: weights.globalWeights, isGlobalWeightsEnabled: weights.isGlobalWeightsEnabled }
 }

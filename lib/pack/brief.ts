@@ -61,6 +61,12 @@ export interface PackBrief {
   leftOutVariants?: string[]
   /** Wearing: styles of the outfit library ("swimwear"): every prompt wears a whole outfit of one of them. */
   outfitStyles?: string[]
+  /**
+   * How much of each library outfit of `outfitStyles` goes in a prompt: its main pieces ('simple',
+   * the default when missing) or all of it ('full'). This pack's own; the gallery's Random outfit
+   * keeps its own setting.
+   */
+  outfitDetail?: 'simple' | 'full'
   /** More make-ups the pack mixes with `people` (ScenePackArgs.compositions); none: `people` alone. */
   peopleMix?: PackPeople[]
 }
@@ -693,6 +699,12 @@ export function removeOutfitStyle(brief: PackBrief, style: string): PackBrief {
   if (rest.length > 0) next.outfitStyles = rest
   else delete next.outfitStyles
   return next
+}
+
+/** Sets how much of each library outfit the pack's styles put in a prompt (PackBrief.outfitDetail). */
+export function setOutfitDetail(brief: PackBrief, detail: 'simple' | 'full'): PackBrief {
+  if (brief.outfitDetail === detail) return brief
+  return { ...cloneBrief(brief), outfitDetail: detail }
 }
 
 /**

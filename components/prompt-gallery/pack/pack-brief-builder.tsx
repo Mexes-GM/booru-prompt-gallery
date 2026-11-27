@@ -94,6 +94,9 @@ import {
   preferredPostIds,
   promptTokens,
   shortConditionRoles,
+  menuOutfit,
+  NEW_PACK_OUTFIT,
+  shownOutfit,
   type BriefOutfit,
   type ConditionSupply,
   type FitNote,
@@ -118,7 +121,7 @@ import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contac
 import { FitLine } from "./fit-line"
 import { GenerateBar, ResultsToolbar } from "./generate-bar"
 import { PackBriefPanel } from "./pack-brief-panel"
-import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, DEFAULTS_TEXT, SIZE_TEXT, STYLE_TEXT, PEOPLE_TEXT, COMPOSITION_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
+import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, DEFAULTS_TEXT, SIZE_TEXT, STYLE_TEXT, PEOPLE_TEXT, COMPOSITION_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState } from "./pack-text"
 import type { BriefPackResult } from "@/hooks/use-pack-brief-scenes"
 import type { BriefOffer } from "./pack-brief-panel"
 import { ResultRow } from "./result-row"
@@ -774,7 +777,9 @@ function BriefWorkspace({
   const { brief, preferences } = pack
   const count = preferences.promptCount
   const restored = start.kind === "restored" ? start.saved : null
-  const [outfit, setOutfit] = useState<BriefOutfit>(() => restored?.outfit ?? { kind: "scene" })
+  // A new pack starts with the characters' usual outfit. A pack saved with the library as its
+  // outfit (no longer offered here) reads as "each scene's".
+  const [outfit, setOutfit] = useState<BriefOutfit>(() => (restored ? menuOutfit(restored.outfit) : NEW_PACK_OUTFIT))
   // A pack kept across a reload gets its pool back once the source is done loading (from the last render).
   const [sourceSettled, setSourceSettled] = useState(false)
   // Collecting: the pool can't have enough scenes yet, whatever they turn out to be, so pages keep
@@ -805,9 +810,9 @@ function BriefWorkspace({
   const [ownFormat, setFormat] = useState<PromptFormat | undefined>(undefined)
   const promptFormat = packPromptFormat({ promptFormat: ownFormat }, galleryFormat)
   const copy = useCallback((text: string, format: PromptFormat) => copyPackText(text, format, provider), [provider])
-  // The app's prompt settings (Tags to add and exclude, Find & Replace, weights, outfits…), the
-  // same ones the gallery uses: read and edited here, never passed in.
-  const { settings: promptSettings, cleanOptions, globalWeights, isGlobalWeightsEnabled, outfitOptions } = usePackPromptSettings()
+  // The app's prompt settings (Tags to add and exclude, Find & Replace, weights…), the same ones
+  // the gallery uses: read and edited here, never passed in. The pack's clothes are set in Wearing.
+  const { settings: promptSettings, cleanOptions, globalWeights, isGlobalWeightsEnabled } = usePackPromptSettings()
 
   const engine = usePackBriefScenes({
     brief,
@@ -828,8 +833,6 @@ function BriefWorkspace({
     cleanOptions,
     globalWeights,
     isGlobalWeightsEnabled,
-    outfitOptions,
-    promptFormat,
   })
   const { plan, identity, candidates, candidatesPending, result, isGenerating, othersTag } = engine
   // The start's tags placed before the permanence data loaded go where it says, once it has.
@@ -1411,6 +1414,8 @@ function BriefWorkspace({
     })),
     [chosenStyles, engine.allowedStyles, removeStyle]
   )
+  const { setOutfitDetail } = pack
+  const outfitDetail = useMemo(() => ({ value: brief.outfitDetail ?? "simple", onChange: setOutfitDetail }), [brief.outfitDetail, setOutfitDetail])
   const unusedStyles = chosenStyles.filter((style) => !engine.allowedStyles.includes(style as OutfitStyle))
   const styleNote = unusedStyles.length > 0 ? STYLE_TEXT.unused(unusedStyles) : undefined
 
@@ -1536,7 +1541,7 @@ function BriefWorkspace({
               onSetRole={setRole}
               onRemoveTrait={removeLook}
               onRestoreTrait={restoreLook}
-              outfitSource={outfit as OutfitSource}
+              outfitSource={shownOutfit(outfit, engine.usualOutfitKnown)}
               onOutfitSourceChange={setOutfit}
               officialOutfits={engine.officialOutfits}
               outfitNote={axis === "outfit" ? SHEET_TEXT.outfitChanges : undefined}
@@ -1549,6 +1554,7 @@ function BriefWorkspace({
               styleOptions={styleOptions}
               styleChips={styleChips}
               styleNote={styleNote}
+              outfitDetail={outfitDetail}
               rowDefaults={rowDefaultsProps}
               offers={offers}
               suggestions={suggestions.suggestions}
@@ -1556,7 +1562,7 @@ function BriefWorkspace({
               onQueryChange={suggestions.onQueryChange}
             />
           )}
-          {showBrief && <PackPromptOptions settings={promptSettings} safeOnly={rating === "sfw"} />}
+          {showBrief && <PackPromptOptions settings={promptSettings} />}
         </div>
 
         <div

@@ -9,6 +9,7 @@ import { normalizeTagForPack, type PackPrompt } from './pack-generator'
 import { getTagSlotFromOverrides } from '../tag-taxonomy'
 import type { BooruProvider } from '../booru/types'
 import type { PackRatingMode } from '../../hooks/use-pack-seed-search'
+import { ADULT_OUTFIT_STYLES, OUTFIT_STYLES, outfitTags, type Outfit, type OutfitDetail, type OutfitStyle } from '../outfit-swap'
 import { planRatings } from './source-plan'
 import { withResolutionPrefix } from './prompt-resolution'
 import { addCharacter, addNever, addTag, briefFromCard, briefFromPrompt, setPeople, toSceneRequests, type ChangesAxis, type PackBrief } from './brief'
@@ -199,12 +200,57 @@ export function lookReplacedByWearing(
   return look.filter((tag) => isWornByCharacter(tag, overrides, permanence))
 }
 
-/** Where the clothes come from while Wearing is empty (the brief's outfit menu). */
+/**
+ * Where the clothes come from while Wearing is empty (the brief's outfit menu). 'library' is no
+ * longer offered (the library is chosen in Wearing, by style); a pack saved with it reads as 'scene'
+ * (menuOutfit).
+ */
 export type BriefOutfit =
   | { kind: 'scene' }
   | { kind: 'usual' }
   | { kind: 'official'; name: string }
   | { kind: 'library' }
+
+/** The outfit menu's choice for `outfit`: one the menu offers, 'scene' for anything else. */
+export const menuOutfit = (outfit: BriefOutfit | null | undefined): Exclude<BriefOutfit, { kind: 'library' }> =>
+  !outfit || outfit.kind === 'library' ? { kind: 'scene' } : outfit
+
+/**
+ * What a new pack's characters wear while Wearing is empty: their usual outfit, the one they are
+ * known by. Without a named character, or one whose outfit isn't known, the engine takes each
+ * scene's own (outfitSetting), and the menu says so (shownOutfit).
+ */
+export const NEW_PACK_OUTFIT: BriefOutfit = { kind: 'usual' }
+
+/** The outfit choice as the menu shows it: the usual outfit reads as each scene's when there is none to take. */
+export function shownOutfit(outfit: BriefOutfit, usualOutfitKnown: boolean): Exclude<BriefOutfit, { kind: 'library' }> {
+  const choice = menuOutfit(outfit)
+  return choice.kind === 'usual' && !usualOutfitKnown ? { kind: 'scene' } : choice
+}
+
+// ── The outfit library in a pack ──────────────────────────────────────────────
+
+/** The library styles a pack offers in Wearing: every one, less the adult ones at the Safe rating. */
+export function packOutfitStyles(rating: PackRatingMode): OutfitStyle[] {
+  return OUTFIT_STYLES.filter((style) => rating !== 'sfw' || !ADULT_OUTFIT_STYLES.includes(style))
+}
+
+/**
+ * How much of each library outfit the pack puts in a prompt: the brief's choice (main pieces by
+ * default) when it asks for library styles. Without styles the library only lends the garments
+ * Wearing asks for, so its outfits stay whole.
+ */
+export function packOutfitDetail(brief: Pick<PackBrief, 'outfitStyles' | 'outfitDetail'>): OutfitDetail {
+  return brief.outfitStyles?.length ? brief.outfitDetail ?? 'simple' : 'full'
+}
+
+/** The library's outfits of `styles` at `detail`, as the engine takes them (ScenePackArgs.outfitLibrary). */
+export function packLibraryOutfits(library: readonly Outfit[], styles: readonly OutfitStyle[], detail: OutfitDetail): LibraryOutfit[] {
+  const allowed = new Set(styles)
+  return library
+    .filter((o) => allowed.has(o.style))
+    .map((o) => ({ outfitId: o.id, tags: outfitTags(o, detail).map(normalizeTagForPack), style: o.style }))
+}
 
 /** The engine's clothing option for an outfit choice, and what it needs to apply. */
 export function outfitSetting(
