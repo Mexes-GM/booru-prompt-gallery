@@ -5,8 +5,8 @@
  * scenes that fit on a contact sheet, a line on how well they fit, Generate, and the
  * prompts. It owns the pack's whole state (usePackBrief), its source (usePackSources),
  * the characters' looks and the engine (usePackBriefScenes); the gallery only gives
- * it the environment (taxonomy, booru, prompt settings, copy, exit) and the characters
- * it starts with.
+ * it the environment (taxonomy, booru, search, exit) and the characters it starts with; it
+ * reads and edits the app's prompt settings itself (usePackPromptSettings, "Customize prompt").
  *
  * A full screen of its own: while it is open the gallery is hidden behind it and does no work
  * (PromptGallery), and focus stays inside until it closes. Before generating it shows the brief,
@@ -34,6 +34,8 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { useStableCallback } from "@/hooks/use-stable-callback"
 import { useNaturalPrompt, usePromptFormat } from "@/hooks/use-natural-prompt"
 import { useTagSlotEnrichment } from "@/hooks/use-tag-slot-enrichment"
+import { usePackPromptSettings } from "@/hooks/use-pack-prompt-settings"
+import { PackPromptOptions } from "./prompt-options"
 import { packPromptFormat } from "@/lib/pack/pack-config-migration"
 import { storedPackRating, withPackRating } from "@/lib/pack/pack-rating"
 import { track } from "@/lib/analytics"
@@ -94,10 +96,9 @@ import {
   type BriefOutfit,
   type FitNote,
 } from "@/lib/pack/brief-pack"
-import type { BulkSendCleanOptions } from "@/lib/pack/bulk-send"
 import type { PackPrompt } from "@/lib/pack/pack-generator"
 import type { SourcePlan } from "@/lib/pack/source-plan"
-import type { OutfitDetail, OutfitStyle } from "@/lib/outfit-swap"
+import type { OutfitStyle } from "@/lib/outfit-swap"
 import type { NaturalPromptSource } from "@/lib/prompt/natural-format"
 import { convertPromptOnce, preloadNaturalPrompt } from "@/lib/prompt/natural-prompt-loader"
 import { PROMPT_FORMATS, PROMPT_FORMAT_INFO, type PromptFormat } from "@/lib/prompt/prompt-format"
@@ -176,13 +177,6 @@ export interface PackBriefBuilderProps {
   onRatingChange?: (rating: PackRatingMode) => void
   /** The gallery's search, for a brief without a named character. */
   gallerySearch: string
-  cleanOptions: Pick<
-    BulkSendCleanOptions,
-    "excludeInput" | "addInput" | "findInput" | "replaceInput" | "includeCharacters" | "optimizeTags" | "smartTagExclusion" | "experimentalPromptRules"
-  >
-  globalWeights: Record<string, number>
-  isGlobalWeightsEnabled: boolean
-  outfitOptions: { styles: readonly OutfitStyle[]; detail: OutfitDetail }
   onExit: () => void
   /** Opens the pack's card or character in the classic builder. */
   onOpenClassic?: () => void
@@ -561,10 +555,6 @@ function BriefWorkspace({
   rating,
   gallerySearch,
   onProviderChange,
-  cleanOptions,
-  globalWeights,
-  isGlobalWeightsEnabled,
-  outfitOptions,
   open,
   start,
   startNote,
@@ -602,6 +592,9 @@ function BriefWorkspace({
   const promptFormat = packPromptFormat(preferences, galleryFormat)
   const { setPromptFormat: setFormat } = pack
   const copy = useCallback((text: string, format: PromptFormat) => copyPackText(text, format, provider), [provider])
+  // The app's prompt settings (Tags to add and exclude, Find & Replace, weights, outfits…), the
+  // same ones the gallery uses: read and edited here, never passed in.
+  const { settings: promptSettings, cleanOptions, globalWeights, isGlobalWeightsEnabled, outfitOptions } = usePackPromptSettings()
 
   const engine = usePackBriefScenes({
     brief,
@@ -1341,6 +1334,7 @@ function BriefWorkspace({
           onQueryChange={suggestions.onQueryChange}
         />
       )}
+      {showBrief && <PackPromptOptions settings={promptSettings} safeOnly={rating === "sfw"} />}
 
       {/* One live region for the fit line and the run: the lines themselves stay quiet. */}
       <p className="sr-only" role="status" aria-live="polite">

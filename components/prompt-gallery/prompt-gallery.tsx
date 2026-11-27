@@ -2787,10 +2787,6 @@ export function PromptGallery() {
           initialRating={packSourceAnswers.ratingMode}
           onRatingChange={handlePackBriefRating}
           gallerySearch={search.searchTags}
-          cleanOptions={packCleanOptions}
-          globalWeights={globalWeights}
-          isGlobalWeightsEnabled={isGlobalWeightsEnabled}
-          outfitOptions={packOutfitOptions}
           onExit={handleExitPackBrief}
           onOpenClassic={stableOpenClassicBuilder}
         />
