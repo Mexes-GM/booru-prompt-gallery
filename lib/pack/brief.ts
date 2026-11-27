@@ -12,6 +12,7 @@ import { briefRouteOf, tagRole, type TagRole, type TagRoleContext } from './tag-
 import { loadedTagRelations, type TagRelations } from '../tag-relations'
 import { MAX_CAST, MAX_TURNS_CAST, type CastRole } from './scene/cast'
 import type { PackPeople } from './scene/scene-pool'
+import type { CastGender, CastSource } from './cast-picker'
 
 /** What a requested tag is about. Decides how the engine treats it. */
 export type RequestRole = 'wearing' | 'doing' | 'where' | 'also'
@@ -74,6 +75,23 @@ export interface PackBrief {
    * prompt; 'turns' gives each prompt one of them, in turn (castTurns, lib/pack/cast-turns.ts).
    */
   castMode?: CastMode
+  /**
+   * Who has no named character and each prompt gets a different known character, drawn from the
+   * most posted ones or a series (lib/pack/random-cast.ts). Ends when a character is named.
+   */
+  randomCast?: RandomCast
+}
+
+/** Random known characters, one per prompt. */
+export interface RandomCast {
+  source: CastSource
+  /** 'auto': the gender the People line leaves room for (randomCastGender). */
+  gender: CastGender | 'auto'
+  /**
+   * The characters drawn for the pack, in prompt order, as the pack's site names them. Generate
+   * again draws others (the rows that are locked keep theirs). Stored, so a reload shows the same.
+   */
+  drawn: CastMember[]
 }
 
 /** How the named characters share a pack: all in every prompt, or one per prompt in turn. */
@@ -305,6 +323,7 @@ function cloneBrief(brief: PackBrief): PackBrief {
     ...(brief.leftOutVariants ? { leftOutVariants: [...brief.leftOutVariants] } : {}),
     ...(brief.outfitStyles ? { outfitStyles: [...brief.outfitStyles] } : {}),
     ...(brief.peopleMix ? { peopleMix: brief.peopleMix.map((p) => ({ ...p })) } : {}),
+    ...(brief.randomCast ? { randomCast: { ...brief.randomCast, drawn: brief.randomCast.drawn.map((m) => ({ ...m })) } } : {}),
   }
 }
 
@@ -404,6 +423,8 @@ export function addCharacter(brief: PackBrief, name: string): PackBrief {
   const tag = normalizeTagForPack(name)
   if (!tag) return brief
   const next = cloneBrief(brief)
+  // A named character ends random characters.
+  delete next.randomCast
   if (next.who.some((c) => c.tag !== null && same(c.tag, tag))) return next
   const [first] = next.who
   if (next.who.length === 1 && first.tag === null) {

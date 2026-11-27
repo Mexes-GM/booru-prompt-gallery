@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   addCast, addCharacter, addLook, addNever, addOther, addTag, addTagExactly, setRequestExact, toggleComposition, addOutfitStyle, removeOutfitStyle, setOutfitDetail, briefFromCard, chooseChanges, leaveOutVariant, restoreVariant, setBaseScene, briefFromPrompt, emptyBrief, leaveOutScene, removeCharacter, removeLook, removeNever,
   removeTag, restoreLook, restoreScene, setCastMode, setCharacterRole, setPeople, settleStart, toSceneRequests,
-  type CastMember, type CastMode, type ChangesAxis, type PackBrief, type RequestRole, type SceneRequests,
+  type CastMember, type CastMode, type RandomCast, type ChangesAxis, type PackBrief, type RequestRole, type SceneRequests,
 } from '@/lib/pack/brief'
 import {
   briefFromCharacters, commit, lastChange, seedDefaults, startHistory, undo as undoHistory,
@@ -11,6 +11,7 @@ import {
 } from '@/lib/pack/brief-history'
 import { migratePackPreferences, sanitizePackPreferences } from '@/lib/pack/pack-config-migration'
 import { normalizeTagForPack } from '@/lib/pack/pack-generator'
+import { setRandomCast } from '@/lib/pack/random-cast'
 import type { CastRole } from '@/lib/pack/scene/cast'
 import type { Permanence } from '@/lib/pack/scene/permanence'
 import type { PackPeople } from '@/lib/pack/scene/scene-pool'
@@ -28,6 +29,8 @@ export const BRIEF_LABELS = {
   removeCharacter: (name: string) => `Removed ${name}`,
   addCharacter: (name: string) => `Added ${name}`,
   addCast: (count: number) => (count === 1 ? 'Added 1 character' : `Added ${count} characters`),
+  randomCast: 'Chose random characters',
+  noRandomCast: 'Removed random characters',
   addLook: (tag: string) => `Added ${tag}`,
   removeLook: (tag: string) => `Removed ${tag}`,
   restoreLook: (tag: string) => `Put ${tag} back`,
@@ -75,6 +78,13 @@ export interface UsePackBriefResult {
   addCharacter: (name: string) => void
   /** Adds several characters as one change (one Undo); with two or more, one per prompt (addCast). */
   addCast: (members: readonly CastMember[]) => void
+  /** Random known characters, one per prompt (lib/pack/random-cast.ts), or none with null. */
+  setRandomCast: (randomCast: RandomCast | null) => void
+  /**
+   * A new draw of the random characters (Generate again). Not a change of the user's: no Undo entry,
+   * and the briefs Undo goes back to get the same draw.
+   */
+  redrawCast: (drawn: readonly CastMember[]) => void
   /** `character` null picks the unnamed character. */
   addLook: (character: string | null, tag: string) => void
   removeLook: (character: string | null, tag: string) => void
@@ -273,6 +283,15 @@ export function usePackBrief(
     },
     [change]
   )
+  const setRandomCastAction = useCallback(
+    (randomCast: RandomCast | null) => change(randomCast ? BRIEF_LABELS.randomCast : BRIEF_LABELS.noRandomCast, (b) => setRandomCast(b, randomCast)),
+    [change]
+  )
+  const redrawCast = useCallback((drawn: readonly CastMember[]) => {
+    const current = historyRef.current
+    const redraw = (brief: PackBrief) => (brief.randomCast ? setRandomCast(brief, { ...brief.randomCast, drawn: [...drawn] }) : brief)
+    setHistoryNow({ ...current, present: redraw(current.present), past: current.past.map((c) => ({ ...c, brief: redraw(c.brief) })) })
+  }, [setHistoryNow])
   const addLookAction = useCallback(
     (character: string | null, tag: string) => change(BRIEF_LABELS.addLook(tag.trim()), (b) => addLook(b, character, tag)),
     [change]
@@ -388,7 +407,7 @@ export function usePackBrief(
   return {
     brief, requests, canUndo: history.past.length > 0, lastChange: lastChange(history), undo,
     add, addOther: addOtherAction, addExactly, setExact, addStyle, removeStyle, setOutfitDetail: setOutfitDetailAction, toggleComposition: toggleCompositionAction, addTags, changeTo, remove, never, unnever, removeCharacter: removeCharacterAction, setRole,
-    addCharacter: addCharacterAction, addCast: addCastAction, addLook: addLookAction, removeLook: removeLookAction, restoreLook: restoreLookAction,
+    addCharacter: addCharacterAction, addCast: addCastAction, setRandomCast: setRandomCastAction, redrawCast, addLook: addLookAction, removeLook: removeLookAction, restoreLook: restoreLookAction,
     setPeople: setPeopleAction, setChanges: setChangesAction, setCastMode: setCastModeAction,
     leaveOutScene: leaveOutSceneAction, restoreScene: restoreSceneAction,
     setBaseScene: setBaseSceneAction, leaveOutVariant: leaveOutVariantAction, restoreVariant: restoreVariantAction,

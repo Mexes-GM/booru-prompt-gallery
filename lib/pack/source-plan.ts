@@ -471,7 +471,8 @@ function finishPlan(brief: PackBrief, env: SourcePlanEnv, p: {
   // The pool gives the base character's look only when all of it shows them alone; everyone
   // else (a cast waiting for its roles) still has their look read apart.
   const baseLookFromPool = !!base && scenes.every((s) => showsAlone(s, base))
-  const fromProfile = (i: number) => i >= MAX_LOOK_SEARCHES && !!env.profiled?.[i]
+  // Random characters (PackBrief.randomCast) are all drawn from their profile: no look search at all.
+  const fromProfile = (i: number) => !!brief.randomCast || (i >= MAX_LOOK_SEARCHES && !!env.profiled?.[i])
   const appearance = p.named
     .filter((_, i) => !(baseLookFromPool && i === 0) && !fromProfile(i))
     .map((tag) => appearanceSearch(tag, provider, ratings[0]))
@@ -514,7 +515,8 @@ function finishPlan(brief: PackBrief, env: SourcePlanEnv, p: {
  *  - nothing asked: each character's own search, alone ("name, solo") when the pack has a one-person
  *    make-up, else by name, in brief order; with more characters than MAX_SCENE_SEARCHES, one search
  *    for all of them instead (`everyone`: "solo", or the head count of People), so no character's
- *    scenes come from another's posts and the searches don't grow with the cast.
+ *    scenes come from another's posts and the searches don't grow with the cast; the same for
+ *    random characters (PackBrief.randomCast), which get no search of their own at all.
  * Every character's look is read from their own appearance search, but past MAX_LOOK_SEARCHES
  * (finishPlan).
  */
@@ -573,8 +575,8 @@ function planTurns(brief: PackBrief, env: SourcePlanEnv, named: string[]): Sourc
     // Nothing to search the scenes by: each character's own posts.
     const onePerson = mixed ? (env.compositions ?? []).some((g) => g.girls + g.boys === 1) : !people
     const alone = limit >= 2 && onePerson
-    if (named.length > MAX_SCENE_SEARCHES) {
-      // More characters than searches: one search the scenes of all of them come from.
+    if (named.length > MAX_SCENE_SEARCHES || brief.randomCast) {
+      // More characters than searches, or random ones: one search the scenes of all of them come from.
       for (const group of mixGroups) wanted.push({ search: { ...forGroup(sceneSearch(provider, 'theme', groupLead(group, provider, rating, null), []), group), everyone: true } })
       const lead = people ? groupLead(people, provider, rating, null) : onePerson ? ['solo'] : []
       if (lead.length > 0 || wanted.length === 0) wanted.push({ search: { ...sceneSearch(provider, 'theme', lead, []), everyone: true } })

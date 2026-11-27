@@ -256,6 +256,8 @@ export interface UsePackBriefScenesResult {
   /** Replaces one prompt with another scene. False when there is none left. */
   reroll: (index: number) => boolean
   naturalSourceOf: (prompt: PackPrompt) => NaturalPromptSource
+  /** Every named character's trait profile has been looked for (found or not): their look won't change while it loads. */
+  looksReady: boolean
 }
 
 function sizePrefs() {
@@ -388,6 +390,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   // first MAX_LOOK_SEARCHES counts as having one.
   const profiledKey = plannedNamed.map((c, i) => (profileOf(c.tag!) || (i >= MAX_LOOK_SEARCHES && !traitsLooked.has(c.tag!)) ? "1" : "0")).join("")
   const profiled = useMemo(() => profiledKey.split("").map((x) => x === "1"), [profiledKey])
+  const looksReady = named.every((n) => traitsLooked.has(n))
   // The appearance searches don't depend on the roles but for whether the pool is the
   // base character's: ask for both plans' searches, so a role that arrives later finds them.
   const lookSearches = useMemo(() => {
@@ -1200,8 +1203,9 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     toggleLock,
     reroll,
     naturalSourceOf,
+    looksReady,
   }), [
     plan, looks, identity, replacedLook, othersTag, supply, styleCounts, allowedStyles, officialOutfits, usualOutfitKnown, permanence, loadFailed, retryLoad, pool, poses, people, available, peopleLine, peopleSelected, peopleBlocked, candidateState, axis, candidateArgs,
-    candidatesPending, result, op, sourceKey, sceneEstimate, poolBehind, generate, recompose, restore, toggleLock, reroll, naturalSourceOf,
+    candidatesPending, result, op, sourceKey, sceneEstimate, poolBehind, generate, recompose, restore, toggleLock, reroll, naturalSourceOf, looksReady,
   ])
 }
