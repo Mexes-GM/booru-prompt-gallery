@@ -224,6 +224,8 @@ import { usePresetsAndHistory } from "@/hooks/use-presets-and-history"
 import { useHistoryPosts } from "@/hooks/use-history-posts"
 import { useFilteredPosts } from "@/hooks/use-filtered-posts"
 import { usePromptFormat } from "@/hooks/use-natural-prompt"
+import { useComfyEnabled } from "@/hooks/use-comfyui-settings"
+import { ComfyUIPanelHost } from "@/components/prompt-gallery/comfyui-panel-host"
 import { PROMPT_FORMAT_INFO, hasWordBudget, type PromptFormat } from "@/lib/prompt/prompt-format"
 import { NaturalPromptStatus } from "@/components/prompt-gallery/prompt-format-setting"
 
@@ -1113,6 +1115,7 @@ export function PromptGallery() {
 
   // Natural Language AI Mode State
   const [isAiConvertMode, setIsAiConvertMode] = useState(false)
+  const comfyMode = useComfyEnabled()
   const aiConvertFooterMounted = useMountedOnceActive(isAiConvertMode)
   const [aiConvertTags, setAiConvertTags] = useState("")
   const [aiConvertImage, setAiConvertImage] = useState<string | undefined>(undefined)
@@ -1684,8 +1687,9 @@ export function PromptGallery() {
       isNaturalLanguageMode={isAiConvertMode}
       onSendToConvert={handleSendToConvert}
       showCategoryTagBadges={cardShowCategoryTagBadges}
+      comfyMode={comfyMode}
     />
-  }, [effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, outfitSettings, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase, handleMakePack])
+  }, [comfyMode, effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, outfitSettings, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase, handleMakePack])
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
@@ -2270,6 +2274,7 @@ export function PromptGallery() {
           }
         }}
       />
+      {comfyMode && <ComfyUIPanelHost />}
       {mergeFooterMounted && <MergeStickyFooter
         isOpen={mergeMode.isMergeMode}
         selectedPosts={mergeMode.selectedPosts}
