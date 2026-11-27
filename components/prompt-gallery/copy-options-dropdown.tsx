@@ -86,7 +86,11 @@ export function CopyOptionsDropdown({
       <DropdownMenuTrigger asChild disabled={disabled}>
         {trigger}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className={cn(copyAs && "w-60", contentClassName)}>
+      <DropdownMenuContent
+        align="end"
+        // With Send as the menu is tall: it scrolls instead of running off short screens.
+        className={cn(copyAs && "w-60 max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto", contentClassName)}
+      >
         {copyAs ? (
           <>
             {sendAs && (
