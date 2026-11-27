@@ -432,7 +432,12 @@ export const PackBriefBuilder = memo(function PackBriefBuilder(props: PackBriefB
           aria-modal="true"
           aria-labelledby={titleId}
           inert={!open}
+          // A click on an empty part of the panel gives focus to the panel itself, as a dialog does:
+          // with nowhere to go, focus would fall to the page and be brought back to the last control,
+          // and a list closed by that click (a field's suggestions) would open again.
+          tabIndex={-1}
           className={cn(
+            "outline-none",
             // Phone: a sheet over the whole screen, clear of the notch and the home indicator.
             "absolute inset-0 flex flex-col overflow-clip bg-background",
             "max-sm:pt-[env(safe-area-inset-top)] max-sm:pl-[env(safe-area-inset-left)] max-sm:pr-[env(safe-area-inset-right)]",
