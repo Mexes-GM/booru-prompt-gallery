@@ -17,6 +17,7 @@ import { getTagSlotFromOverrides, type TagCategory } from '../tag-taxonomy'
 import { classifyPostForPack, normalizeTagForPack } from './pack-generator'
 import { TRAIT_SHARE, isGroupCountTag, postCharacters } from './character-focus'
 import { loadedTagBaseline, type TagBaseline } from './pack-vocabulary'
+import { peopleVocabulary, postPeople } from './scene/people'
 
 /** Most identity tags a character contributes, strongest first. */
 export const MAX_IDENTITY_TAGS = 8
@@ -193,33 +194,69 @@ export function splitSignature(tags: readonly string[], overrides: Record<string
 
 const PERSON_COUNT_RE = /^1(girl|boy|other)$/
 
-/** Whether the post's tags put more than one person in the picture ("2girls", "multiple boys", "1girl" with "1boy"). */
-function showsSeveralPeople(post: BooruPost): boolean {
+/**
+ * Whether the post's tags put more than one person in the picture, read in the
+ * vocabulary of the site the post comes from (lib/pack/scene/people.ts).
+ *
+ * Danbooru-like sites count everyone: "2girls", "multiple boys" or "1girl" with
+ * "1boy" (or "1other") say there is company. Rule34 writes one girl "1girls" and
+ * says who else is there with gender tags ("male") and group tags ("threesome"),
+ * so the Danbooru reading would take every Rule34 post for a group picture. A post
+ * whose tags say nothing about the people counts as one person, on any site: its
+ * character tags already name only them.
+ */
+function showsSeveralPeople(post: BooruPost, provider?: BooruProvider): boolean {
   const tags = (post.tag_string || '').split(/\s+/).filter(Boolean).map(normalizeTagForPack)
-  return tags.some(isGroupCountTag) || new Set(tags.filter((t) => PERSON_COUNT_RE.test(t))).size > 1
+  if (peopleVocabulary(provider) !== 'rule34') {
+    return tags.some(isGroupCountTag) || new Set(tags.filter((t) => PERSON_COUNT_RE.test(t))).size > 1
+  }
+  const { people, atLeast, reason } = postPeople(tags, provider)
+  if (people) return people.girls + people.boys > 1
+  // No composition: an open count ("6+girls"), tags that disagree ("1girls" with
+  // "threesome") or more than one person known for sure ("1girls, male") is company.
+  return reason === 'open' || reason === 'contradiction' || atLeast.girls + atLeast.boys > 1
+}
+
+/** Whether a post's character tags name `name` (pack-normalized) and no one else. */
+const namesOnly = (post: BooruPost, name: string) => {
+  const people = postCharacters(post)
+  return people.length === 1 && people[0] === name
 }
 
 /** The posts that show `name` (pack-normalized) and nobody else: no other named character, no unnamed company. */
-function postsAlone(posts: readonly BooruPost[], name: string): BooruPost[] {
-  return posts.filter((p) => {
-    const people = postCharacters(p)
-    return people.length === 1 && people[0] === name && !showsSeveralPeople(p)
-  })
+function postsAlone(posts: readonly BooruPost[], name: string, provider?: BooruProvider): BooruPost[] {
+  return posts.filter((p) => namesOnly(p, name) && !showsSeveralPeople(p, provider))
+}
+
+/**
+ * How far the reading of who is in each picture agrees with the site itself: of the
+ * posts that name only `character` and that the site tags "solo", the share postsAlone
+ * keeps. Null when there are none. Such a post is the character alone by the site's
+ * own word, so a low share means the people tags are being misread and the posts left
+ * are an odd few, not the character's look (see resolveLook). Posts without "solo"
+ * stay out of it: a search by name alone brings real company too.
+ */
+export function postsAloneShare(posts: readonly BooruPost[], character: string, provider?: BooruProvider): number | null {
+  const name = normalizeTagForPack(character)
+  const solo = posts.filter((p) => namesOnly(p, name) && (p.tag_string || '').split(/\s+/).includes('solo'))
+  return solo.length === 0 ? null : postsAlone(solo, name, provider).length / solo.length
 }
 
 /**
  * A character's typical look: the hair, eyes, signature accessories and body
  * traits their solo posts agree on (identityTags). Null when there are too
- * few posts of them alone to tell.
+ * few posts of them alone to tell. `provider` is the site the posts come from:
+ * who is in each picture is read in its vocabulary (Danbooru's when omitted).
  */
 export function typicalLook(
   posts: readonly BooruPost[],
   character: string,
   overrides: Record<string, string>,
-  baseline: TagBaseline | null = loadedTagBaseline()
+  baseline: TagBaseline | null = loadedTagBaseline(),
+  provider?: BooruProvider
 ): string[] | null {
   const name = normalizeTagForPack(character)
-  const alone = postsAlone(posts, name)
+  const alone = postsAlone(posts, name, provider)
   if (alone.length < MIN_TYPICAL_POSTS) return null
   const seen = new Map<string, number>()
   for (const post of alone) {
@@ -271,9 +308,14 @@ export function subjectForPool(subject: readonly string[], soloShare: number | n
  * The subject tags most of a character's solo posts carry ("1girl"), most
  * common first. Null when there are too few posts of them alone to tell.
  */
-export function typicalSubject(posts: readonly BooruPost[], character: string, overrides: Record<string, string>): string[] | null {
+export function typicalSubject(
+  posts: readonly BooruPost[],
+  character: string,
+  overrides: Record<string, string>,
+  provider?: BooruProvider
+): string[] | null {
   const name = normalizeTagForPack(character)
-  const alone = postsAlone(posts, name)
+  const alone = postsAlone(posts, name, provider)
   if (alone.length < MIN_TYPICAL_POSTS) return null
   const seen = new Map<string, number>()
   for (const post of alone) {
