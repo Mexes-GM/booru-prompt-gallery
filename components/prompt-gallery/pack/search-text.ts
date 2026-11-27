@@ -28,7 +28,7 @@ const listWords = (tags: readonly string[]) =>
  * gallery search". `character` is the name the card shows.
  */
 export function searchDescription(
-  search: Pick<SceneSearch, "kind" | "poses"> & { tags?: readonly string[]; people?: PackPeople },
+  search: Pick<SceneSearch, "kind" | "poses"> & { tags?: readonly string[]; people?: PackPeople; concept?: SceneSearch["concept"] },
   character: string | null,
   planPeople: PackPeople | null
 ): string {
@@ -46,6 +46,8 @@ export function searchDescription(
       return "Your gallery search"
     case "theme":
     case "anchor":
+      // One character per prompt with clothes or a place asked for: the search is of them.
+      if (!doing && search.concept) return `${donorDescription(search.concept.role, search.concept.tags)}${withPeople}`
       return `Anyone${doing}${withPeople}`
   }
 }

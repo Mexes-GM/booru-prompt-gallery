@@ -56,6 +56,7 @@ import {
   briefRole,
   type SuggestedKind,
   setPeople as setPeopleInBrief,
+  castTurns,
   type PackBrief,
 } from "@/lib/pack/brief"
 import { DEFAULT_ROWS, briefFromCharacters, rowDefaults, rowMatchesDefaults, type DefaultRow } from "@/lib/pack/brief-history"
@@ -121,7 +122,7 @@ import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contac
 import { FitLine } from "./fit-line"
 import { GenerateBar, ResultsToolbar } from "./generate-bar"
 import { PackBriefPanel } from "./pack-brief-panel"
-import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, DEFAULTS_TEXT, SIZE_TEXT, STYLE_TEXT, PEOPLE_TEXT, COMPOSITION_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState } from "./pack-text"
+import { BLOCKED, BUILDER_TEXT, CAST_MODE_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, DEFAULTS_TEXT, SIZE_TEXT, STYLE_TEXT, PEOPLE_TEXT, COMPOSITION_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState } from "./pack-text"
 import type { BriefPackResult } from "@/hooks/use-pack-brief-scenes"
 import type { BriefOffer } from "./pack-brief-panel"
 import { ResultRow } from "./result-row"
@@ -1185,7 +1186,7 @@ function BriefWorkspace({
       // "dark-skinned male" next to girls is how the others look, as when typed.
       next = addOtherInBrief(brief, tag)
       apply = () => addOther(tag)
-    } else if (route.kind === "look" && identity.castSize >= 2) {
+    } else if (route.kind === "look" && (identity.castSize >= 2 || !!identity.turns)) {
       // With several characters a look tag goes to the one it came from, never to a guess.
       const owner = lookOwner(tag, identity.blocks)
       const ownerTag = owner ? brief.who.find((c) => c.tag && normalizeTagForPack(c.tag) === owner)?.tag ?? null : null
@@ -1208,7 +1209,7 @@ function BriefWorkspace({
       briefBefore: brief, briefAfter: null, status: "waiting", message: null,
     })
     apply()
-  }, [result, engine.busy, engine.sourceChanged, engine.poolPending, overrides, brief, cast, identity.castSize, identity.blocks, promptFormat, never, setPeople, addLook, addExactly, othersTag, addOther])
+  }, [result, engine.busy, engine.sourceChanged, engine.poolPending, overrides, brief, cast, identity.castSize, identity.turns, identity.blocks, promptFormat, never, setPeople, addLook, addExactly, othersTag, addOther])
   // Stable: `correct` follows the brief, the slots and the engine, which change with every page of
   // posts, and the rows would all render again for it.
   const onAlways = useStableCallback((tag: string) => correct("always", tag))
@@ -1429,8 +1430,16 @@ function BriefWorkspace({
     const parts = briefSummaryParts(brief, label, characterInfo)
     // The folded line says when only one part changes.
     const changes = CHANGES_OPTIONS.find((o) => o.value === brief.changes)
-    return axis && changes ? [...parts, changes.label.toLowerCase()] : parts
+    // And when each prompt has one of the characters.
+    const withTurns = castTurns(brief) ? [...parts, CAST_MODE_TEXT.turns.toLowerCase()] : parts
+    return axis && changes ? [...withTurns, changes.label.toLowerCase()] : withTurns
   }, [brief, identity.cast, characterInfo, axis])
+  // Each character's name as the card shows it, by brief tag (their own searches say it).
+  const characterNames = useMemo(() => {
+    const out: Record<string, string> = {}
+    for (const c of brief.who) if (c.tag) out[c.tag] = characterName(c.tag, characterInfo[c.tag])
+    return out
+  }, [brief.who, characterInfo])
 
   // ── The contact sheet ───────────────────────────────────────────────────────────
   const thumbs = useMemo<SceneThumb[]>(
@@ -1546,6 +1555,7 @@ function BriefWorkspace({
               officialOutfits={engine.officialOutfits}
               outfitNote={axis === "outfit" ? SHEET_TEXT.outfitChanges : undefined}
               assumedRoles={assumedRoles}
+              onCastModeChange={pack.setCastMode}
               changes={changesControl}
               people={people}
               others={othersRow}
@@ -1608,6 +1618,7 @@ function BriefWorkspace({
               plan={plan}
               progress={source?.searches ?? NO_PROGRESS}
               character={firstName}
+              characterNames={characterNames}
               site={PROVIDER_LABELS[provider]}
               limit={getProviderTagLimit(provider)}
             />
@@ -1959,6 +1970,7 @@ const BriefResultRow = memo(function BriefResultRow({
   return (
     <ResultRow
       index={index}
+      character={prompt.character ? characterName(prompt.character) : undefined}
       tokens={tokens}
       text={text}
       postId={prompt.scene?.postId}

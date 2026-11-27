@@ -9,7 +9,7 @@
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { AlertTriangle, MapPin, Repeat2 } from "lucide-react"
-import type { BriefCharacter, ChangesAxis, PackBrief, RequestRole } from "@/lib/pack/brief"
+import type { BriefCharacter, CastMode, ChangesAxis, PackBrief, RequestRole } from "@/lib/pack/brief"
 import type { CastRole } from "@/lib/pack/scene/cast"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
@@ -21,7 +21,7 @@ import { RequestChip, type RequestChipTone } from "./request-chip"
 import type { EntryOption } from "./tag-entry"
 import { SLOTS, characterName, showTag, slotTags, type CharacterInfo, type SlotId, type SuggestionStatus, type TagSuggestion } from "./slots"
 import { OutfitDetailMenu, WearingSourceMenu } from "./wearing-source-menu"
-import { DEFAULTS_TEXT, OTHERS_UNUSED, WEARING_TEXT, outfitSourceLabel } from "./pack-text"
+import { CAST_MODE_TEXT, DEFAULTS_TEXT, OTHERS_UNUSED, WEARING_TEXT, outfitSourceLabel } from "./pack-text"
 import type { OutfitSource } from "./pack-text"
 import type { OutfitDetail } from "@/lib/outfit-swap"
 
@@ -64,6 +64,8 @@ export interface PackBriefPanelProps {
   outfitNote?: string
   /** With several characters: the role the pack assumes for each one, when the brief doesn't set it. */
   assumedRoles?: Readonly<Record<string, CastRole | null | undefined>>
+  /** With two or more named characters: all of them in every prompt, or one per prompt in turn. */
+  onCastModeChange?: (mode: CastMode) => void
 
   offers?: readonly BriefOffer[]
   /** A note per tag that clashes with something else on the card. */
@@ -126,6 +128,11 @@ const ROLE_CHOICES: Choice<CastRole>[] = [
   { value: "boy", label: "Boy" },
 ]
 
+const CAST_MODE_CHOICES: Choice<CastMode>[] = [
+  { value: "together", label: CAST_MODE_TEXT.together },
+  { value: "turns", label: CAST_MODE_TEXT.turns },
+]
+
 /** Requests wear their row's prompt category, as tags do on the gallery's cards. */
 const ROW_TONE: Record<RequestRole | "style" | "others", RequestChipTone> = {
   wearing: "clothing",
@@ -160,6 +167,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
     officialOutfits,
     outfitNote,
     assumedRoles,
+    onCastModeChange,
     offers = [],
     conflicts = {},
     onOpenScenePicker,
@@ -309,6 +317,8 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
           onRemoveTrait={onRemoveTrait}
           onRestoreTrait={onRestoreTrait}
           assumedRoles={assumedRoles}
+          castMode={brief.castMode ?? "together"}
+          onCastModeChange={onCastModeChange}
           flashKey={flashFor("who")}
         />
         {requestRow("wearing", {
@@ -471,6 +481,8 @@ interface WhoRowProps {
   onRemoveTrait: (character: string | null, tag: string) => void
   onRestoreTrait: (character: string | null, tag: string) => void
   assumedRoles?: Readonly<Record<string, CastRole | null | undefined>>
+  castMode: CastMode
+  onCastModeChange?: (mode: CastMode) => void
   flashKey?: number
 }
 
@@ -488,11 +500,16 @@ function WhoRow({
   onRemoveTrait,
   onRestoreTrait,
   assumedRoles = {},
+  castMode,
+  onCastModeChange,
   flashKey,
 }: WhoRowProps) {
   const named = who.filter((c) => c.tag !== null)
   const showRoles = who.length >= 2
   const full = named.length >= maxCharacters
+  // Two or more characters: together in every prompt, or one per prompt in turn.
+  const castChoice = named.length >= 2 && onCastModeChange
+  const turns = castChoice && castMode === "turns"
 
   const lines = useMemo(
     () =>
@@ -532,7 +549,15 @@ function WhoRow({
       filled={filled}
       entry={entryFor("who", last)}
       placeholder={!filled ? undefined : full ? "Add a look tag" : undefined}
-      notes={full ? <SlotNote>A pack can have up to {maxCharacters} characters.</SlotNote> : undefined}
+      actions={castChoice ? (
+        <ChoiceGroup size="sm" choices={CAST_MODE_CHOICES} value={castMode} onChange={onCastModeChange} label={CAST_MODE_TEXT.label} />
+      ) : undefined}
+      notes={full || turns ? (
+        <>
+          {turns && <SlotNote>{CAST_MODE_TEXT.turnsNote}</SlotNote>}
+          {full && <SlotNote>A pack can have up to {maxCharacters} characters.</SlotNote>}
+        </>
+      ) : undefined}
       flashKey={flashKey}
     >
       {lines.map(({ c, name, usual, added, removed, replaced }, i) => {
