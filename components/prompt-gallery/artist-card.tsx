@@ -197,7 +197,7 @@ export function ArtistGrid({ artists, onSearch, onRemove }: ArtistGridProps) {
                 </div>
                 <h3 className="text-lg font-semibold mb-2">No artists saved yet</h3>
                 <p className="text-sm text-muted-foreground max-w-md">
-                    Click the palette icon on any post to save its artist. You&apos;ll find them all here, ready
+                    Use the palette icon on any post to save its artist. You&apos;ll find them all here, ready
                     to search when you forget their name.
                 </p>
             </div>

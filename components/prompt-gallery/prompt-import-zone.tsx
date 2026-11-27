@@ -78,10 +78,10 @@ export function PromptImportZone({
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold text-foreground">
-              Extract from Image
+              Extract from image
             </h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Drag an image or click to upload
+              Drop an image here or browse for one
             </p>
           </div>
           <input

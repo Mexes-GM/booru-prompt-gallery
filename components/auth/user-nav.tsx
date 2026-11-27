@@ -48,12 +48,12 @@ export function UserNav() {
         {/* The hover fill is clipped by its own wrapper rather than by the
             button, so the button's ::after can reach 44px on touch screens. */}
         {/* aria-label: on phones the button is icon-only, and hidden text names nothing. */}
-        <Button variant="ghost" size="sm" aria-label="Sign In" className="gap-2 relative group pointer-coarse:after:absolute pointer-coarse:after:-inset-x-0.5 pointer-coarse:after:-inset-y-1">
+        <Button variant="ghost" size="sm" aria-label="Sign in" className="gap-2 relative group pointer-coarse:after:absolute pointer-coarse:after:-inset-x-0.5 pointer-coarse:after:-inset-y-1">
           <span className="absolute inset-0 overflow-hidden rounded-[inherit]" aria-hidden="true">
             <span className="absolute inset-0 bg-primary/10 translate-y-[100%] group-hover:translate-y-0 transition-transform duration-300" />
           </span>
           <UserIcon className="h-4 w-4 text-muted-foreground group-hover:text-primary-text transition-colors" aria-hidden="true" />
-          <span className="hidden sm:inline font-medium text-muted-foreground group-hover:text-foreground transition-colors">Sign In</span>
+          <span className="hidden sm:inline font-medium text-muted-foreground group-hover:text-foreground transition-colors">Sign in</span>
         </Button>
       </LoginDialog>
     )
@@ -71,8 +71,8 @@ export function UserNav() {
     } catch (error) {
       console.error("Logout error:", error)
       toastError({
-        title: "Sign out failed",
-        description: "Could not sign out. Please try again.",
+        title: "Couldn't sign out",
+        description: "Try again in a moment.",
         errorSource: "user_logout",
       })
     }
@@ -133,7 +133,7 @@ export function UserNav() {
 
         <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer p-2 text-destructive-text focus:bg-destructive/5 focus:text-destructive-text">
           <LogOut className="mr-2 h-4 w-4" />
-          <span>Log out</span>
+          <span>Sign out</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -208,7 +208,7 @@ const MergeStickyFooterComponent = ({
                         <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="flex items-center gap-2">
                                 <span className="font-bold text-sm sm:text-base">
-                                    {mergeModeType === 'merge' ? 'Merge Prompt' : 'Variations Mode'}
+                                    {mergeModeType === 'merge' ? 'Merge' : 'Variations'}
                                 </span>
                                 <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
                                     {selectedPosts.size} posts
@@ -230,8 +230,8 @@ const MergeStickyFooterComponent = ({
                                     </TooltipTrigger>
                                     <TooltipContent>
                                         {mergeModeType === 'merge' 
-                                            ? 'Switch to Variations Mode ({ tagA | tagB })' 
-                                            : 'Switch to Merge Mode (combines tags into one prompt)'}
+                                            ? 'Switch to Variations ({ tagA | tagB })' 
+                                            : 'Switch to Merge (combines tags into one prompt)'}
                                     </TooltipContent>
                                 </Tooltip>
                             </div>
@@ -254,6 +254,7 @@ const MergeStickyFooterComponent = ({
                                                 variant="outline"
                                                 size="sm"
                                                 className="h-8 px-2 rounded-l-none bg-primary/5 hover:bg-primary/10 border-primary/20 text-primary-text"
+                                                aria-label="Randomizer settings"
                                             >
                                                 <Settings2 className="w-3.5 h-3.5" />
                                             </Button>
@@ -261,7 +262,7 @@ const MergeStickyFooterComponent = ({
                                         <PopoverContent className="w-72 p-0 overflow-hidden border-primary/20 shadow-2xl" align="end" sideOffset={8}>
                                             <div className="bg-gradient-to-r from-primary/10 to-transparent p-3 border-b border-primary/10 flex items-center gap-2">
                                                 <Dices className="w-4 h-4 text-primary-text" />
-                                                <span className="text-sm font-semibold text-primary-text">Randomizer Settings</span>
+                                                <span className="text-sm font-semibold text-primary-text">Randomizer settings</span>
                                             </div>
                                             
                                             <div className="p-4 space-y-6">
@@ -369,7 +370,7 @@ const MergeStickyFooterComponent = ({
                                         </motion.div>
                                     </div>
                                 </Button>
-                                <Button variant="ghost" size="icon" onClick={onExit} className="h-8 w-8 rounded-full hover:bg-muted" aria-label="Exit merge mode">
+                                <Button variant="ghost" size="icon" onClick={onExit} className="h-8 w-8 rounded-full hover:bg-muted" aria-label="Exit Merge mode">
                                     <X className="w-4 h-4" />
                                 </Button>
                             </div>

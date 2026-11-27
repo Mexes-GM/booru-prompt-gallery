@@ -164,20 +164,20 @@ export function SaveFavoriteButton({
             <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
                 <DialogContent className="sm:max-w-[400px]">
                     <DialogHeader>
-                        <DialogTitle>Create Folder</DialogTitle>
+                        <DialogTitle>Create folder</DialogTitle>
                     </DialogHeader>
                     <div className="flex flex-col gap-5 py-4">
                         <div className="flex flex-col gap-2">
                             <Label htmlFor="folder-name">Name</Label>
                             <Input
                                 id="folder-name"
-                                placeholder="E.g. Cool Art, Reference..."
+                                placeholder="e.g. References"
                                 value={newFolderName}
                                 onChange={e => setNewFolderName(e.target.value)}
                             />
                         </div>
                         <div className="flex flex-col gap-2">
-                            <Label>Choose an Icon</Label>
+                            <Label>Icon</Label>
                             <div className="grid grid-cols-8 gap-2 mt-1">
                                 {Object.keys(iconMap).map(iconName => {
                                     return (
@@ -240,7 +240,7 @@ function FolderPopoverContent({
             onValueChange={setActiveValue}
         >
             <CommandInput
-                placeholder="Search folders..."
+                placeholder="Search folders…"
                 value={searchQuery}
                 onValueChange={setSearchQuery}
                 className="border-none focus:ring-0 h-9 text-xs"
@@ -253,7 +253,7 @@ function FolderPopoverContent({
                     <p className="text-xs text-muted-foreground text-center">No folders found</p>
                 </CommandEmpty>
                 <CommandItem value="clear-hover" className="hidden" aria-hidden="true" />
-                <CommandGroup heading="All Folders">
+                <CommandGroup heading="All folders">
                     <CommandItem
                         value="Uncategorized"
                         onSelect={() => onSelectFolder(null)}

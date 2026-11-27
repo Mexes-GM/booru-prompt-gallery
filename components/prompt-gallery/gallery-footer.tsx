@@ -9,8 +9,8 @@ export function GalleryFooter() {
     <footer className="mt-12 py-8 border-t border-border/40">
       <div className="flex flex-col sm:flex-row items-center justify-center gap-4 max-sm:pointer-coarse:gap-1 sm:gap-8 text-sm text-muted-foreground">
         <a href="/about" className="pointer-coarse:px-2 pointer-coarse:py-3 hover:text-primary-text transition-colors">About</a>
-        <a href="/privacy" className="pointer-coarse:px-2 pointer-coarse:py-3 hover:text-primary-text transition-colors">Privacy Policy</a>
-        <a href="/terms" className="pointer-coarse:px-2 pointer-coarse:py-3 hover:text-primary-text transition-colors">Terms of Service</a>
+        <a href="/privacy" className="pointer-coarse:px-2 pointer-coarse:py-3 hover:text-primary-text transition-colors">Privacy policy</a>
+        <a href="/terms" className="pointer-coarse:px-2 pointer-coarse:py-3 hover:text-primary-text transition-colors">Terms of service</a>
         <span>&copy; {new Date().getFullYear()} Booru Prompt Gallery</span>
       </div>
     </footer>

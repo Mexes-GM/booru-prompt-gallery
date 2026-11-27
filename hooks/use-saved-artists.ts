@@ -155,7 +155,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
         )
         if (error) {
           console.error("[useSavedArtists] save error:", error)
-          toastError({ title: "Error saving artist", description: error.message, errorSource: "save_artist" })
+          toastError({ title: "Couldn't save the artist", description: "Try again in a moment.", errorSource: "save_artist", context: { message: error.message } })
           // Rollback
           setSavedArtists((prev) =>
             prev.filter((a) => buildKey(a.provider, a.artistTag) !== buildKey(artist.provider, artist.artistTag)),
@@ -184,7 +184,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
           .match({ user_id: userId, provider, artist_tag: artistTag })
         if (error) {
           console.error("[useSavedArtists] remove error:", error)
-          toastError({ title: "Error removing artist", description: error.message, errorSource: "remove_artist" })
+          toastError({ title: "Couldn't remove the artist", description: "Try again in a moment.", errorSource: "remove_artist", context: { message: error.message } })
           // Rollback
           setSavedArtists(before)
           return

@@ -50,7 +50,7 @@ export function FavoritesFolderTabs({
           className="flex flex-col gap-3 overflow-hidden"
         >
           <div className="flex items-center justify-between px-2 pt-2">
-            <h2 className="text-lg font-semibold tracking-tight">Your Favorites</h2>
+            <h2 className="text-lg font-semibold tracking-tight">Favorites</h2>
           </div>
           <ScrollArea className="w-full whitespace-nowrap pb-2 pt-1">
             <div className="flex w-max space-x-2 px-2">
@@ -65,7 +65,7 @@ export function FavoritesFolderTabs({
                   const uncategorizedCount = folderEntries.filter(([_, ids]) => ids.length === 0).length;
 
                   return [
-                    { id: 'all', name: 'All Favorites', count: allCount, icon: null, isArtists: false },
+                    { id: 'all', name: 'All favorites', count: allCount, icon: null, isArtists: false },
                     // Reserved virtual folder for saved artists — always pinned
                     // right after "All Favorites" for discoverability.
                     { id: 'artists', name: 'Artists', count: savedArtistsCount, icon: 'Palette', isArtists: true },
@@ -121,7 +121,7 @@ export function FavoritesFolderTabs({
                             <span
                               role="button"
                               tabIndex={0}
-                              title="Delete Folder"
+                              title="Delete folder"
                               onClick={(e) => {
                                 e.stopPropagation()
                                 setFolderToDelete({ id: tab.id as string, name: tab.name })

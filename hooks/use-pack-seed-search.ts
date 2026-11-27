@@ -249,15 +249,15 @@ export function usePackSeedSearch(args: UsePackSeedSearchArgs): UsePackSeedSearc
   // exceeded" loop via PackSeedFetcher's useEffect in prompt-gallery.tsx.
   const onSessionCapReached = useCallback(() => {
     toast({
-      title: "Session Limit Reached",
+      title: "Page limit reached",
       description: "You've loaded a lot of pages for this pack. Try adjusting the pack's search or rating to keep sampling.",
       variant: "default",
     })
   }, [toast])
   const onScrollLimited = useCallback(() => {
     toast({
-      title: "Loading Too Fast",
-      description: "Loading more posts is paused briefly to avoid overloading the provider.",
+      title: "Loading paused",
+      description: "More posts will load in 5 seconds, to stay within the source's request limit.",
       variant: "default",
     })
   }, [toast])

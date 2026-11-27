@@ -46,6 +46,7 @@ const NOTES: UpdateNote[] = [
   { kind: 'fixed', title: 'Full sets in Classic', body: "With Full sets on, a prompt kept only a few tags of each set, or none when your base or Always add already had a tag of the same kind. Prompts now include the whole set. A pack started from a character also stops adding \"solo\" when the source shows people together, so poses with a partner are no longer left out." },
   { kind: 'fixed', title: 'Packs stuck loading', body: "When the source couldn't load its posts, the Pack Builder kept showing Collecting. It now says the posts didn't load and offers Try again." },
   { kind: 'fixed', title: 'Freezes at the highest variety', body: "Generating a Classic pack with Variety set to Chaotic could freeze the page. It now finishes without freezing the page." },
+  { kind: 'improved', title: 'Clearer messages', body: "Error messages and warnings now say what went wrong and what to try next, and labels across the site are easier to read." },
 ]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)

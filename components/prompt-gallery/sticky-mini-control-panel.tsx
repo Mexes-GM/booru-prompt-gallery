@@ -106,7 +106,7 @@ export function StickyMiniControlPanel({
                         size="icon"
                         className="h-6 w-6 shrink-0 hover:bg-muted"
                         onClick={() => setAddInput("")}
-                        aria-label="Clear tags"
+                        aria-label="Clear added tags"
                       >
                         <X className="w-3 h-3" />
                       </Button>
@@ -127,6 +127,7 @@ export function StickyMiniControlPanel({
                     size="sm"
                     onClick={onToggleAiConvertMode}
                     variant="secondary"
+                    aria-label="AI convert"
                     className={`h-8 px-2.5 gap-1.5 transition-colors ${isAiConvertMode
                       ? "bg-mode-convert/25 text-mode-convert-text ring-1 ring-inset ring-mode-convert-border hover:bg-mode-convert/30"
                       : "bg-mode-convert-soft text-mode-convert-text hover:bg-mode-convert/20"
@@ -136,7 +137,7 @@ export function StickyMiniControlPanel({
                     <span className="text-xs font-medium hidden sm:inline">Convert</span>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="sm:hidden">AI Convert</TooltipContent>
+                <TooltipContent side="bottom" className="sm:hidden">AI convert</TooltipContent>
               </Tooltip>
 
               <Tooltip>
@@ -145,6 +146,7 @@ export function StickyMiniControlPanel({
                     size="sm"
                     onClick={onToggleMergeMode}
                     variant="secondary"
+                    aria-label="Merge"
                     className={`h-8 px-2.5 gap-1.5 transition-colors ${isMergeMode
                       ? "bg-mode-merge/25 text-mode-merge-text ring-1 ring-inset ring-mode-merge-border hover:bg-mode-merge/30"
                       : "bg-mode-merge-soft text-mode-merge-text hover:bg-mode-merge/20"
@@ -154,7 +156,7 @@ export function StickyMiniControlPanel({
                     <span className="text-xs font-medium hidden sm:inline">Merge</span>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="sm:hidden">Merge Prompts</TooltipContent>
+                <TooltipContent side="bottom" className="sm:hidden">Merge</TooltipContent>
               </Tooltip>
             </div>
           </div>

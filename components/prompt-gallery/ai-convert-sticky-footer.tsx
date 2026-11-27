@@ -241,14 +241,14 @@ const AiConvertStickyFooterComponent = ({
           const limitType = res.headers.get('X-RateLimit-Type')
           if (limitType === 'daily') {
             setDailyRemaining(0)
-            throw new Error(data.error || 'Daily limit reached. Come back tomorrow or add your own API key in ⚙️ Settings.')
+            throw new Error(data.error || "You've reached today's free limit. Come back tomorrow, or add your own API key in ⚙️ Settings.")
           }
-          throw new Error(data.error || 'Too many requests. Please wait a moment before trying again.')
+          throw new Error(data.error || 'Too many conversions at once. Wait a moment and try again.')
         }
         if (res.status === 503) {
-          throw new Error(data.error || 'Cloudflare AI quota exhausted for today. Add your own API key in ⚙️ Settings to continue.')
+          throw new Error(data.error || 'The free converter is out of uses for today. Add your own API key in ⚙️ Settings to keep going.')
         }
-        throw new Error(data.error || 'Failed to convert prompt')
+        throw new Error(data.error || "Couldn't convert the prompt. Try again.")
       }
 
       setResult(data.result)
@@ -291,7 +291,7 @@ const AiConvertStickyFooterComponent = ({
   const handleSaveSettings = () => {
     saveSettings({ provider: tempProvider, apiKey: tempApiKey, customModel: tempCustomModel, remember: tempRemember })
     toast({
-      title: 'Settings Saved',
+      title: 'Settings saved',
       description: tempRemember
         ? 'Your API key will be remembered until you clear it.'
         : 'Your API key will be cleared when you close this tab.',
@@ -400,8 +400,8 @@ const AiConvertStickyFooterComponent = ({
                       variant="outline"
                       size="sm"
                       className="h-8 px-2.5 rounded-lg hover:bg-secondary border-border/60 transition-colors text-xs font-semibold"
-                      aria-label="View History"
-                      title="View History"
+                      aria-label="View history"
+                      title="View history"
                     >
                       <History className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" />
                       History
@@ -442,7 +442,7 @@ const AiConvertStickyFooterComponent = ({
                         history.map((item) => (
                           <div key={item.id} className="relative rounded-xl border border-border/60 bg-secondary/15 p-4 flex flex-col gap-3 group transition-colors hover:border-primary/30 hover:bg-secondary/30">
                             <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider truncate flex justify-between items-center">
-                              <span>Original Tags</span>
+                              <span>Original tags</span>
                               <span><ClientFormattedDate timestamp={item.timestamp} /></span>
                             </div>
                             <p className="text-xs text-muted-foreground line-clamp-2" title={item.tags}>
@@ -620,7 +620,7 @@ const AiConvertStickyFooterComponent = ({
                             <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" aria-hidden="true" />
                             Saving…
                           </>
-                        ) : 'Save Configuration'}
+                        ) : 'Save settings'}
                       </Button>
                     </div>
                   </PopoverContent>
@@ -673,7 +673,7 @@ const AiConvertStickyFooterComponent = ({
                       className="h-6 w-6 text-primary-text/30 mb-1.5"
                       aria-hidden="true"
                     />
-                    <p className="text-xs italic">Waiting for input… click Convert on any card to get started</p>
+                    <p className="text-xs italic">Nothing to convert yet. Press Convert on any card.</p>
                   </div>
                 )}
               </div>

@@ -132,9 +132,10 @@ export function useBooruFavorites(
 
         if (error || !data) {
           toastError({
-            title: "Error creating category",
-            description: error?.message || "Something went wrong",
+            title: "Couldn't create the folder",
+            description: "Try again in a moment.",
             errorSource: "create_favorite_folder",
+            context: { message: error?.message ?? "no data returned" },
           })
           return null
         }

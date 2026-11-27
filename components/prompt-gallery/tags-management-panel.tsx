@@ -784,7 +784,7 @@ export function TagsManagementPanel({
           isInputValid={isTagCountValid}
           maxInput={1000}
           ariaLabel={isCompact ? "Minimum tags" : "Minimum tag count"}
-          disabledReason="not supported by this booru"
+          disabledReason={isEmbedded ? "This source can't filter by tag count" : "This source can't filter by tag count"}
         />
         <ScoreTierControl
           variant={isCompact ? "compact" : undefined}
@@ -815,7 +815,7 @@ export function TagsManagementPanel({
           isInputValid={!!characterCountFilter && /^\d+$/.test(characterCountFilter)}
           maxInput={1000000}
           ariaLabel={isCompact ? "Minimum character posts" : "Minimum character post count"}
-          disabledReason={isEmbedded ? "turn on character names" : "turn on Character Tags"}
+          disabledReason={isEmbedded ? "Turn on Include character names to use it" : "Turn on Character Tags to use it"}
         />
       </>
   )
@@ -851,7 +851,7 @@ export function TagsManagementPanel({
               onChange={setAddInput}
               debounceTime={400}
               placeholder="masterpiece, best quality..."
-              aria-label="Tags to include input"
+              aria-label={isEmbedded ? "Add to every prompt" : "Tags to add"}
               className="flex-1 bg-transparent border-none p-0 placeholder:text-muted-foreground focus:outline-none h-full min-w-0"
             />
             <div className={isCompact ? "flex items-center gap-0.5 shrink-0 ml-1" : "flex items-center gap-0.5 ml-1.5 shrink-0"}>
@@ -939,21 +939,21 @@ export function TagsManagementPanel({
                 <div className="flex items-center">
                   <Dialog open={isPresetDialogOpen} onOpenChange={setIsPresetDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="ghost" size="icon" className="relative h-7 w-7 pointer-coarse:w-10 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2 pointer-coarse:after:-left-1 pointer-coarse:after:right-0 text-muted-foreground hover:text-foreground rounded-r-none" title="Save Tag Preset" aria-label="Save current 'Tags to Add' list as a tag preset">
+                      <Button variant="ghost" size="icon" className="relative h-7 w-7 pointer-coarse:w-10 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2 pointer-coarse:after:-left-1 pointer-coarse:after:right-0 text-muted-foreground hover:text-foreground rounded-r-none" title="Save as tag preset" aria-label="Save these tags as a tag preset">
                         <Save className="h-3.5 w-3.5" />
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
-                        <DialogTitle>Save Tag Preset</DialogTitle>
+                        <DialogTitle>Save tag preset</DialogTitle>
                         <DialogDescription>
-                          Enter a name to save this &quot;Tags to Add&quot; list. A tag preset only stores this one field, not the rest of your options.
+                          Saves only the tags added to every prompt, not your other options.
                         </DialogDescription>
                       </DialogHeader>
                       <div className="space-y-4 py-4">
                         <div className="space-y-2">
-                          <Label>Preset Name</Label>
-                          <DebouncedInput value={presetName} onChange={setPresetName} debounceTime={300} placeholder="My awesome preset" />
+                          <Label>Preset name</Label>
+                          <DebouncedInput value={presetName} onChange={setPresetName} debounceTime={300} placeholder="e.g. Watercolor style" />
                         </div>
                         <div className="space-y-2">
                           <Label>Tags</Label>
@@ -971,12 +971,12 @@ export function TagsManagementPanel({
 
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="relative h-7 w-6 min-w-[1.5rem] pointer-coarse:w-10 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2 pointer-coarse:after:left-0 pointer-coarse:after:-right-1 text-muted-foreground hover:text-foreground rounded-l-none" title="Load Tag Preset" aria-label="Load a saved tag preset">
+                      <Button variant="ghost" size="icon" className="relative h-7 w-6 min-w-[1.5rem] pointer-coarse:w-10 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2 pointer-coarse:after:left-0 pointer-coarse:after:-right-1 text-muted-foreground hover:text-foreground rounded-l-none" title="Load a tag preset" aria-label="Load a tag preset">
                         <ChevronDown className="h-3.5 w-3.5" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-[240px]">
-                      <DropdownMenuLabel>Saved Tag Presets</DropdownMenuLabel>
+                      <DropdownMenuLabel>Saved tag presets</DropdownMenuLabel>
                       <DropdownMenuSeparator />
                       {presets.length === 0 ? (
                         <div className="p-2 text-sm text-center text-muted-foreground">
@@ -1050,7 +1050,7 @@ export function TagsManagementPanel({
               debounceTime={400}
               placeholder={isCompact ? "bad quality, watermark, signature..." : "bad quality, watermark..."}
               className={isCompact ? "h-8 text-xs bg-background/50 pr-7" : "h-9 text-sm bg-background/50"}
-              aria-label="Tags to exclude input"
+              aria-label={isEmbedded ? "Remove from every prompt" : "Tags to exclude"}
             />
             {excludeInput && (
               <button

@@ -451,9 +451,9 @@ function UnavailablePostsNotice({
                 <AlertCircle className="h-5 w-5 text-destructive-text" />
               </div>
               <div className="space-y-1">
-                <AlertTitle className="text-destructive-text font-medium mb-0">Missing Favorites</AlertTitle>
+                <AlertTitle className="text-destructive-text font-medium mb-0">Some favorites didn&apos;t load</AlertTitle>
                 <AlertDescription className="text-muted-foreground text-xs leading-relaxed">
-                  <strong className="text-foreground">{unavailableKeys.length}</strong> posts couldn&apos;t be loaded from the original booru server. They might be temporarily down or deleted by the author.
+                  <strong className="text-foreground">{unavailableKeys.length}</strong> posts couldn&apos;t be loaded from their source. It may be down for now, or the posts were deleted.
                 </AlertDescription>
               </div>
             </div>
@@ -512,9 +512,9 @@ function UnavailablePostsNotice({
                     <Trash2 className="h-5 w-5 text-destructive-text" />
                   </div>
                   <div className="space-y-1">
-                    <AlertTitle className="text-destructive-text font-medium mb-0">Posts Deleted</AlertTitle>
+                    <AlertTitle className="text-destructive-text font-medium mb-0">Posts deleted</AlertTitle>
                     <AlertDescription className="text-muted-foreground text-xs">
-                      <strong className="text-foreground">{state.confirmed.length}</strong> posts have been permanently removed from the booru source and cannot be recovered.
+                      <strong className="text-foreground">{state.confirmed.length}</strong> posts were removed from their source and can&apos;t be recovered.
                     </AlertDescription>
                   </div>
                 </div>
@@ -1734,9 +1734,9 @@ export function PromptGallery() {
       const isAibooruError = search.booruProvider === 'aibooru' && is403
 
       toastError({
-        title: isAibooruError ? "Aibooru Access Blocked" : "Connection error",
+        title: isAibooruError ? "Aibooru blocked the request" : "Connection error",
         description: isAibooruError
-          ? "Aibooru is blocking server requests. Try Danbooru or Rule34 instead."
+          ? "Aibooru is blocking requests from this site. Try another source, like Danbooru."
           : (search.error.message || "Could not load images"),
         errorSource: "booru_search",
         context: { provider: search.booruProvider, ...describeSearchError(search.error) },
@@ -1815,7 +1815,7 @@ export function PromptGallery() {
       // top toast only covered the next row of cards.
       if (!window.matchMedia("(pointer: coarse)").matches) {
         toast({
-          title: "Copied!",
+          title: "Copied",
           description: format !== 'tags'
             ? `${PROMPT_FORMAT_INFO[format].label} prompt copied to clipboard`
             : isPrompt ? "Prompt copied to clipboard" : "Tags copied to clipboard",
@@ -1826,8 +1826,8 @@ export function PromptGallery() {
       return true
     } catch (error) {
       toastError({
-        title: "Error",
-        description: isPrompt ? "Could not copy prompt" : "Could not copy tags",
+        title: isPrompt ? "Couldn't copy the prompt" : "Couldn't copy the tags",
+        description: "The browser didn't allow clipboard access. Try again.",
         errorSource: "copy_to_clipboard",
         context: { provider: search.booruProvider, postId, isPrompt },
       })
@@ -1920,10 +1920,10 @@ export function PromptGallery() {
       toastError({
         title: "Download failed",
         description: isNetworkFailure
-          ? "Could not reach the image server. It may be blocked by an ad blocker/extension, or temporarily unreachable. Opening the image in a new tab instead."
-          : error instanceof Error ? error.message : "Error downloading image",
+          ? "Couldn't reach the image server. An ad blocker or extension may be blocking it. Opening the image in a new tab instead."
+          : "Try again in a moment.",
         errorSource: "download_image",
-        context: { provider: post._provider || search.booruProvider, postId: post.id, networkFailure: isNetworkFailure },
+        context: { provider: post._provider || search.booruProvider, postId: post.id, networkFailure: isNetworkFailure, message: error instanceof Error ? error.message : String(error) },
       })
 
       if (isNetworkFailure) {
@@ -2310,7 +2310,7 @@ export function PromptGallery() {
                       globalWeightCount > 0 ? `${plural(globalWeightCount, "weight")}${isGlobalWeightsPaused ? " paused" : ""}` : null,
                       !isAibooruProvider && addedTagCount > 0 && !smartTagExclusion ? "keeps every added tag" : null,
                       !isAibooruProvider && !optimizeTags ? "no tag merging" : null,
-                      !autoAppendSearchTags ? "no search tags" : null,
+                      !autoAppendSearchTags ? "search tags not added" : null,
                       !isAibooruProvider && experimentalPromptRules ? "experimental rules" : null,
                       backgroundSummary[backgroundMode] ?? null,
                       !isAibooruProvider && outfitMode === "random" ? "random outfit" : null,

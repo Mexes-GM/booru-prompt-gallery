@@ -746,8 +746,8 @@ export const MasonryItem = memo(function MasonryItem({
                                             className="flex h-5 w-5 items-center justify-center rounded-full bg-overlay/60 shadow-sm cursor-help focus-ring"
                                             aria-label={[
                                                 "Prompt adjusted",
-                                                hasActiveOptions ? "Smart Tag Exclusion" : null,
-                                                hasReplacements ? `Find & Replace: ${replacedTags.map(r => `${r.from} → ${r.to}`).join(', ')}` : null,
+                                                hasActiveOptions ? "Skipped added tags that don't fit" : null,
+                                                hasReplacements ? `Tag rules: ${replacedTags.map(r => `${r.from} → ${r.to}`).join(', ')}` : null,
                                             ].filter(Boolean).join(". ")}
                                         >
                                             <span className="h-2 w-2 rounded-full bg-info" aria-hidden="true" />
@@ -756,7 +756,7 @@ export const MasonryItem = memo(function MasonryItem({
                                     <TooltipContent side="top" className="text-xs">
                                         <div className="flex flex-col gap-0.5">
                                             <span className="font-medium">Prompt adjusted</span>
-                                            {hasActiveOptions && <span className="text-muted-foreground">Smart Tag Exclusion</span>}
+                                            {hasActiveOptions && <span className="text-muted-foreground">Skipped added tags that don&apos;t fit</span>}
                                             {hasReplacements && replacedTags.map(r => (
                                                 <span key={`${r.from}-${r.to}`} className="text-muted-foreground">
                                                     {r.from} → {r.to}
@@ -927,7 +927,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 onClick={() => onSetAsPackBase?.(post)}
                                 className={`flex-1 focus-ring h-auto rounded-r-none border-r-0 border-mode-pack text-mode-pack-text ${isPackBase ? "" : "hover:bg-mode-pack-soft"}`}
                                 variant={isPackBase ? "secondary" : "outline"}
-                                aria-label={isPackBase ? "This card started the pack" : "Use as base for Pack Mode"}
+                                aria-label={isPackBase ? "In pack, this card started the pack" : "Use as base"}
                             >
                                 <Package className={`${getIconClass()} mr-1.5`} />
                                 {isPackBase ? "In pack ✓" : "Use as base"}
@@ -938,7 +938,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 className="flex-1 focus-ring h-auto rounded-r-none border-r-0"
                                 variant="default"
                                 disabled={!displayContent}
-                                aria-label="Convert tags to Natural Language"
+                                aria-label="Convert to natural language"
                             >
                                 <Sparkles className={`${getIconClass()} mr-1.5 text-primary-foreground`} />
                                 Convert
@@ -957,12 +957,12 @@ export const MasonryItem = memo(function MasonryItem({
                                 {copiedId === post.id ? (
                                     <>
                                         <Check className={`${getIconClass()} mr-1`} />
-                                        {effectiveScale === "small" ? "OK" : "Copied!"}
+                                        {effectiveScale === "small" ? "OK" : "Copied"}
                                     </>
                                 ) : (
                                     <>
                                         <Copy className={`${getIconClass()} mr-1`} />
-                                    {effectiveScale === "small" ? "Copy" : (isPreviouslyCopied ? "Copy Again" : "Copy")}
+                                    {effectiveScale === "small" ? "Copy" : (isPreviouslyCopied ? "Copy again" : "Copy")}
                                     </>
                                 )}
                             </Button>

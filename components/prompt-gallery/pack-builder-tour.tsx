@@ -153,9 +153,9 @@ const STEPS: TourStep[] = [
       <>
         Every category is split into parts — Clothing into outfit, top, headwear, footwear… Select one to set its role:
         <ul className="mt-2 space-y-1.5">
-          <RoleLine icon={<Lock />} name="Keep from base" text="your base's tags for that part stay." />
+          <RoleLine icon={<Lock />} name="Keep" text="your base's tags for that part stay." />
           <RoleLine icon={<Shuffle />} name="Vary" text="it changes with the rest of the category." />
-          <RoleLine icon={<Ban />} name="Leave out" text="nothing from that part appears." />
+          <RoleLine icon={<Ban />} name="Off" text="nothing from that part appears." />
         </ul>
         <p className="mt-2">
           Example: Clothing on Vary but <span className="font-medium text-foreground">headwear on Keep</span> — the outfit changes, the hat stays. “2 base · 15 pool” counts the part&apos;s tags on your base and in the pool.
