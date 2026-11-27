@@ -1,6 +1,6 @@
 /**
  * Pack Mode's tag vocabulary (`/pack-vocabulary.json`, built from the tags
- * database by scripts/generate-pack-vocabulary.ts): the most-used approved
+ * database): the most-used approved
  * tags of each taxonomy slot with their post counts. It tops up sparse pools
  * (usePackAxisFallbacks) and says how common a tag is anywhere, which is what
  * tells a character's own traits from what everyone has (characterTagBaseline).
