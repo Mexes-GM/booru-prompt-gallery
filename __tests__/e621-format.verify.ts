@@ -81,7 +81,7 @@ assert(flatWarden.file_url === warden.file_url && flatWarden.large_file_url === 
 assert(flatWarden.tag_string.split(' ').includes('honggun666') && flatWarden.tag_string_artist === '', 'basic: every tag kept, no categories')
 
 // ── Deleted and fileless posts are dropped ──
-const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v))
+const clone = <T>(v: T): T => structuredClone(v)
 const deleted = clone(single) as { flags: { deleted: boolean } }
 deleted.flags.deleted = true
 assert(app.parseE621Post(deleted) === null, 'deleted post (current) dropped')

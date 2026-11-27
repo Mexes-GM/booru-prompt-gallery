@@ -138,7 +138,7 @@ const cachedRow = cachedRowToBooruPost({
   rating: 's', score: 1, image_width: 1, image_height: 1, tag_string: 'anthro', tag_string_artist: null,
   tag_string_character: null, tag_string_copyright: null, tag_string_meta: null, ai_metadata: null,
 })
-assert(cachedRow._provider === 'floofgens' && cachedRow.large_file_url.includes('static1.floofgens.net'), 'cached e6ai row reads as Floofgens')
+assert(cachedRow._provider === 'floofgens' && new URL(cachedRow.large_file_url).hostname === 'static1.floofgens.net', 'cached e6ai row reads as Floofgens')
 
 console.log(`floofgens-provider: ${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)
