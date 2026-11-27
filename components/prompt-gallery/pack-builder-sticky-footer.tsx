@@ -49,6 +49,12 @@ import { PackScenesPanel } from './pack-scenes-panel'
 import { radioGroupKeyDown } from './radio-keys'
 import { PackCharacterSearch } from './pack-character-search'
 import { MAX_CAST, type CastRole } from '@/lib/pack/scene/cast'
+import { usePackComfySend, type PackSendRow } from '@/hooks/use-pack-comfy-send'
+import { packSendRequest } from '@/lib/pack/pack-comfy-send'
+import type { ComfySent } from './comfyui-send'
+import { ComfyInlineJob, ComfyInlineJobPresence } from './comfyui-inline-job'
+import { SendGlyph } from './comfyui-motion'
+import { SEND_TEXT, sendAllAnnouncement, sendAllLabel, sendAllNote } from './pack/pack-text'
 
 export interface PackBuilderStickyFooterProps {
     isOpen: boolean
@@ -220,9 +226,18 @@ const PromptRow = memo(({
     fullDetail,
     tagOverrides,
     sceneMode = false,
+    onSend,
+    sendJob = null,
+    sending = false,
+    onDismissSend,
 }: {
     prompt: PackPrompt
     index: number
+    /** ComfyUI mode: Send beside Copy, and the job under the prompt. */
+    onSend?: (index: number) => void
+    sendJob?: ComfySent | null
+    sending?: boolean
+    onDismissSend?: (index: number) => void
     /** `shown`: the converted text on screen, so the copy matches it. */
     onCopy: (prompt: PackPrompt, shown?: string) => Promise<boolean>
     onReroll: (index: number) => void
@@ -246,6 +261,9 @@ const PromptRow = memo(({
     const handleCopy = async () => {
         if (await onCopy(prompt, naturalText)) triggerCopyFeedback()
     }
+    const sendRef = useRef<HTMLButtonElement>(null)
+    const focusSend = useCallback(() => sendRef.current?.focus(), [])
+    const dismissSend = useCallback(() => onDismissSend?.(index), [onDismissSend, index])
 
     return (
         <motion.div
@@ -285,12 +303,13 @@ const PromptRow = memo(({
                     />
                 </div>
             )}
+            <div className="flex-1 min-w-0">
             {naturalText ? (
-                <p className="flex-1 min-w-0 text-xs lg:text-[13px] leading-relaxed text-foreground break-words select-all">
+                <p className="text-xs lg:text-[13px] leading-relaxed text-foreground break-words select-all">
                     {naturalText}
                 </p>
             ) : (
-            <p className={`flex-1 min-w-0 text-xs lg:text-[13px] leading-relaxed font-mono break-words select-all ${natural.status === 'loading' ? 'opacity-60' : ''}`}>
+            <p className={`text-xs lg:text-[13px] leading-relaxed font-mono break-words select-all ${natural.status === 'loading' ? 'opacity-60' : ''}`}>
                 {tokens.map((token, i) => {
                     const bare = bareTag(token)
                     const tone = lockedSet.has(bare)
@@ -309,7 +328,35 @@ const PromptRow = memo(({
                 })}
             </p>
             )}
+            {onSend && (
+                <ComfyInlineJobPresence show={sendJob !== null || sending}>
+                    <ComfyInlineJob
+                        jobId={sendJob?.jobId ?? null}
+                        api={sendJob?.api ?? null}
+                        launching={sending}
+                        onDismiss={dismissSend}
+                        returnFocus={focusSend}
+                        className="mt-1.5"
+                    />
+                </ComfyInlineJobPresence>
+            )}
+            </div>
             <div className="flex flex-col sm:flex-row pointer-coarse:flex-col gap-0.5">
+                {onSend && (
+                    <Button
+                        ref={sendRef}
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => onSend(index)}
+                        className={`${ROW_ACTION_CLASS} text-muted-foreground hover:text-foreground hover:bg-muted ${sending || sendJob ? 'opacity-100' : ''}`}
+                        aria-label={SEND_TEXT.row(index + 1)}
+                        aria-busy={sending || undefined}
+                        title={SEND_TEXT.rowTitle}
+                    >
+                        <SendGlyph sending={sending} className="w-3.5 h-3.5 [&_svg]:size-full!" />
+                    </Button>
+                )}
                 <Button
                     type="button"
                     variant="ghost"
@@ -339,6 +386,11 @@ PromptRow.displayName = "PromptRow"
 
 const warnTagsCopied = () => toast({
     description: "Couldn't load the prompt converter, so the prompts were copied as tags. Check your connection and try again.",
+    variant: "destructive",
+    duration: 3000,
+})
+const warnTagsSent = () => toast({
+    description: "Couldn't load the prompt converter, so the prompts were sent as tags. Check your connection and try again.",
     variant: "destructive",
     duration: 3000,
 })
@@ -425,6 +477,44 @@ const PackResultsList = memo(({
         if (await onCopyAll(text, failed ? 'tags' : format)) triggerCopyAllFeedback()
     }
 
+    // ComfyUI mode: a row sends what its Copy copies, in the chosen format, without the
+    // "[WIDTHxHEIGHT] " prefix; the suggested size goes as the image size (packSendRequest).
+    const comfy = usePackComfySend()
+    const { sendOne, sendAll: sendRows, dismiss: dismissSend } = comfy
+    const sendRowOf = (index: number, warn: () => void, copyInstead: () => void): PackSendRow | null => {
+        const p = prompts[index]
+        if (!p) return null
+        return {
+            key: index,
+            forPrompt: p.prompt,
+            build: async () => {
+                const body = await bodyOf(p)
+                if (body.failed) warn()
+                return packSendRequest(p, body.text)
+            },
+            onCopyInstead: copyInstead,
+        }
+    }
+    const handleSend = (index: number) => {
+        const p = prompts[index]
+        const row = sendRowOf(index, warnTagsSent, () => { if (p) void handleCopyPrompt(p) })
+        if (row) sendOne(row)
+    }
+    const handleSendAll = () => {
+        // One warning for the whole pack when the converter can't load.
+        let warned = false
+        const warnOnce = () => {
+            if (!warned) warnTagsSent()
+            warned = true
+        }
+        const copyInstead = () => void handleCopyAll()
+        void sendRows(prompts.flatMap((_, i) => sendRowOf(i, warnOnce, copyInstead) ?? []))
+    }
+    const sendBusy = comfy.all.kind === 'sending'
+    const allSent = comfy.all.kind === 'ended' && comfy.all.sent === comfy.all.total
+    const sendStopped = comfy.all.kind === 'ended' && comfy.all.sent < comfy.all.total
+    const sendNote = sendAllNote(comfy.all)
+
     return (
         <div id="pack-results-section" className="flex flex-col gap-3 lg:min-h-0 lg:flex-1">
             <div className="flex items-center justify-between gap-2 pb-2 border-b border-border/40 flex-shrink-0 max-lg:sticky max-lg:top-0 max-lg:z-10 max-lg:bg-background max-lg:pt-1">
@@ -459,6 +549,25 @@ const PackResultsList = memo(({
                     )}
                 </div>
                 {prompts.length > 0 && (
+                    <div className="flex flex-shrink-0 items-center gap-1.5">
+                    {comfy.enabled && (
+                        <>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={sendBusy ? undefined : handleSendAll}
+                                aria-disabled={sendBusy || undefined}
+                                aria-busy={sendBusy || undefined}
+                                aria-label={comfy.all.kind === 'idle' ? SEND_TEXT.allLabel : undefined}
+                                className={`h-9 pointer-coarse:h-11 text-xs tabular-nums ${sendBusy ? 'cursor-progress' : ''} ${allSent ? 'text-success-text' : ''} ${sendStopped ? 'text-warning-text' : ''}`}
+                            >
+                                {allSent ? <Check className="w-3.5 h-3.5 mr-1.5" /> : sendStopped ? <AlertTriangle className="w-3.5 h-3.5 mr-1.5" /> : <SendGlyph sending={sendBusy} className="w-3.5 h-3.5 mr-1.5 [&_svg]:size-full!" />}
+                                {sendAllLabel(comfy.all)}
+                            </Button>
+                            <span className="sr-only" role="status" aria-live="polite">{sendAllAnnouncement(comfy.all)}</span>
+                        </>
+                    )}
                     <div className="inline-flex flex-shrink-0 rounded-md shadow-xs" data-pack-tour="copy-all">
                         <Button
                             type="button"
@@ -499,8 +608,16 @@ const PackResultsList = memo(({
                             </DropdownMenuContent>
                         </DropdownMenu>
                     </div>
+                    </div>
                 )}
             </div>
+
+            {sendNote && (
+                <p className="flex items-start gap-1.5 text-xs text-warning-text flex-shrink-0">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-px" />
+                    {sendNote}
+                </p>
+            )}
 
             {castSize >= 2 && format === 'tags' && prompts.length > 0 && (
                 <p className="text-xs text-muted-foreground flex-shrink-0">
@@ -557,6 +674,10 @@ const PackResultsList = memo(({
                             fullDetail={fullDetail}
                             tagOverrides={tagOverrides}
                             sceneMode={sceneMode}
+                            onSend={comfy.enabled ? handleSend : undefined}
+                            sendJob={comfy.enabled ? comfy.jobOf(i, p.prompt) : null}
+                            sending={comfy.enabled && comfy.sending.has(i)}
+                            onDismissSend={dismissSend}
                         />
                     ))}
                 </div>

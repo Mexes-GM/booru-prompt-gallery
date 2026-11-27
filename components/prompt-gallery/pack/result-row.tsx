@@ -3,7 +3,7 @@
 /**
  * One generated prompt: the post its scene came from (as text, linked to the post
  * on its site; the pack loads no pictures), the prompt in mono, and copy,
- * re-roll and lock. In tag format each tag is a button whose menu puts it on the
+ * re-roll and lock; in ComfyUI mode also Send, with the job under the prompt. In tag format each tag is a button whose menu puts it on the
  * card as Always or Never. A locked row keeps its prompt when the pack is generated
  * again, and says so.
  *
@@ -13,7 +13,7 @@
  * Memoized: keep the callbacks stable and pass `tokens` already split. Only the tag
  * that was clicked mounts a menu, so a hundred rows stay light.
  */
-import { memo, useEffect, useRef, useState, type KeyboardEvent } from "react"
+import { memo, useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react"
 import { AlertTriangle, Check, Copy, Dices, ExternalLink, Lock, LockOpen } from "lucide-react"
 import {
   DropdownMenu,
@@ -22,8 +22,11 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import type { ApiWorkflow } from "@/lib/comfyui/types"
 import { cn } from "@/lib/utils"
-import { CAST_MODE_TEXT, COPY_FAILED, SIZE_TEXT } from "./pack-text"
+import { ComfyInlineJob, ComfyInlineJobPresence } from "../comfyui-inline-job"
+import { SendGlyph } from "../comfyui-motion"
+import { CAST_MODE_TEXT, COPY_FAILED, SEND_TEXT, SIZE_TEXT } from "./pack-text"
 import { SCENE_TEXT } from "./scene-tile"
 import { useCopyResult } from "./use-copy-result"
 
@@ -61,6 +64,13 @@ export interface ResultRowProps {
   onNever: (tag: string) => void
   /** One character per prompt: the name of the character this prompt is for. */
   character?: string
+  /** ComfyUI mode: the row gets Send, and shows its job under the prompt. Without it, no Send. */
+  onSend?: (index: number) => void
+  /** The job this row sent, while it is shown. */
+  sendJob?: { jobId: string; api: ApiWorkflow } | null
+  /** A send of this row is on its way. */
+  sending?: boolean
+  onDismissSend?: (index: number) => void
 }
 
 const ACTION =
@@ -151,6 +161,10 @@ export const ResultRow = memo(function ResultRow({
   onAlways,
   onNever,
   character,
+  onSend,
+  sendJob = null,
+  sending = false,
+  onDismissSend,
 }: ResultRowProps) {
   const [copy, reportCopy] = useCopyResult()
   const [menuAt, setMenuAt] = useState<number | null>(null)
@@ -216,6 +230,10 @@ export const ResultRow = memo(function ResultRow({
       <span className="shrink-0 font-mono tabular-nums">{SCENE_TEXT.post(postId)}</span>
     )
   ) : null
+
+  const sendRef = useRef<HTMLButtonElement>(null)
+  const focusSend = useCallback(() => sendRef.current?.focus(), [])
+  const dismissSend = useCallback(() => onDismissSend?.(index), [onDismissSend, index])
 
   const copyPrompt = async () => {
     let ok = false
@@ -312,6 +330,18 @@ export const ResultRow = memo(function ResultRow({
               ))}
             </div>
           )}
+          {onSend && (
+            <ComfyInlineJobPresence show={sendJob !== null || sending}>
+              <ComfyInlineJob
+                jobId={sendJob?.jobId ?? null}
+                api={sendJob?.api ?? null}
+                launching={sending}
+                onDismiss={dismissSend}
+                returnFocus={focusSend}
+                className="mt-1.5"
+              />
+            </ComfyInlineJobPresence>
+          )}
           {copy === "failed" && (
             <p className="mt-1 flex items-start gap-1.5 text-xs text-destructive-text">
               <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
@@ -326,6 +356,19 @@ export const ResultRow = memo(function ResultRow({
               <span className="sr-only">{SIZE_TEXT.rowLabel}: </span>
               {size}
             </span>
+          )}
+          {onSend && (
+            <button
+              ref={sendRef}
+              type="button"
+              onClick={() => onSend(index)}
+              aria-label={SEND_TEXT.row(n)}
+              aria-busy={sending || undefined}
+              title={SEND_TEXT.rowTitle}
+              className={ACTION}
+            >
+              <SendGlyph sending={sending} className="size-4 [&_svg]:size-full!" />
+            </button>
           )}
           <button
             type="button"
