@@ -6,10 +6,10 @@
  * The brief's counterpart of usePackScenes (which keeps serving the old builder); the
  * mapping itself lives in lib/pack/brief-pack.ts.
  *
- * Order of calls (the engine's contract): pool without a composition -> poseCompositions
- * -> defaultComposition / castComposition with the poses and the user's pick -> pool of
- * that composition -> sceneCandidates (deferred, never during render) and
- * generateScenePackAsync on Generate.
+ * Order of calls (the engine's contract): pool of every composition (its scenes the
+ * characters' own) -> poseCompositions -> packComposition with the poses and the user's
+ * pick (exactly the characters unless company was asked) -> pool of that composition ->
+ * sceneCandidates (deferred, never during render) and generateScenePackAsync on Generate.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { BooruPost, BooruProvider } from "@/lib/booru/types"
@@ -37,6 +37,7 @@ import {
   resolveLook,
   sceneEstimate as estimateScenes,
   poseNeedsCompany,
+  packComposition,
   packLibraryOutfits,
   packOutfitDetail,
   packOutfitStyles,
@@ -57,8 +58,6 @@ import { createPermanence, type Permanence, type PermanenceData } from "@/lib/pa
 import type { TagKind } from "@/lib/pack/scene/scene"
 import { buildScenePool, compositionOfIdentity, compositionsOf, createScenePoolCache, type PackPeople, type ScenePool } from "@/lib/pack/scene/scene-pool"
 import {
-  castComposition,
-  defaultComposition,
   gelbooruTagKinds,
   generateScenePackAsync,
   poseCompositions,
@@ -528,9 +527,11 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   // before use, so it can outlive any change; another site starts a new one to free the memory.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const poolCache = useMemo(() => createScenePoolCache(), [provider])
+  // Its scenes are the characters' own make-up (every make-up stays in `allScenes`): a pack never
+  // falls back to the pool's most common one, which may have people nobody asked for.
   const basePool = useMemo(() => {
     if (!permanence || waitingForLookup || rated.length === 0) return null
-    return buildScenePool(rated, { overrides, permanence, subject, cast: castPeopleMemo, tagKind: (tag) => tagKinds.get(tag), provider, cache: poolCache })
+    return buildScenePool(rated, { overrides, permanence, subject, cast: castPeopleMemo, tagKind: (tag) => tagKinds.get(tag), people: castPeopleMemo, provider, cache: poolCache })
   }, [permanence, waitingForLookup, rated, overrides, subject, castPeopleMemo, tagKinds, provider, poolCache])
 
   const requests = useMemo(() => toSceneRequests(coreBrief), [coreBrief])
@@ -561,13 +562,17 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     [sceneCompositions, poses, castPeopleMemo, requests.select.length]
   )
   const available = choices?.fitting ?? null
+  // A requested act that needs someone else: the only company a pack adds without being asked.
+  const companyPose = useMemo(
+    () => requests.select.some((tag) => poseNeedsCompany(tag, overrides, permanence ?? undefined, relations)),
+    [requests.select, overrides, permanence, relations]
+  )
   const peopleKey = useMemo(() => {
     if (!basePool || !choices || missingRoles.length > 0) return ""
-    // Only make-ups with room for the characters: the default can't be one without.
-    if (isCast) return peopleKeyOf(castComposition(choices.fitting, castPeopleMemo, brief.people, choices.fittingPoses))
-    const declared = compositionOfIdentity(firstCandidates)
-    return peopleKeyOf(defaultComposition(choices.fitting, subject, brief.people, { declared, character: !!base }, choices.fittingPoses))
-  }, [basePool, choices, missingRoles, isCast, castPeopleMemo, brief.people, firstCandidates, subject, base])
+    // Exactly the characters, unless the user asked for company (packComposition).
+    const declared = isCast ? null : compositionOfIdentity(firstCandidates)
+    return peopleKeyOf(packComposition({ choices, cast: castPeopleMemo, isCast, subject, picked: brief.people, declared, character: !!base, companyPose }))
+  }, [basePool, choices, missingRoles, isCast, castPeopleMemo, brief.people, firstCandidates, subject, base, companyPose])
   const people = useMemo(() => fromPeopleKey(peopleKey), [peopleKey])
 
   const pool = useMemo(() => {
@@ -611,15 +616,15 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     for (const t of turnIdentities) {
       if (t.subject === subject || out.has(t.subject)) continue
       const ctx = { overrides, permanence, subject: t.subject, cast: t.cast, tagKind: (tag: string) => tagKinds.get(tag), provider, cache: poolCache }
-      const base = buildScenePool(rated, ctx)
+      const base = buildScenePool(rated, { ...ctx, people: t.cast })
       const compositions = donors.size > 0 ? compositionsOf((base.allScenes ?? base.scenes).filter((scene) => !donors.has(scene.postId))) : base.stats.compositions
       const own = peopleChoices({ compositions, poses: poseCompositions(base, poseArgs), cast: t.cast, hasPoses: requests.select.length > 0 })
-      const chosen = defaultComposition(own.fitting, t.subject, coreBrief.people, { declared: null, character: true }, own.fittingPoses)
+      const chosen = packComposition({ choices: own, cast: t.cast, isCast: false, subject: t.subject, picked: coreBrief.people, companyPose })
       const pool = chosen && peopleKeyOf(chosen) !== peopleKeyOf(base.stats.composition) ? buildScenePool(rated, { ...ctx, people: chosen }) : base
       out.set(t.subject, { pool, people: chosen })
     }
     return out
-  }, [turnIdentities, permanence, waitingForLookup, rated, donorPosts, subject, overrides, tagKinds, provider, poolCache, poseArgs, requests.select.length, coreBrief.people])
+  }, [turnIdentities, permanence, waitingForLookup, rated, donorPosts, subject, overrides, tagKinds, provider, poolCache, poseArgs, requests.select.length, coreBrief.people, companyPose])
   /** A character's identity, pool and composition in a pack of one per prompt; null while their pool isn't built. */
   const turnOf = useCallback((character: string) => {
     const t = turnIdentities?.find((x) => x.members[0]?.character === character)

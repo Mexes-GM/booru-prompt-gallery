@@ -24,6 +24,8 @@ import {
   DEFAULT_SCENE_SETTINGS,
   REUSES_PER_SCENE,
   castChips,
+  castComposition,
+  defaultComposition,
   identityWithOutfits,
   isWornByCharacter,
   poseNeedsScene,
@@ -830,7 +832,10 @@ export function peopleLineState({ poses, needsCompany, compositions, current, pi
     return { options: [...compositions], value: current, poseNeeds: sizes.length > 0 ? Math.min(...sizes) : 2 }
   }
   const several = poses.length > 0 ? compositions : available
-  if (!picked) return whenSeveral && several.length >= 2 ? { options: [...several], value: current } : null
+  // The pack's own make-up is missing from the scenes (a cast of three girls whose scenes all have a
+  // boy): the line offers the ones there are, since the pack takes none of them unasked (packComposition).
+  const elsewhere = several.length > 0 && !several.some((o) => samePeople(o.people, current))
+  if (!picked) return whenSeveral && (several.length >= 2 || elsewhere) ? { options: [...several], value: current } : null
   const options = [...available]
   if (!options.some((o) => samePeople(o.people, picked))) options.push({ people: { ...picked }, scenes: 0 })
   return { options, value: current }
@@ -1340,4 +1345,38 @@ export function peopleChoices<T extends { people: PackPeople }>({ compositions, 
     fittingPoses: poses.filter(holds),
     blocked: listed.filter((c) => !holds(c)),
   }
+}
+
+/**
+ * The make-up a pack uses, out of peopleChoices. Its scenes have exactly the people the pack names
+ * (`cast`: one character alone, or the cast's girls and boys) unless the user asked for company:
+ *  - a People pick (`picked`, also a typed count) the pool has, which wins;
+ *  - for one character, the base's own count tags (`declared`, "1girl, 1boy" on a card);
+ *  - a requested act that needs more people than the pack names (`companyPose`, for one
+ *    character): then the make-ups of the scenes that have it, as the People line offers them.
+ * A make-up with room to spare is otherwise never the default: three girls never get a boy nobody
+ * asked for because the only scene found had one. Null when the pool has no allowed make-up.
+ */
+export function packComposition<T extends PoseComposition>({ choices, cast, isCast, subject, picked = null, declared = null, character = true, companyPose = false }: {
+  choices: { fitting: readonly T[]; fittingPoses: readonly T[] }
+  cast: PackPeople
+  isCast: boolean
+  subject: 'girl' | 'boy'
+  picked?: PackPeople | null
+  declared?: PackPeople | null
+  /** The base is a character chosen by name (defaultComposition). */
+  character?: boolean
+  /** A requested pose needs someone else (poseNeedsCompany). */
+  companyPose?: boolean
+}): PackPeople | null {
+  if (picked && choices.fitting.some((c) => samePeople(c.people, picked))) return { girls: picked.girls, boys: picked.boys }
+  if (!isCast && declared && choices.fitting.some((c) => samePeople(c.people, declared))) return { girls: declared.girls, boys: declared.boys }
+  const company = companyPose && cast.girls + cast.boys < 2
+  const posed = company ? choices.fittingPoses.filter((c) => c.people.girls + c.people.boys >= 2) : []
+  const allowed = (c: T) => samePeople(c.people, cast) || posed.some((p) => samePeople(p.people, c.people))
+  const fitting = choices.fitting.filter(allowed)
+  const poses = choices.fittingPoses.filter(allowed)
+  return isCast
+    ? castComposition(fitting, cast, null, poses)
+    : defaultComposition(fitting, subject, null, { declared: null, character }, poses)
 }

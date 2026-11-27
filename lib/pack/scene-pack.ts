@@ -352,6 +352,21 @@ export function poolForCompositions(pool: ScenePool, args: Pick<ScenePackArgs, '
   return { ...pool, scenes, situations, stats: { ...pool.stats, scenes: scenes.length, situations: situations.length } }
 }
 
+/**
+ * `pool` without the scenes whose people are not the pack's (`args.people`, one composition): the
+ * header writes a scene's own people, so a scene of three girls and a boy in a pack of three girls
+ * would add the boy. A pool built for the composition has none; the same pool then. Mixed packs
+ * already keep only their compositions (poolForCompositions).
+ */
+function ofPackPeople(pool: ScenePool, args: ScenePackArgs): ScenePool {
+  const people = args.people
+  if (!people || mixedCompositions(args)) return pool
+  const scenes = pool.scenes.filter((scene) => !scene.people || samePeople(scene.people, people))
+  if (scenes.length === pool.scenes.length) return pool
+  const situations = groupSituations(scenes, args.overrides)
+  return { ...pool, scenes, situations, stats: { ...pool.stats, scenes: scenes.length, situations: situations.length } }
+}
+
 // ── Pairing by act ────────────────────────────────────────────────────────────
 
 /** The pairing tags that say who is with whom by gender (fitsComposition reads them). */
@@ -398,7 +413,7 @@ function withActPairing(scene: Scene, args: ScenePackArgs, relations: TagRelatio
  * pairing by act (withActPairing).
  */
 function packScenes(pool: ScenePool, args: ScenePackArgs): ScenePool {
-  const mixed = poolForCompositions(pool, args)
+  const mixed = ofPackPeople(poolForCompositions(pool, args), args)
   const relations = loadedTagRelations()
   const plan = requestPlan(args)
   const asked = plan.identity.some((tag) => (GENDER_PAIRING as readonly string[]).includes(normalizeTagForPack(tag)))
