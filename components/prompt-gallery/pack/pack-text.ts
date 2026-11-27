@@ -372,3 +372,45 @@ export function fitText(state: FitState): { text: string; spoken: string } {
   return { text, spoken: state.kind === "finding" ? "Finding scenes" : state.kind === "finding-variants" ? "Finding variants" : text }
 }
 
+
+/**
+ * "Customize prompt" in the builder: the gallery's own prompt settings, shown and edited here. They
+ * apply to every prompt, the gallery's and the pack's; Also and Never are this pack's alone.
+ */
+export const PROMPT_OPTIONS_TEXT = {
+  title: "Customize prompt",
+  intro: "The gallery's settings, applied to every prompt. Changing one here changes it in the gallery too. For this pack only, use Also and Never.",
+  defaults: "Defaults",
+  sizeLabel: "Longest side of sizes",
+  sizeHint: "Suggested sizes fit within this, from 512 to 1536 px",
+  outfitLabel: "Library outfits",
+  outfitHint: "The styles and detail a pack can take from the outfit library",
+  outfitSafeNote: "Lingerie and Sexy aren't used at the Safe rating.",
+} as const
+
+/** What differs from the defaults, for the folded line: "+3 tags · 2 weights · no character names". */
+export function promptOptionsSummary(s: {
+  added: number
+  removed: number
+  replaced: number
+  weights: number
+  weightsPaused: boolean
+  includeCharacters: boolean
+  smartTagExclusion: boolean
+  experimentalPromptRules: boolean
+  maxLongSide: number
+  defaultMaxLongSide: number
+}): string {
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
+  const parts = [
+    s.added > 0 ? `+${plural(s.added, "tag")}` : null,
+    s.removed > 0 ? `−${plural(s.removed, "tag")}` : null,
+    s.replaced > 0 ? plural(s.replaced, "replace rule") : null,
+    s.weights > 0 ? `${plural(s.weights, "weight")}${s.weightsPaused ? " paused" : ""}` : null,
+    !s.includeCharacters ? "no character names" : null,
+    s.added > 0 && !s.smartTagExclusion ? "keeps every added tag" : null,
+    s.experimentalPromptRules ? "experimental rules" : null,
+    s.maxLongSide !== s.defaultMaxLongSide ? `sizes up to ${s.maxLongSide} px` : null,
+  ].filter(Boolean)
+  return parts.join(" · ") || PROMPT_OPTIONS_TEXT.defaults
+}

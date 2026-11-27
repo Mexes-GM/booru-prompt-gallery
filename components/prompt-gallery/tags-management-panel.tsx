@@ -288,6 +288,8 @@ interface TagRulesEditorProps {
   compact?: boolean
   /** Main-panel label: plain "Tag rules" text, no ⓘ tooltip. */
   embedded?: boolean
+  /** False: only the replace rules (where append rules don't apply). */
+  withAppend?: boolean
 }
 
 /**
@@ -306,6 +308,7 @@ function TagRulesEditor({
   setAppendRules,
   compact = false,
   embedded = false,
+  withAppend = true,
 }: TagRulesEditorProps) {
   const [open, setOpen] = useState(false)
   const [replaceRows, setReplaceRows] = useState<ReplaceRow[]>([])
@@ -313,7 +316,7 @@ function TagRulesEditor({
 
   // Closed-state summary reads straight from the persisted values.
   const replaceCount = Math.min(splitCommaSeparatedTags(findInput).length, splitCommaSeparatedTags(replaceInput).length)
-  const appendCount = safeAppendRules.filter(isCompleteAppendRule).length
+  const appendCount = withAppend ? safeAppendRules.filter(isCompleteAppendRule).length : 0
 
   const commitReplaceRows = (rows: ReplaceRow[]) => {
     setReplaceRows(rows)
@@ -341,7 +344,7 @@ function TagRulesEditor({
       // pair list (e.g. 3 finds / 2 replaces) to only the pairs that applied.
       commitReplaceRows(replaceRows.filter((row) => !getReplaceRowIssue(row)))
       const complete = safeAppendRules.filter(isCompleteAppendRule)
-      if (complete.length !== safeAppendRules.length) setAppendRules(complete)
+      if (withAppend && complete.length !== safeAppendRules.length) setAppendRules(complete)
     }
     setOpen(next)
   }
@@ -392,7 +395,9 @@ function TagRulesEditor({
           <DialogHeader className="p-5 pb-3">
             <DialogTitle className="text-base font-semibold">Tag rules</DialogTitle>
             <DialogDescription className="text-xs">
-              Exact-tag matches only. Replace rules run first, then append rules; rules never chain.
+              {withAppend
+                ? "Exact-tag matches only. Replace rules run first, then append rules; rules never chain."
+                : "Exact-tag matches only; rules never chain."}
             </DialogDescription>
           </DialogHeader>
 
@@ -449,7 +454,7 @@ function TagRulesEditor({
                 })}
               </TagRulesGroup>
 
-              <TagRulesGroup
+              {withAppend && <TagRulesGroup
                 icon={<Plus className="h-3.5 w-3.5" />}
                 title="Append"
                 description="Keep a tag and add more right after it."
@@ -492,7 +497,7 @@ function TagRulesEditor({
                     </div>
                   </TagRuleRow>
                 ))}
-              </TagRulesGroup>
+              </TagRulesGroup>}
             </div>
           </div>
 
@@ -634,6 +639,13 @@ interface TagsManagementPanelProps {
    *  since it only ever affects that list. */
   smartTagExclusion?: boolean
   setSmartTagExclusion?: (value: boolean) => void
+  /**
+   * False where Find & Append rules don't apply (the pack builder): they are not shown, counted
+   * or cleared there, and stay as they are for the gallery.
+   */
+  appendRules?: boolean
+  /** Prefix for the ids of the edit fields, where another copy of the panel may be in the page. */
+  idPrefix?: string
 }
 
 /** Quick picks for the embedded tag-count filter (25 = the default floor). */
@@ -689,6 +701,8 @@ export function TagsManagementPanel({
   blacklistCount = 0,
   smartTagExclusion,
   setSmartTagExclusion,
+  appendRules = true,
+  idPrefix = "",
 }: TagsManagementPanelProps) {
   const isCompact = variant === "compact"
   const isEmbedded = embedded && !isCompact
@@ -703,7 +717,7 @@ export function TagsManagementPanel({
 
   const hasTagRules =
     (splitCommaSeparatedTags(findInput).length > 0 && splitCommaSeparatedTags(replaceInput).length > 0) ||
-    (tagAppendRules || []).some(isCompleteAppendRule)
+    (appendRules && (tagAppendRules || []).some(isCompleteAppendRule))
   const activeEditCount =
     (addInput.trim() ? 1 : 0) +
     (excludeInput.trim() ? 1 : 0) +
@@ -726,7 +740,7 @@ export function TagsManagementPanel({
     setExcludeInput("")
     setFindInput("")
     setReplaceInput("")
-    setTagAppendRules([])
+    if (appendRules) setTagAppendRules([])
     toast({
       title: "Prompt edits cleared",
       action: (
@@ -737,7 +751,7 @@ export function TagsManagementPanel({
             setExcludeInput(snapshot.excludeInput)
             setFindInput(snapshot.findInput)
             setReplaceInput(snapshot.replaceInput)
-            setTagAppendRules(snapshot.tagAppendRules)
+            if (appendRules) setTagAppendRules(snapshot.tagAppendRules)
           }}
         >
           Undo
@@ -815,9 +829,9 @@ export function TagsManagementPanel({
               <Label htmlFor="add-tags-input" className="text-xs font-semibold">Tags to Add</Label>
             </div>
           ) : isEmbedded ? (
-            <label htmlFor="add-tags" className="text-sm font-medium text-foreground">Add to every prompt</label>
+            <label htmlFor={`${idPrefix}add-tags`} className="text-sm font-medium text-foreground">Add to every prompt</label>
           ) : (
-            <label htmlFor="add-tags" className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+            <label htmlFor={`${idPrefix}add-tags`} className="text-xs font-medium text-muted-foreground flex items-center gap-2">
               <InfoTooltip
                 title="Tags to Add"
                 description="An option to add whatever tags you want to all prompts. Useful if you use LoRAs with trigger words or want to apply styles (realistic, photorealistic, sketch, etc.)."
@@ -832,7 +846,7 @@ export function TagsManagementPanel({
             : "flex h-9 w-full items-center rounded-md border border-input bg-background/50 pl-3 pr-1 text-sm shadow-sm transition-colors focus-within:outline-none focus-within:ring-1 focus-within:ring-ring"}
           >
             <DebouncedHTMLInput
-              id={isCompact ? "add-tags-input" : "add-tags"}
+              id={isCompact ? "add-tags-input" : `${idPrefix}add-tags`}
               value={addInput}
               onChange={setAddInput}
               debounceTime={400}
@@ -996,12 +1010,12 @@ export function TagsManagementPanel({
             panel: it only ever filters the "Tags to Add" list above. */}
         {isEmbedded && setSmartTagExclusion && (
           <div className="-mt-1 flex items-center justify-between gap-3">
-            <label htmlFor="smart-exclusion-embedded" className="flex cursor-pointer flex-col gap-0.5">
+            <label htmlFor={`${idPrefix}smart-exclusion-embedded`} className="flex cursor-pointer flex-col gap-0.5">
               <span className="text-sm text-foreground">Skip added tags that don&apos;t fit the image</span>
               <span className="text-xs text-muted-foreground">e.g. no face tags when the post is a back view</span>
             </label>
             <Switch
-              id="smart-exclusion-embedded"
+              id={`${idPrefix}smart-exclusion-embedded`}
               checked={!!smartTagExclusion}
               onCheckedChange={setSmartTagExclusion}
               className="shrink-0"
@@ -1016,9 +1030,9 @@ export function TagsManagementPanel({
               <Label htmlFor="exclude-tags-input" className="text-xs font-semibold">Tags to Exclude</Label>
             </div>
           ) : isEmbedded ? (
-            <label htmlFor="exclude-tags" className="text-sm font-medium text-foreground">Remove from every prompt</label>
+            <label htmlFor={`${idPrefix}exclude-tags`} className="text-sm font-medium text-foreground">Remove from every prompt</label>
           ) : (
-            <label htmlFor="exclude-tags" className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+            <label htmlFor={`${idPrefix}exclude-tags`} className="text-xs font-medium text-muted-foreground flex items-center gap-2">
               <InfoTooltip
                 title="Tags to Exclude"
                 description="Removes tags from the final prompt text, but keeps the post visible. For example, tags like 'solo' or 'realistic' which are sometimes found in prompts and might not be desired. Different from -tag in search (server-side, hides the post entirely from results) or Blacklist (client-side, also hides the whole post)."
@@ -1030,7 +1044,7 @@ export function TagsManagementPanel({
           )}
           <div className="relative">
             <DebouncedInput
-              id={isCompact ? "exclude-tags-input" : "exclude-tags"}
+              id={isCompact ? "exclude-tags-input" : `${idPrefix}exclude-tags`}
               value={excludeInput}
               onChange={setExcludeInput}
               debounceTime={400}
@@ -1063,6 +1077,7 @@ export function TagsManagementPanel({
           setAppendRules={setTagAppendRules}
           compact={isCompact}
           embedded={isEmbedded}
+          withAppend={appendRules}
         />
       </>
   )
