@@ -546,6 +546,9 @@ export { buildBooruQuery }
 export async function fetchPostsPage(query: Parameters<typeof createPostsKey>[0]): Promise<BooruPost[]> {
   const url = createPostsKey(query)(0, null)
   if (!url) return []
+  // A request already in flight (or settled in the last seconds) is shared by the fetcher: it
+  // sends nothing, so it must not spend a pacer token or wait for one.
+  if (inflightRequests.has(url)) return fetcher(url)
   // Pack Mode's own request: it goes at the site's Pack pace (lib/booru/request-pacer.ts).
   await sitePacer(query.provider).acquire()
   return fetcher(url)
