@@ -33,6 +33,9 @@ export interface CopyOptionsDropdownProps {
     current: PromptFormat
     onSelect: (format: PromptFormat) => void
   }
+  /** Adds "Send as" items above "Copy as" (ComfyUI mode): this card's prompt
+   *  in a format, sent to ComfyUI once. Uses copyAs's current format. */
+  sendAs?: (format: PromptFormat) => void
 }
 
 const CATEGORY_ITEMS: { category: TagCategory; label: string; Icon: typeof Mountain }[] = [
@@ -55,7 +58,29 @@ export function CopyOptionsDropdown({
   trigger,
   contentClassName,
   copyAs,
+  sendAs,
 }: CopyOptionsDropdownProps) {
+  const formatItems = (current: PromptFormat, onSelect: (format: PromptFormat) => void) =>
+    PROMPT_FORMATS.map((format) => {
+      const info = PROMPT_FORMAT_INFO[format]
+      const isCurrent = format === current
+      return (
+        <DropdownMenuItem
+          key={format}
+          onClick={() => onSelect(format)}
+          // Warm the converter while the pointer or focus is on a text format.
+          onFocus={format === "tags" ? undefined : preloadNaturalPrompt}
+        >
+          <Check className={cn("mr-2 h-4 w-4", !isCurrent && "invisible")} aria-hidden="true" />
+          <span className="flex-1">
+            {info.label}
+            {isCurrent && <span className="sr-only"> (current format)</span>}
+          </span>
+          <span className="ml-3 text-xs text-muted-foreground">{info.contents}</span>
+        </DropdownMenuItem>
+      )
+    })
+
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild disabled={disabled}>
@@ -64,26 +89,15 @@ export function CopyOptionsDropdown({
       <DropdownMenuContent align="end" className={cn(copyAs && "w-60", contentClassName)}>
         {copyAs ? (
           <>
+            {sendAs && (
+              <>
+                <DropdownMenuLabel>Send as</DropdownMenuLabel>
+                {formatItems(copyAs.current, sendAs)}
+                <DropdownMenuSeparator />
+              </>
+            )}
             <DropdownMenuLabel>Copy as</DropdownMenuLabel>
-            {PROMPT_FORMATS.map((format) => {
-              const info = PROMPT_FORMAT_INFO[format]
-              const isCurrent = format === copyAs.current
-              return (
-                <DropdownMenuItem
-                  key={format}
-                  onClick={() => copyAs.onSelect(format)}
-                  // Warm the converter while the pointer or focus is on a text format.
-                  onFocus={format === "tags" ? undefined : preloadNaturalPrompt}
-                >
-                  <Check className={cn("mr-2 h-4 w-4", !isCurrent && "invisible")} aria-hidden="true" />
-                  <span className="flex-1">
-                    {info.label}
-                    {isCurrent && <span className="sr-only"> (current format)</span>}
-                  </span>
-                  <span className="ml-3 text-xs text-muted-foreground">{info.contents}</span>
-                </DropdownMenuItem>
-              )
-            })}
+            {formatItems(copyAs.current, copyAs.onSelect)}
             <DropdownMenuSeparator />
             <DropdownMenuLabel>Copy only</DropdownMenuLabel>
           </>

@@ -437,33 +437,33 @@ export const MasonryItem = memo(function MasonryItem({
     const tagPrompt = modifiedContent ?? displayContent
     const copyText = showsNatural ? naturalText : tagPrompt
 
-    // "Copy as": this card in another format, once, without changing the setting.
-    const copyAs = async (format: PromptFormat) => {
-        if (format === "tags") {
-            await copyToClipboard(tagPrompt, post.id, !!aiPrompt, post.preview_file_url, "tags")
-            return
-        }
-        if (format === promptFormat && naturalText) {
-            await copyToClipboard(naturalText, post.id, !!aiPrompt, post.preview_file_url, format)
-            return
-        }
+    // This card's prompt in a format, once, without changing the setting.
+    // Null when the converter couldn't load (a toast says so).
+    const promptIn = async (format: PromptFormat): Promise<string | null> => {
+        if (format === "tags") return tagPrompt
+        if (format === promptFormat && naturalText) return naturalText
         try {
-            const converted = await convertPromptOnce(format, naturalSource, tagOverrides, fullDetail)
-            await copyToClipboard(converted.text, post.id, !!aiPrompt, post.preview_file_url, format)
+            return (await convertPromptOnce(format, naturalSource, tagOverrides, fullDetail)).text
         } catch {
             toast({
                 description: "Couldn't load the prompt converter. Check your connection and try again.",
                 variant: "destructive",
                 duration: 3000,
             })
+            return null
         }
     }
 
+    // "Copy as": this card in another format, once.
+    const copyAs = async (format: PromptFormat) => {
+        const text = await promptIn(format)
+        if (text) await copyToClipboard(text, post.id, !!aiPrompt, post.preview_file_url, format)
+    }
+
     // Send: the exact text the Copy button would copy, queued in ComfyUI.
-    const sendToComfyUI = async () => {
-        if (comfySending || !copyText) return
-        const text = copyText
-        const format = showsNatural ? promptFormat : "tags"
+    // Sending again replaces the card's job (see sendToComfy).
+    const sendToComfyUI = async (text: string, format: PromptFormat) => {
+        if (comfySending || !text) return
         setComfySending(true)
         try {
             const { sendToComfy } = await import("./comfyui-send")
@@ -476,11 +476,21 @@ export const MasonryItem = memo(function MasonryItem({
             })
             if (sent) setComfyJob(sent)
         } catch {
-            toast({ description: "Couldn't load the ComfyUI sender. Check your connection and try again.", variant: "destructive", duration: 3000 })
+            toast({ description: "Couldn't load Send to ComfyUI. Check your connection and try again.", variant: "destructive", duration: 3000 })
         } finally {
             setComfySending(false)
         }
     }
+
+    // "Send as": this card in another format, sent once.
+    const sendAs = async (format: PromptFormat) => {
+        const text = await promptIn(format)
+        if (text) await sendToComfyUI(text, format)
+    }
+
+    // Where focus goes when the job's own controls go away (cancel, close).
+    const comfySendRef = useRef<HTMLButtonElement>(null)
+    const focusComfySend = useCallback(() => comfySendRef.current?.focus(), [])
 
     // Authoritative identity metadata for the AI converter, taken straight from
     // the booru API (not guessed from the flattened prompt). Gated by
@@ -769,6 +779,7 @@ export const MasonryItem = memo(function MasonryItem({
                             originalSrc={displayFileUrl || ''}
                             referrerPolicy={imageReferrerPolicy(itemProvider)}
                             onDismiss={clearComfyJob}
+                            returnFocus={focusComfySend}
                         />
                     )}
                     {imageError && (
@@ -992,7 +1003,8 @@ export const MasonryItem = memo(function MasonryItem({
                             </Button>
                         ) : comfyMode ? (
                             <Button
-                                onClick={() => void sendToComfyUI()}
+                                ref={comfySendRef}
+                                onClick={() => void sendToComfyUI(copyText, showsNatural ? promptFormat : "tags")}
                                 className="flex-1 focus-ring h-auto rounded-r-none border-r-0"
                                 variant="secondary"
                                 disabled={!copyText}
@@ -1037,13 +1049,14 @@ export const MasonryItem = memo(function MasonryItem({
                             disabled={!displayContent}
                             contentClassName="z-[10005]"
                             copyAs={{ current: showsNatural ? promptFormat : "tags", onSelect: copyAs }}
+                            sendAs={comfyMode && !isNaturalLanguageMode && !isPackMode ? sendAs : undefined}
                             trigger={
                                 <Button
                                     // Matches the primary half of the split button so both read as one control.
                                     variant={isPackMode ? "outline" : (isNaturalLanguageMode || (!comfyMode && copiedId === post.id) ? "default" : "secondary")}
                                     className={`px-2 pointer-coarse:min-w-11 focus-ring h-auto rounded-l-none ${isPackMode ? "" : "border-l border-foreground/10"}`}
                                     disabled={!displayContent}
-                                    aria-label="Copy options"
+                                    aria-label={comfyMode && !isNaturalLanguageMode && !isPackMode ? "Send and copy options" : "Copy options"}
                                 >
                                     <ChevronDown className="h-4 w-4" aria-hidden="true" />
                                 </Button>
