@@ -123,7 +123,7 @@ between the overlays and the Copy button, as in the script above).
 
 ## Pack Mode video (10.9.0)
 
-- `src/PackMode.tsx` — the composition (`PackMode`, poster still `PackModePoster`): five chapters, timed in
+- `src/PackMode.tsx` — the composition (`PackMode`, poster still `PackModePoster`): four chapters, timed in
   `src/pack-chapters.ts`, which also holds the chapter text the dialog lists. Keep its chapters in
   `lib/feature-intro-videos.ts` in step with it, word for word (seconds = frames / 30). The dialog shows it first and
   Send to ComfyUI second.

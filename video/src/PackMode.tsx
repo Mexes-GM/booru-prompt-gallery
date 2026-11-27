@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { AbsoluteFill, Img, interpolate, random, staticFile, useCurrentFrame } from "remotion"
+import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame } from "remotion"
 import {
   Ban,
   Check,
@@ -7,7 +7,6 @@ import {
   Copy,
   Dices,
   ExternalLink,
-  EyeOff,
   Lock,
   LockOpen,
   Minus,
@@ -16,7 +15,6 @@ import {
   Palette,
   PersonStanding,
   Plus,
-  Search,
   Shirt,
   UserRound,
   Users,
@@ -52,7 +50,7 @@ import { ClickRing, Pointer } from "./ui"
 
 // The Pack Mode video (10.9.0): the pack screen as a full-screen panel over
 // the paused gallery. Who, the rows that ask for clothes, a pose and a place,
-// the scene sheet and Generate, fixes from the results, Copy all with size.
+// Generate, fixes from the results, Copy all with size.
 // Same header, pointer and pacing as the earlier videos; every string comes
 // from components/prompt-gallery/pack/pack-text.ts or the components that
 // draw it.
@@ -84,22 +82,18 @@ const T = {
   alsoClick: 412,
   typeAlso: 416,
   enterAlso: 433,
-  scroll2: 476,
-  find: 490,
-  fit: 528,
-  tile: 562,
-  generate: 604,
-  results: 630,
-  scroll3: 634,
-  tag: 692,
-  never: 718,
-  reroll: 766,
-  lock: 814,
-  flux: 892,
-  chevron: 950,
-  size: 978,
-  menuClose: 998,
-  copy: 1020,
+  generate: 454,
+  results: 480,
+  scroll3: 478,
+  tag: 542,
+  never: 568,
+  reroll: 616,
+  lock: 664,
+  flux: 742,
+  chevron: 800,
+  size: 828,
+  menuClose: 848,
+  copy: 870,
 }
 /** Frames per typed character: Who, then the other rows. */
 const CHAR = 1.5
@@ -179,12 +173,6 @@ const RESULTS = [
   },
 ]
 const FORMATS = ["Tags", "Anima", "FLUX.2 · Krea 2", "MOSS-Image"]
-
-/** The scenes' post numbers: made up, stable across renders. */
-const TILES = Array.from({ length: 18 }, (_, i) => 5_200_000 + Math.floor(random(`pack-tile-${i}`) * 2_700_000))
-const LEFT_OUT = 4
-const SCENES_FOUND = 48
-const POSTS_LOADED = 240
 
 // ---------------------------------------------------------------------------
 // The rows of the pack (pack-brief-panel.tsx)
@@ -285,7 +273,7 @@ function rowState(id: RowId, f: number) {
     case "also":
       return {
         chips: f >= T.enterAlso ? [{ spec: { label: "(smile:1.2)" } as ChipSpec, at: T.enterAlso }] : [],
-        ...entry("(smile:1.2)", T.alsoClick, T.typeAlso, T.enterAlso, T.scroll2),
+        ...entry("(smile:1.2)", T.alsoClick, T.typeAlso, T.enterAlso, T.generate),
         empty: "Add tags",
         more: "Add more",
         events: [T.enterAlso],
@@ -329,19 +317,8 @@ function briefLayout(f: number) {
 }
 
 // ---------------------------------------------------------------------------
-// Scenes and results
+// Results
 // ---------------------------------------------------------------------------
-
-const FIT_TEXT_W = CW - 8 - 120 - 24
-const fitSentence = `${SCENES_FOUND} scenes fit`
-const fitRest = ` from ${POSTS_LOADED} posts on Danbooru so far · Select a scene to leave it out`
-const SHEET = { cols: 6, gap: 6, tileH: 40 }
-const TILE_W = (CW - SHEET.gap * (SHEET.cols - 1)) / SHEET.cols
-const SHEET_H = 3 * SHEET.tileH + 2 * SHEET.gap + 6 + 28
-
-function fitHeight() {
-  return wrapWords(fitSentence + fitRest, FIT_TEXT_W, 15, 450).length * 22.5
-}
 
 /** One result row's text, lines and height at frame `f`. */
 function rowContent(i: number, f: number) {
@@ -362,11 +339,9 @@ function rowContent(i: number, f: number) {
   return { r, natural, pending, tags, tokens, lines, locked, textW, actionsW, metaY, textY, height: 26 + Math.max(32, 2 + contentH) }
 }
 
-/** Where the fit line, the sheet and the results sit in the body, with their eased heights. */
+/** Where the results sit in the body, under the brief, with their eased heights. */
 function lowerLayout(f: number) {
-  const fitTop = briefLayout(f).bottom + 16
-  const sheetTop = fitTop + fitHeight() + 4 + 16
-  const resultsTop = sheetTop + SHEET_H + 16
+  const resultsTop = briefLayout(f).bottom + 16
   const events = [T.never + 1, T.reroll + 3, T.lock + 1, T.flux + 2, T.flux + 14]
   let y = resultsTop + 32 + 8
   const rows = RESULTS.map((_, i) => {
@@ -374,7 +349,7 @@ function lowerLayout(f: number) {
     y += settle(f, events, (x) => rowContent(i, x).height) + 6
     return top
   })
-  return { fitTop, sheetTop, resultsTop, rows }
+  return { resultsTop, rows }
 }
 
 // ---------------------------------------------------------------------------
@@ -385,19 +360,17 @@ const SCROLL_TO = {
   /** Enough to bring Who's note under the cast choice into view. */
   whoNote: () => Math.max(0, briefLayout(T.turns + 12).tops.wearing - (H - HEADER_H - FOOTER_H) + 4),
   wearing: () => briefLayout(T.scroll1).tops.wearing - 4,
-  fit: () => lowerLayout(T.scroll2).fitTop - 10,
   results: () => lowerLayout(T.results).resultsTop - 8,
 }
 
 function scrollAt(f: number) {
   const a = SCROLL_TO.wearing()
-  const b = SCROLL_TO.fit()
   const c = SCROLL_TO.results()
   const a0 = SCROLL_TO.whoNote()
   if (f < T.scroll1) return a0 * ease(f, T.turns + 4, T.turns + 22, EASE.inOut)
-  if (f < T.scroll2) return a0 + (a - a0) * ease(f, T.scroll1, T.scroll1 + 22, EASE.inOut)
-  if (f < T.scroll3) return a + (b - a) * ease(f, T.scroll2, T.scroll2 + 26, EASE.inOut)
-  return b + (c - b) * ease(f, T.scroll3, T.scroll3 + 26, EASE.inOut)
+  if (f < T.scroll3) return a0 + (a - a0) * ease(f, T.scroll1, T.scroll1 + 22, EASE.inOut)
+  // The results arrive under the brief and the body glides down to them.
+  return a + (c - a) * ease(f, T.scroll3, T.scroll3 + 30, EASE.inOut)
 }
 
 const noticeOn = (f: number) => f > T.never && f < T.never + 180
@@ -462,12 +435,6 @@ function pointerPath(): Key[] {
     const box = rowLayout("wearing", f).boxes[0]
     return fromBody(COL_X + box.x + 2 + modeWidth("Any") / 2, b.tops.wearing + 13 + box.y + 14, f)
   })()
-  const tile = (() => {
-    const f = T.tile
-    const col = LEFT_OUT % SHEET.cols
-    const row = Math.floor(LEFT_OUT / SHEET.cols)
-    return fromBody(PAD + col * (TILE_W + SHEET.gap) + TILE_W / 2, lowerLayout(f).sheetTop + row * (SHEET.tileH + SHEET.gap) + 22, f)
-  })()
   const footerY = (f: number) => H - footerAt(f) + 1 + 12 + (footerAt(f) - FOOTER_H) + 20
   const generate = toVideo(RIGHT - generateWidth(T.generate - 1) / 2 + 20, footerY(T.generate))
   const tag = (() => {
@@ -518,13 +485,10 @@ function pointerPath(): Key[] {
     [T.whereClick - 4, field("where", T.whereClick).x, field("where", T.whereClick).y],
     [T.whereClick + 6, field("where", T.whereClick).x, field("where", T.whereClick).y],
     [T.alsoClick - 4, field("also", T.alsoClick).x, field("also", T.alsoClick).y],
-    [T.alsoClick + 24, field("also", T.alsoClick).x + 80, field("also", T.alsoClick).y + 40],
-    [T.scroll2 + 30, 760, 560],
-    [T.tile - 4, tile.x, tile.y],
-    [T.tile + 10, tile.x, tile.y],
+    [T.alsoClick + 14, field("also", T.alsoClick).x + 40, field("also", T.alsoClick).y + 20],
     [T.generate - 4, generate.x, generate.y],
     [T.generate + 14, generate.x, generate.y],
-    [T.scroll3 + 30, 760, 520],
+    [T.scroll3 + 30, 720, 560],
     [T.tag - 4, tag.x, tag.y],
     [T.tag + 8, tag.x, tag.y],
     [T.never - 4, never.x, never.y],
@@ -547,7 +511,7 @@ function pointerPath(): Key[] {
   return keys
 }
 
-const CLICKS = [T.whoClick, T.pickA, T.pickB, T.turns, T.wearClick, T.exact, T.doClick, T.whereClick, T.alsoClick, T.tile, T.generate, T.tag, T.never, T.reroll, T.lock, T.flux, T.chevron, T.size, T.copy]
+const CLICKS = [T.whoClick, T.pickA, T.pickB, T.turns, T.wearClick, T.exact, T.doClick, T.whereClick, T.alsoClick, T.generate, T.tag, T.never, T.reroll, T.lock, T.flux, T.chevron, T.size, T.copy]
 
 // ---------------------------------------------------------------------------
 // Pieces
@@ -799,75 +763,6 @@ function BriefRow({ id, f, top }: { id: RowId; f: number; top: number }) {
           {l.note}
         </p>
       )}
-    </div>
-  )
-}
-
-function FitLine({ f, top }: { f: number; top: number }) {
-  if (f < T.find - 4) return null
-  const done = f >= T.fit
-  const found = Math.round(interpolate(f, [T.find, T.fit], [0, 46], { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: EASE.inOut }))
-  return (
-    <div style={{ position: "absolute", left: PAD, top, width: CW, display: "flex", alignItems: "center", gap: 8, opacity: ease(f, T.find - 4, T.find + 4) }}>
-      <span style={{ display: "flex", alignItems: "flex-start", gap: 8, width: done ? FIT_TEXT_W + 24 : CW, fontSize: 15, lineHeight: "22.5px" }}>
-        {done ? <Check size={16} color={P.successText} style={{ marginTop: 3, flexShrink: 0 }} /> : <Search size={16} color={C.mutedForeground} style={{ marginTop: 3, flexShrink: 0 }} />}
-        {done ? (
-          <span style={{ opacity: ease(f, T.fit, T.fit + 6) }}>
-            <span style={{ fontWeight: 500 }}>{fitSentence}</span>
-            <span style={{ color: C.mutedForeground }}>{fitRest}</span>
-          </span>
-        ) : (
-          <span style={{ fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>Finding scenes… {found} so far</span>
-        )}
-      </span>
-      {done && (
-        <span style={{ marginLeft: "auto", height: 28, padding: "0 10px", display: "flex", alignItems: "center", borderRadius: 6, border: `1px solid ${C.border}`, background: C.background, fontSize: 12, fontWeight: 500, whiteSpace: "nowrap", opacity: ease(f, T.fit + 4, T.fit + 10) }}>
-          Find more scenes
-        </span>
-      )}
-    </div>
-  )
-}
-
-function Sheet({ f, top }: { f: number; top: number }) {
-  if (f < T.find - 4) return null
-  const out = ease(f, T.tile + 1, T.tile + 6)
-  return (
-    <div style={{ position: "absolute", left: PAD, top, width: CW }}>
-      {TILES.map((post, i) => {
-        const col = i % SHEET.cols
-        const row = Math.floor(i / SHEET.cols)
-        const at = T.find + 2 + i * 1.6
-        const shown = ease(f, at, at + 6)
-        const isOut = i === LEFT_OUT && out > 0.5
-        return (
-          <div key={post} style={{ position: "absolute", left: col * (TILE_W + SHEET.gap), top: row * (SHEET.tileH + SHEET.gap), width: TILE_W, height: SHEET.tileH }}>
-            <div style={{ position: "absolute", inset: 0, borderRadius: 6, background: alpha(C.muted, 70), opacity: 1 - shown }} />
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                display: "grid",
-                placeItems: "center",
-                borderRadius: 6,
-                border: isOut ? `1px dashed ${alpha(C.mutedForeground, 70)}` : "1px solid transparent",
-                background: isOut ? "transparent" : C.muted,
-                color: isOut ? C.mutedForeground : C.foreground,
-                fontFamily: MONO,
-                fontSize: 12,
-                fontVariantNumeric: "tabular-nums",
-                opacity: shown,
-              }}
-            >
-              {post}
-              {isOut && <EyeOff size={10} color={C.mutedForeground} style={{ position: "absolute", right: 2, top: 2 }} />}
-            </div>
-          </div>
-        )
-      })}
-      <span style={{ position: "absolute", left: 0, top: 3 * SHEET.tileH + 2 * SHEET.gap + 6, height: 28, padding: "0 8px", display: "flex", alignItems: "center", fontSize: 12, color: C.mutedForeground, opacity: ease(f, T.fit, T.fit + 8) }}>
-        Show all <span style={{ marginLeft: 4, fontVariantNumeric: "tabular-nums" }}>{SCENES_FOUND}</span>
-      </span>
     </div>
   )
 }
@@ -1147,8 +1042,6 @@ export function PackMode({ staticFrame, hidePointer }: { staticFrame?: number; h
             {ROW_IDS.map((id) => (
               <BriefRow key={id} id={id} f={f} top={brief.tops[id]} />
             ))}
-            <FitLine f={f} top={lower.fitTop} />
-            <Sheet f={f} top={lower.sheetTop} />
             {f >= T.results && (
               <div style={{ opacity: ease(f, T.results, T.results + 8) }}>
                 <Toolbar f={f} top={lower.resultsTop} />

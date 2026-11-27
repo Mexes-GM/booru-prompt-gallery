@@ -49,20 +49,15 @@ const PACK: FeatureVideo = {
     {
       at: 8,
       title: "Ask for what you want",
-      body: "Add what they wear, what they do and where, each in its row. Any gives each prompt its own kind; Exactly uses that tag. Weights like (smile:1.2) work in any row.",
+      body: "Add what they wear, what they do and where, each in its row. Any gives each prompt its own kind; Exactly uses that tag. Weights like (smile:1.2) work in any row. Then press Generate.",
     },
     {
       at: 16,
-      title: "Scenes that fit",
-      body: "The pack finds posts that match and lists them by number. Select one to leave it out, then press Generate.",
-    },
-    {
-      at: 22,
       title: "Fix it from the results",
       body: "Select a tag to keep it in every prompt or out of all of them. Re-roll a prompt, or lock one so it stays.",
     },
     {
-      at: 29,
+      at: 24,
       title: "Copy them all",
       body: "Pick a prompt format and copy every prompt at once, with its suggested size if you want it.",
     },
