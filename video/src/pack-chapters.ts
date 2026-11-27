@@ -16,30 +16,24 @@ export const CHAPTERS = [
   {
     id: "ask",
     title: "Ask for what you want",
-    body: "Add what they wear, what they do and where, each in its row. Any gives each prompt its own kind; Exactly uses that tag. Weights like (smile:1.2) work in any row.",
+    body: "Add what they wear, what they do and where, each in its row. Any gives each prompt its own kind; Exactly uses that tag. Weights like (smile:1.2) work in any row. Then press Generate.",
     from: 240,
-  },
-  {
-    id: "scenes",
-    title: "Scenes that fit",
-    body: "The pack finds posts that match and lists them by number. Select one to leave it out, then press Generate.",
-    from: 480,
   },
   {
     id: "fix",
     title: "Fix it from the results",
     body: "Select a tag to keep it in every prompt or out of all of them. Re-roll a prompt, or lock one so it stays.",
-    from: 660,
+    from: 480,
   },
   {
     id: "copy",
     title: "Copy them all",
     body: "Pick a prompt format and copy every prompt at once, with its suggested size if you want it.",
-    from: 870,
+    from: 720,
   },
 ] as const
 
-export const DURATION = 1080
+export const DURATION = 930
 
 /** Frame used for the poster image: the pack with every row filled in (Wearing, Doing, Where, Also). */
-export const POSTER_FRAME = 465
+export const POSTER_FRAME = 446
