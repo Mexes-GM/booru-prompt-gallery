@@ -5,7 +5,7 @@ import { C, FONT, fontsReady, u } from "./theme"
 
 // Pieces for the Send to ComfyUI video and the setup guide's loops: an
 // abstract ComfyUI window (no logo, shapes and a few real labels, like the
-// guide's old illustrations), the guide's "Published from ComfyUI" list, and
+// guide's old illustrations), the guide's "From your ComfyUI" list, and
 // a card's job surface from components/prompt-gallery/comfyui-card-job.tsx
 // with the curves from comfyui-motion.tsx.
 
@@ -598,7 +598,7 @@ export function ManagerDialog({
 }
 
 // ---------------------------------------------------------------------------
-// The setup guide's "Published from ComfyUI" list (site theme)
+// The setup guide's "From your ComfyUI" list (site theme)
 // ---------------------------------------------------------------------------
 
 export const WORKFLOW_NAME = "Anime portrait"
@@ -677,7 +677,7 @@ export function PublishedList({
       }}
     >
       <div style={{ height: LIST.headHeight, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: u(14), fontWeight: 500 }}>Published from ComfyUI</span>
+        <span style={{ fontSize: u(14), fontWeight: 500 }}>From your ComfyUI</span>
         <span style={{ display: "flex", alignItems: "center", gap: 10, fontSize: u(12), color: C.mutedForeground }}>
           <span style={{ width: 10, height: 10, borderRadius: 999, background: C.primary, opacity: pulse }} />
           Watching for new ones

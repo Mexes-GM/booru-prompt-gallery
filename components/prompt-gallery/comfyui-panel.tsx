@@ -294,8 +294,8 @@ function setupSteps({
     done: progress.hasWorkflow,
     doneText: workflow?.name,
     hint: connected
-      ? "Use one published from ComfyUI, or add a .png or .json file."
-      : "Add a .png or .json file, or connect to use one published from ComfyUI.",
+      ? "Use one from your ComfyUI, or add a .png or .json file."
+      : "Add a .png or .json file, or connect to use one from your ComfyUI.",
     action: { label: "Show workflows", onClick: go.workflows },
   }
   const prompt: SetupStep | null =

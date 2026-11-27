@@ -32,7 +32,7 @@ import { CHAPTERS, DURATION } from "./send-to-comfy-chapters"
 import { C, FONT, u } from "./theme"
 import { ClickRing, Hint, MenuItem, MenuLabel, MenuSeparator, Panel, Pointer, PromptCard, SelectTrigger, SettingRow, Switch, WellText } from "./ui"
 
-// The Send to ComfyUI video (10.9.0): install the node, publish a workflow,
+// The Send to ComfyUI video (10.9.0): install the node, add a workflow,
 // turn the mode on, send from a card, send as another format. Same header,
 // card, pointer and pacing as the earlier videos; the ComfyUI side is an
 // abstract window from comfy-ui.tsx.
@@ -379,7 +379,7 @@ export function SendToComfy({ staticFrame, hidePointer }: { staticFrame?: number
   const installed = ease(frame, T.installed, T.installed + 9)
   const installPress = Math.min(ease(frame, T.installClick, T.installClick + 3), 1 - ease(frame, T.installClick + 4, T.installClick + 8))
 
-  // Chapter 2: publish.
+  // Chapter 2: add your workflow.
   const windowHeight = interpolate(ease(frame, 202, 230, EASE.inOut), [0, 1], [FRAME.height, SHORT_HEIGHT])
   const list = ease(frame, 222, 244)
   const published = ease(frame, T.publishClick + 4, T.publishClick + 14, EASE.springy)
