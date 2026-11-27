@@ -4,9 +4,9 @@
  * One row of the card: the label with its category icon, and what the row asks for, in ink,
  * followed by the field to add more. Where the card is wide the label sits in a narrow column on
  * the left, so the rows read down as one sentence ("Who Tifa Lockhart / Wearing bikini / Doing
- * princess carry"); where it is narrow (a phone, the panel's side column) the label heads its row
- * and the row's controls sit at the end of that line. An empty row's hint shows while its field
- * has focus, and is always its description for screen readers.
+ * princess carry"); where it is narrow (a phone) the label heads its row. The row's controls sit
+ * at the end of the label's line until the card has room for them beside the content. An empty
+ * row's hint shows while its field has focus, and is always its description for screen readers.
  *
  * Focus: when a chip's Remove takes the chip away, focus goes to the neighbouring
  * chip's control, or to the row's field when none is left; taking an offer sends
@@ -54,14 +54,22 @@ export function SlotLabel({ id, slot, label, icon, className }: { id: string; sl
 
 /**
  * A card row's grid: narrow, the label and the row's controls share the first line and what the
- * row holds takes the full width under them; from 22rem, label | content | controls on one line.
+ * row holds takes the full width under them; from 22rem, the label gets its own column and the
+ * content lines up beside it. The controls join the content's line only from 36rem: their column
+ * takes their full width and the content's (`minmax(0,1fr)`) gives way, so in a card narrower than
+ * that a segmented choice or a text button beside the content left the chips a sliver they spilled
+ * out of, over the controls. Until then the controls stay on the label's line, over the content.
  */
 export const SLOT_ROW = "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 @[22rem]:grid-cols-[5.75rem_minmax(0,1fr)_auto] @[22rem]:items-start"
 export const SLOT_LABEL_CELL = "col-start-1 row-start-1"
-const SLOT_ACTIONS_CELL = "col-start-2 row-start-1 flex min-w-0 items-center justify-end gap-1 @[22rem]:col-start-3"
-/** `spanned`: no controls after it, so it takes their column too. */
+const SLOT_ACTIONS_CELL =
+  "col-start-2 row-start-1 flex min-w-0 items-center justify-end gap-1 @[22rem]:col-span-2 @[36rem]:col-start-3 @[36rem]:col-span-1"
+/** `spanned`: no controls in the row, so the content takes their column too. */
 export const slotContentCell = (spanned = true) =>
-  cn("col-span-2 row-start-2 min-w-0 @[22rem]:col-start-2 @[22rem]:row-start-1", spanned ? "@[22rem]:col-span-2" : "@[22rem]:col-span-1")
+  cn(
+    "col-span-2 row-start-2 min-w-0 @[22rem]:col-start-2",
+    spanned ? "@[22rem]:row-start-1" : "@[36rem]:col-span-1 @[36rem]:row-start-1",
+  )
 
 export const BriefSlot = memo(function BriefSlot({
   slot,

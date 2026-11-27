@@ -107,5 +107,12 @@ export const DONOR_ROLE: Record<"wearing" | "where", string> = {
   where: "Only lends a place to the scenes found.",
 }
 
+/**
+ * Where a character's look comes from, said under the scene searches: "Tifa Lockhart's look: from
+ * their own pictures". Scenes may come from anyone; hair, eyes and body come from the character's
+ * own posts.
+ */
+export const lookDescription = (character: string) => `${character}'s look: from their own pictures`
+
 /** The tags of a search as the site gets them: "sui-feng double_penetration". */
 export const searchTagsText = (search: Pick<SceneSearch, "tags">) => search.tags.join(" ")
