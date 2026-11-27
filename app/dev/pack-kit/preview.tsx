@@ -67,6 +67,7 @@ import {
   OVERRIDES,
   SAMPLE_NATURAL,
   SAMPLE_PROMPTS,
+  makeMixedScenes,
   makeScenes,
   suggest,
 } from "./fixtures"
@@ -75,6 +76,7 @@ const noop = () => {}
 const SCENES_60 = makeScenes(60)
 const SCENES_300 = makeScenes(300)
 const SCENES_10 = makeScenes(10, 100)
+const SCENES_MIXED = makeMixedScenes(16)
 
 const PEOPLE_OPTIONS: PeopleOption[] = [
   { people: { girls: 1, boys: 1 }, scenes: 41 },
@@ -595,7 +597,7 @@ export function PackKitPreview() {
           </div>
         </Section>
 
-        <Section title="Hoja de contactos" note="Toca una miniatura para dejarla fuera y otra vez para volver a meterla.">
+        <Section title="Hoja de contactos" note="Toca una escena para dejarla fuera y otra vez para volver a meterla. Sin imágenes: número de post y, si cambia, cuántas personas.">
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 [&>*]:min-w-0">
             <Specimen label="60 scenes, 3 out" width="mid">
               <ContactSheet scenes={SCENES_60} leftOut={sheetOut} onToggle={toggleSheet} />
@@ -605,6 +607,17 @@ export function PackKitPreview() {
             </Specimen>
             <Specimen label="10 scenes" width="phone">
               <ContactSheet scenes={SCENES_10} leftOut={["scene-103"]} onToggle={noop} />
+            </Specimen>
+            <Specimen label="people count · invented · 1 out" width="phone">
+              <ContactSheet scenes={SCENES_MIXED} leftOut={["scene-2"]} onToggle={noop} />
+            </Specimen>
+            <Specimen label="one part changes (Repeats)" width="phone">
+              <ContactSheet
+                scenes={SCENES_10}
+                leftOut={["scene-104"]}
+                onToggle={noop}
+                fixed={{ id: SCENES_10[0].id, picking: false, onStartPick: noop, onPick: noop, onCancelPick: noop }}
+              />
             </Specimen>
             <Specimen label="empty" width="phone">
               <ContactSheet scenes={[]} leftOut={[]} onToggle={noop} />
@@ -632,9 +645,9 @@ export function PackKitPreview() {
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 [&>*]:min-w-0">
             <Specimen label="tags · locked · pending" width="mid">
               <div className="space-y-1.5">
-                <ResultRow index={0} tokens={SAMPLE_PROMPTS[0]} postId={4812345} onCopy={() => true} onReroll={noop} onToggleLock={noop} onAlways={noop} onNever={noop} />
+                <ResultRow index={0} tokens={SAMPLE_PROMPTS[0]} postId={4812345} postHref="https://danbooru.donmai.us/posts/4812345" postSite="Danbooru" character="Tifa Lockhart" onCopy={() => true} onReroll={noop} onToggleLock={noop} onAlways={noop} onNever={noop} />
                 <ResultRow index={1} tokens={SAMPLE_PROMPTS[1]} postId={4823456} locked onCopy={() => true} onReroll={noop} onToggleLock={noop} onAlways={noop} onNever={noop} />
-                <ResultRow index={2} tokens={SAMPLE_PROMPTS[2]} postId={4834567} pending onCopy={() => true} onReroll={noop} onToggleLock={noop} onAlways={noop} onNever={noop} />
+                <ResultRow index={2} tokens={SAMPLE_PROMPTS[2]} postId={-3} inventedScene pending onCopy={() => true} onReroll={noop} onToggleLock={noop} onAlways={noop} onNever={noop} />
               </div>
             </Specimen>
             <Specimen label="natural language" width="phone">

@@ -83,6 +83,15 @@ export function makeScenes(count: number, offset = 0): SceneThumb[] {
   })
 }
 
+/** Escenas con el número de personas (cuando cambia entre ellas) y una inventada. */
+export function makeMixedScenes(count: number): SceneThumb[] {
+  return makeScenes(count).map((s, i) =>
+    i === 4
+      ? { id: "scene-invented", postId: -1, name: "Invented", spokenName: "Invented scene", detail: "Solo" }
+      : { ...s, detail: i % 3 === 0 ? "2 people" : "Solo" },
+  )
+}
+
 export const SAMPLE_PROMPTS: string[][] = [
   ["1girl", "1boy", "tifa lockhart", "black hair", "long hair", "red eyes", "bikini", "princess carry", "beach", "ocean", "smile", "day"],
   ["1girl", "1boy", "tifa lockhart", "black hair", "red eyes", "bikini", "princess carry", "pool", "looking at viewer", "from side"],

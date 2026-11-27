@@ -1,7 +1,8 @@
 "use client"
 
 /**
- * One generated prompt: the scene it came from, the prompt in mono, and copy,
+ * One generated prompt: the post its scene came from (as text, linked to the post
+ * on its site; the pack loads no pictures), the prompt in mono, and copy,
  * re-roll and lock. In tag format each tag is a button whose menu puts it on the
  * card as Always or Never. A locked row keeps its prompt when the pack is generated
  * again, and says so.
@@ -13,7 +14,7 @@
  * that was clicked mounts a menu, so a hundred rows stay light.
  */
 import { memo, useEffect, useRef, useState, type KeyboardEvent } from "react"
-import { AlertTriangle, Check, Copy, Dices, Lock, LockOpen } from "lucide-react"
+import { AlertTriangle, Check, Copy, Dices, ExternalLink, Lock, LockOpen } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,6 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { CAST_MODE_TEXT, COPY_FAILED, SIZE_TEXT } from "./pack-text"
+import { SCENE_TEXT } from "./scene-tile"
 import { useCopyResult } from "./use-copy-result"
 
 export interface ResultRowProps {
@@ -33,7 +35,12 @@ export interface ResultRowProps {
   text?: string
   /** The post the scene came from. */
   postId?: number
-  thumbSrc?: string
+  /** The post's page on its site; without it the post number is plain text. */
+  postHref?: string
+  /** The site's name, said on the link ("Danbooru"). */
+  postSite?: string
+  /** The scene was written by the scene model: there is no post. */
+  inventedScene?: boolean
   locked?: boolean
   /** The prompt is being re-rolled or converted. */
   pending?: boolean
@@ -129,7 +136,9 @@ export const ResultRow = memo(function ResultRow({
   tokens = [],
   text,
   postId,
-  thumbSrc,
+  postHref,
+  postSite,
+  inventedScene = false,
   locked = false,
   busy = false,
   busyReason,
@@ -183,6 +192,31 @@ export const ResultRow = memo(function ResultRow({
     focusToken(next)
   }
 
+  // The post the scene came from, as text: the pack shows no pictures.
+  const ref = inventedScene ? (
+    <span className="shrink-0">{SCENE_TEXT.inventedScene}</span>
+  ) : postId !== undefined && postId > 0 ? (
+    postHref ? (
+      <a
+        href={postHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={SCENE_TEXT.openPost(postId, postSite ?? "its site")}
+        title={SCENE_TEXT.openPost(postId, postSite ?? "its site")}
+        className={cn(
+          "inline-flex shrink-0 items-center gap-1 rounded-[3px] font-mono tabular-nums underline-offset-2",
+          "transition-colors duration-150 ease-out-strong hover:text-foreground hover:underline",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        )}
+      >
+        {SCENE_TEXT.post(postId)}
+        <ExternalLink className="size-3" aria-hidden />
+      </a>
+    ) : (
+      <span className="shrink-0 font-mono tabular-nums">{SCENE_TEXT.post(postId)}</span>
+    )
+  ) : null
+
   const copyPrompt = async () => {
     let ok = false
     try {
@@ -197,29 +231,15 @@ export const ResultRow = memo(function ResultRow({
     <div className="@container">
       <div
         className={cn(
-          // Narrow: picture and text, then the row's actions in one line under the text.
-          "group grid grid-cols-[3rem_minmax(0,1fr)] items-start gap-x-3 gap-y-1.5 rounded-xl border p-3 @md:grid-cols-[3rem_minmax(0,1fr)_auto]",
+          // Narrow: number and text, then the row's actions in one line under the text.
+          "group grid grid-cols-[1.5rem_minmax(0,1fr)] items-start gap-x-2.5 gap-y-1.5 rounded-xl border p-3 @md:grid-cols-[1.5rem_minmax(0,1fr)_auto]",
           "transition-[border-color,background-color] duration-150 ease-out-strong",
           locked ? "border-mode-pack-border bg-mode-pack-soft" : "border-border/60 bg-card hover:border-border",
         )}
       >
-        <div className="relative">
-          <div className="aspect-[3/4] w-12 overflow-hidden rounded-md bg-muted ring-1 ring-inset ring-foreground/5">
-            {thumbSrc ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={thumbSrc} alt="" loading="lazy" decoding="async" className="size-full object-cover" />
-            ) : (
-              postId !== undefined && (
-                <span className="grid size-full place-items-center font-mono text-[10px] tabular-nums text-foreground [overflow-wrap:anywhere]">
-                  {postId}
-                </span>
-              )
-            )}
-          </div>
-          <span className="mt-1 block text-center font-mono text-xs tabular-nums text-muted-foreground" aria-hidden>
-            {String(n).padStart(2, "0")}
-          </span>
-        </div>
+        <span className="pt-0.5 font-mono text-xs leading-5 tabular-nums text-muted-foreground" aria-hidden>
+          {String(n).padStart(2, "0")}
+        </span>
 
         <div className="min-w-0 pt-0.5">
           {locked && (
@@ -228,10 +248,15 @@ export const ResultRow = memo(function ResultRow({
               Locked: stays when you generate again
             </p>
           )}
-          {character && (
-            <p className="mb-0.5 truncate text-xs font-medium text-muted-foreground">
-              <span className="sr-only">{CAST_MODE_TEXT.rowLabel}: </span>
-              {character}
+          {(character || ref) && (
+            <p className="mb-0.5 flex min-w-0 items-baseline gap-x-2 text-xs text-muted-foreground">
+              {character && (
+                <span className="min-w-0 truncate font-medium">
+                  <span className="sr-only">{CAST_MODE_TEXT.rowLabel}: </span>
+                  {character}
+                </span>
+              )}
+              {ref}
             </p>
           )}
           {pending && <p className="mb-0.5 text-xs text-muted-foreground">Updating…</p>}
