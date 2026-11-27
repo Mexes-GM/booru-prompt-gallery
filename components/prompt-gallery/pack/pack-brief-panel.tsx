@@ -21,7 +21,7 @@ import { ChoiceGroup, type Choice } from "./choice-group"
 import { PeopleLine, type PeopleLineProps } from "./people-line"
 import { RequestChip, type RequestChipTone } from "./request-chip"
 import type { EntryOption } from "./tag-entry"
-import { SLOTS, characterName, showTag, slotTags, type CharacterInfo, type SlotId, type SuggestionStatus, type TagSuggestion } from "./slots"
+import { SLOTS, characterName, showTag, slotTags, weightedLabel, type CharacterInfo, type SlotId, type SuggestionStatus, type TagSuggestion } from "./slots"
 import { OutfitDetailMenu, WearingSourceMenu } from "./wearing-source-menu"
 import { CastPickerButton, RandomCastButton, seriesName } from "./cast-picker"
 import { CAST_MODE_TEXT, DEFAULTS_TEXT, OTHERS_UNUSED, RANDOM_CAST_TEXT, WEARING_TEXT, WHO_MANY_TEXT, outfitSourceLabel } from "./pack-text"
@@ -261,7 +261,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
   ) => {
     const tags = slotTags(brief, slot)
     const lastTag = tags[tags.length - 1]
-    const last = lastTag ? { label: showTag(lastTag), remove: () => onRemoveTag(lastTag) } : null
+    const last = lastTag ? { label: weightedLabel(brief, lastTag), remove: () => onRemoveTag(lastTag) } : null
     const offered = offersIn(slot)
     const conflictLines = conflictNotes(tags)
     const notes =
@@ -288,7 +288,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
           return (
             <RequestChip
               key={tag}
-              label={showTag(tag)}
+              label={weightedLabel(brief, tag)}
               tone={ROW_TONE[slot]}
               conflict={conflicts[tag]}
               selected={picked === slot && i === tags.length - 1}
@@ -325,6 +325,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
       <section ref={sectionRef} aria-label="Pack" className={cn("@container divide-y divide-border/50 [&>*:first-child]:pt-0", className)}>
         <WhoRow
           who={brief.who}
+          weights={brief.weights}
           characterInfo={characterInfo}
           maxCharacters={maxCharacters}
           picked={picked === "who"}
@@ -492,6 +493,8 @@ function NeverRow({
 
 interface WhoRowProps {
   who: readonly BriefCharacter[]
+  /** The pack's weights (PackBrief.weights): shown on the chips of the tags that have one. */
+  weights?: PackBrief["weights"]
   characterInfo: Readonly<Record<string, CharacterInfo>>
   maxCharacters: number
   picked: boolean
@@ -521,6 +524,7 @@ const CAST_MODE_CHOICES_MANY: Choice<CastMode>[] = CAST_MODE_CHOICES.map((c) => 
 /** Who: each character on its own line with its usual look; a role picker once there are two. */
 function WhoRow({
   who,
+  weights,
   characterInfo,
   maxCharacters,
   picked,
@@ -551,6 +555,7 @@ function WhoRow({
   const compact = many && !looksShown
   const unseen = turns && promptCount !== undefined && promptCount < named.length ? named.length - promptCount : 0
 
+  const label = (tag: string, text?: string) => weightedLabel({ weights }, tag, text)
   const lines = useMemo(
     () =>
       who.map((c) => {
@@ -574,10 +579,10 @@ function WhoRow({
     const lastAdded = lastLine.added[lastLine.added.length - 1]
     const lastTrait = [...lastLine.usual].reverse().find((t) => !lastLine.removed.has(t.toLowerCase()) && !lastLine.replaced.has(t.toLowerCase()))
     if (lastAdded) {
-      last = { label: showTag(lastAdded), remove: () => onRemoveTag(lastAdded) }
+      last = { label: label(lastAdded), remove: () => onRemoveTag(lastAdded) }
       lastKey = `added:${lastAdded}`
     } else if (lastTrait) {
-      last = { label: showTag(lastTrait), remove: () => onRemoveTrait(lastLine.c.tag, lastTrait) }
+      last = { label: label(lastTrait), remove: () => onRemoveTrait(lastLine.c.tag, lastTrait) }
       lastKey = `trait:${lastTrait}`
     }
   }
@@ -649,7 +654,7 @@ function WhoRow({
         return (
           <div key={c.tag ?? `unnamed-${i}`} className="flex basis-full flex-wrap items-center gap-1.5">
             {name && (
-              <RequestChip strong label={name} onRemove={() => onRemoveCharacter(c.tag)} />
+              <RequestChip strong label={c.tag ? label(c.tag, name) : name} onRemove={() => onRemoveCharacter(c.tag)} />
             )}
             {name && showRoles && (
               <ChoiceGroup
@@ -671,7 +676,7 @@ function WhoRow({
                 <RequestChip
                   key={`trait:${t}`}
                   variant="trait"
-                  label={showTag(t)}
+                  label={label(t)}
                   removed={off}
                   replaced={replaced.has(t.toLowerCase())}
                   selected={picked && isLast && lastKey === `trait:${t}`}
@@ -683,7 +688,7 @@ function WhoRow({
             {added.map((t) => (
               <RequestChip
                 key={`added:${t}`}
-                label={showTag(t)}
+                label={label(t)}
                 tone="appearance"
                 selected={picked && isLast && lastKey === `added:${t}`}
                 onRemove={() => onRemoveTag(t)}

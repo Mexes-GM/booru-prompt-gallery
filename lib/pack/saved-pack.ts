@@ -10,7 +10,7 @@
 import type { BooruProvider } from '../booru/types'
 import type { PackPrompt } from './pack-generator'
 import type { BriefOutfit } from './brief-pack'
-import type { ChangesAxis, PackBrief, RequestRole } from './brief'
+import { liftBriefWeights, type ChangesAxis, type PackBrief, type RequestRole } from './brief'
 import type { ScenePackIssue } from './scene-pack'
 
 export const SAVED_PACK_VERSION = 1
@@ -157,6 +157,7 @@ function isBrief(v: unknown): v is PackBrief {
     && optional(v.peopleMix, (m) => Array.isArray(m) && m.every(isPeople))
     && optional(v.castMode, (m) => m === 'together' || m === 'turns')
     && optional(v.randomCast, isRandomCast)
+    && optional(v.weights, (w) => isObj(w) && Object.values(w).every((x) => isNum(x) && x >= 0))
 }
 
 const GENDERS: readonly string[] = ['girls', 'boys', 'any', 'auto']
@@ -199,7 +200,12 @@ export function readSavedPack(v: unknown): SavedPack | null {
   if (!isObj(v) || v.version !== SAVED_PACK_VERSION || !isNum(v.savedAt)) return null
   if (!isBrief(v.brief) || !isOutfit(v.outfit) || !PROVIDERS.includes(v.provider as string) || typeof v.gallerySearch !== 'string') return null
   if (v.result !== null && !isResult(v.result)) return null
-  return v as unknown as SavedPack
+  const pack = v as unknown as SavedPack
+  // A pack kept before weights were read has them in its tags ("(excessive cum:2)"): read them now.
+  const brief = liftBriefWeights(pack.brief)
+  const resultBrief = pack.result?.brief ? liftBriefWeights(pack.result.brief) : undefined
+  if (brief === pack.brief && resultBrief === pack.result?.brief) return pack
+  return { ...pack, brief, result: pack.result && resultBrief ? { ...pack.result, brief: resultBrief } : pack.result }
 }
 
 /** Prompts the saved pack holds: what a new pack would replace (0 for none). */

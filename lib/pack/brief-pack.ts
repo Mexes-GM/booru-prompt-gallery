@@ -12,7 +12,7 @@ import type { PackRatingMode } from '../../hooks/use-pack-seed-search'
 import { ADULT_OUTFIT_STYLES, OUTFIT_STYLES, outfitTags, type Outfit, type OutfitDetail, type OutfitStyle } from '../outfit-swap'
 import { planRatings } from './source-plan'
 import { withResolutionPrefix } from './prompt-resolution'
-import { addCharacter, addNever, addTag, briefFromCard, briefFromPrompt, castTurns, setPeople, toSceneRequests, turnBriefs, type ChangesAxis, type PackBrief } from './brief'
+import { addCharacter, addNever, addTag, briefFromCard, briefFromPrompt, briefTagName, castTurns, setPeople, toSceneRequests, turnBriefs, type ChangesAxis, type PackBrief } from './brief'
 import { castPeople, roleFromSubject, type CastRole } from './scene/cast'
 import { COUNT_TAG_RE, type Permanence } from './scene/permanence'
 import type { PackPeople } from './scene/scene-pool'
@@ -1185,11 +1185,11 @@ export function lookOwner(tag: string, blocks: ReadonlyArray<{ character: string
 
 /** Locked rows that still have `tag` (or a weighted form of it). */
 export function lockedWithTag(rows: readonly { prompt: string }[], locked: Iterable<number>, tag: string): number {
-  const name = normalizeTagForPack(tag)
+  const name = briefTagName(tag)
   let n = 0
   for (const i of locked) {
     const row = rows[i]
-    if (row && promptTokens(row).some((t) => normalizeTagForPack(t.replace(/^\(+/, '').replace(/(:[\d.]+)?\)+$/, '')) === name)) n++
+    if (row && promptTokens(row).some((t) => briefTagName(t) === name)) n++
   }
   return n
 }

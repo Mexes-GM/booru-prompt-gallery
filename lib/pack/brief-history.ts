@@ -3,7 +3,7 @@
  * the one it received untouched. A change is applied at once and can be taken back;
  * the history keeps the brief as it was before each change, with the change's label.
  */
-import { addCharacter, emptyBrief, briefTags, type PackBrief } from './brief'
+import { addCharacter, briefTagName, emptyBrief, briefTags, readBriefTag, weightedTag, type PackBrief } from './brief'
 import { normalizeTagForPack } from './pack-generator'
 import type { PackPreferences } from '../storage'
 
@@ -61,11 +61,11 @@ export function seedNever(brief: PackBrief, defaults: readonly string[]): PackBr
   // What the start already keeps out (a search's "-tag") stays, before the defaults.
   const never: string[] = []
   for (const tag of brief.never) {
-    const name = normalizeTagForPack(tag)
+    const name = briefTagName(tag)
     if (name && !never.includes(name)) never.push(name)
   }
   for (const tag of defaults) {
-    const name = normalizeTagForPack(tag)
+    const name = briefTagName(tag)
     if (name && !asked.has(name) && !never.includes(name)) never.push(name)
   }
   return { ...brief, never }
@@ -88,7 +88,8 @@ export function briefFromCharacters(names: readonly string[]): PackBrief {
  */
 export const DEFAULT_ROWS = {
   never: { key: 'neverDefaults', tagsOf: (brief: PackBrief) => brief.never },
-  style: { key: 'styleDefaults', tagsOf: (brief: PackBrief) => brief.literal },
+  // With the weight the brief gives each tag, as it was typed: a new pack starts with it.
+  style: { key: 'styleDefaults', tagsOf: (brief: PackBrief) => brief.literal.map((t) => weightedTag(brief, t)) },
 } as const satisfies Record<string, { key: keyof PackPreferences; tagsOf: (brief: PackBrief) => readonly string[] }>
 export type DefaultRow = keyof typeof DEFAULT_ROWS
 
@@ -102,13 +103,18 @@ export function withRowDefaults(prefs: PackPreferences, row: DefaultRow, tags: r
 
 /** The preferences without `tag` in a row's defaults. */
 export function withoutRowDefault(prefs: PackPreferences, row: DefaultRow, tag: string): PackPreferences {
-  const name = normalizeTagForPack(tag)
-  return withRowDefaults(prefs, row, rowDefaults(prefs, row).filter((t) => normalizeTagForPack(t) !== name))
+  const name = briefTagName(tag)
+  return withRowDefaults(prefs, row, rowDefaults(prefs, row).filter((t) => briefTagName(t) !== name))
 }
 
 /** True when a row of the brief holds exactly the row's defaults (same tags, any order). */
 export function rowMatchesDefaults(brief: PackBrief, prefs: PackPreferences, row: DefaultRow): boolean {
-  const key = (tags: readonly string[]) => Array.from(new Set(tags.map(normalizeTagForPack))).sort().join('|')
+  // The tag and its weight: "(masterpiece:1.2)" is not the same default as "masterpiece".
+  const one = (tag: string) => {
+    const { name, weight } = readBriefTag(tag)
+    return weight === undefined || weight === 1 ? name : `${name}:${weight}`
+  }
+  const key = (tags: readonly string[]) => Array.from(new Set(tags.map(one))).sort().join('|')
   return key(DEFAULT_ROWS[row].tagsOf(brief)) === key(rowDefaults(prefs, row))
 }
 
@@ -119,15 +125,18 @@ export function rowMatchesDefaults(brief: PackBrief, prefs: PackPreferences, row
 export function seedStyle(brief: PackBrief, defaults: readonly string[]): PackBrief {
   const asked = new Set([...briefTags(brief), ...brief.never].map(normalizeTagForPack))
   const literal = [...brief.literal]
+  const weights = { ...(brief.weights ?? {}) }
   for (const tag of defaults) {
-    const typed = tag.trim()
-    const name = normalizeTagForPack(typed)
+    // A default saved with a weight ("(masterpiece:1.2)") starts the pack with that weight.
+    const { name, typed, weight } = readBriefTag(tag)
     if (name && !asked.has(name)) {
       literal.push(typed)
       asked.add(name)
+      if (weight !== undefined && weight !== 1) weights[name] = weight
     }
   }
-  return literal.length === brief.literal.length ? brief : { ...brief, literal }
+  if (literal.length === brief.literal.length) return brief
+  return Object.keys(weights).length > 0 ? { ...brief, literal, weights } : { ...brief, literal }
 }
 
 /** A new pack's brief with every row's defaults: Never, then Style. */
