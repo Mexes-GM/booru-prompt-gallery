@@ -174,6 +174,7 @@ const PackSourceModal = dynamic(() => loadPackSourceModal().then(m => m.PackSour
 const PackBuilderStickyFooter = dynamic(() => loadPackBuilderStickyFooter().then(m => m.PackBuilderStickyFooter), { ssr: false, loading: () => null })
 const PackBriefBuilder = dynamic(() => loadPackBriefBuilder().then(m => m.PackBriefBuilder), { ssr: false, loading: () => null })
 import type { PackBriefStart } from "./pack/pack-brief-builder"
+import type { CastMember } from "@/lib/pack/brief"
 import { savedPackPromptCount, type SavedPack } from "@/lib/pack/saved-pack"
 import { useStableCallback } from "@/hooks/use-stable-callback"
 import { usePageScrollLock } from "@/hooks/use-page-scroll-lock"
@@ -1328,6 +1329,11 @@ export function PromptGallery() {
     if (!characters[0]) return
     startPackBrief({ kind: 'characters', names: [...characters] })
   }, [startPackBrief])
+  // Several characters picked at once: always the new builder, one per prompt.
+  const handleStartFromCast = useCallback((cast: readonly CastMember[]) => {
+    if (!cast[0]) return
+    startNewPackBrief({ kind: 'characters', names: cast.map((m) => m.tag), cast: [...cast] })
+  }, [startNewPackBrief])
   const packModeDisablePackMode = packMode.disablePackMode
   // Closing leaves Pack Mode; the pack stays and comes back with it.
   const handleExitPackBrief = useCallback(() => {
@@ -2765,6 +2771,8 @@ export function PromptGallery() {
         searchTags={packSearchTags}
         onChooseSearch={handleStartFromSearch}
         onSubmitCharacters={handleStartFromCharacters}
+        onSubmitCast={handleStartFromCast}
+        provider={search.booruProvider}
         classic={packEntryClassic}
         onClassicChange={setPackEntryClassic}
       />}

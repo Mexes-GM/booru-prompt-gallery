@@ -15,7 +15,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { BUILDER_SWITCH_TEXT } from "./pack/builder-switch"
-import { ImageIcon, PenLine, ArrowLeft, Plus, Search, UserRound, X } from "lucide-react"
+import { ImageIcon, PenLine, ArrowLeft, Plus, Search, UserRound, Users, X } from "lucide-react"
+import type { BooruProvider } from "@/lib/booru/types"
+import type { CastMember } from "@/lib/pack/brief"
+import { CastPickerForm } from "./pack/cast-picker"
+import { CAST_PICKER_TEXT } from "./pack/pack-text"
 import { MAX_CAST, castFromNames } from "@/lib/pack/scene/cast"
 import { PackCharacterSearch } from "./pack-character-search"
 import { TagAutocompleteTextarea } from "./tag-autocomplete-textarea"
@@ -40,10 +44,17 @@ export interface PackEntryModalProps {
   /** "Open in the classic builder": the start goes to the classic builder instead of the new one. */
   classic?: boolean
   onClassicChange?: (classic: boolean) => void
+  /**
+   * "Add several at once": characters picked by popularity or series, one per prompt, in the new
+   * builder (not offered while the classic builder is chosen). `provider`: the site, for its names.
+   */
+  onSubmitCast?: (members: CastMember[]) => void
+  provider?: BooruProvider
 }
 
-export function PackEntryModal({ isOpen, initialPrompt, startInPromptView = false, onChooseCard, onSubmitPrompt, onCancel, searchCharacter, searchTags = [], onChooseSearch, onSubmitCharacters, classic = false, onClassicChange }: PackEntryModalProps) {
-  const [view, setView] = useState<"choose" | "prompt" | "character">("choose")
+export function PackEntryModal({ isOpen, initialPrompt, startInPromptView = false, onChooseCard, onSubmitPrompt, onCancel, searchCharacter, searchTags = [], onChooseSearch, onSubmitCharacters, classic = false, onClassicChange, onSubmitCast, provider = "danbooru" }: PackEntryModalProps) {
+  const [view, setView] = useState<"choose" | "prompt" | "character" | "cast">("choose")
+  const castOffered = !!onSubmitCast && !classic
   const [promptText, setPromptText] = useState(initialPrompt)
   const [characters, setCharacters] = useState<string[]>([])
   const [addingCharacter, setAddingCharacter] = useState(true)
@@ -208,6 +219,16 @@ export function PackEntryModal({ isOpen, initialPrompt, startInPromptView = fals
                 </Button>
               ) : null}
               <p className="text-xs text-muted-foreground">A group pack takes up to {MAX_CAST} characters.</p>
+              {castOffered && characters.length === 0 && (
+                <button
+                  type="button"
+                  onClick={() => setView("cast")}
+                  className="flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-xs font-medium text-foreground transition-colors duration-150 hover:bg-mode-pack-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11"
+                >
+                  <Users className="size-3.5 shrink-0 text-mode-pack-text" aria-hidden="true" />
+                  {CAST_PICKER_TEXT.entryLink}
+                </button>
+              )}
             </div>
             <DialogFooter className="flex items-center justify-between sm:justify-between">
               <Button type="button" variant="ghost" onClick={() => setView("choose")}>
@@ -216,6 +237,20 @@ export function PackEntryModal({ isOpen, initialPrompt, startInPromptView = fals
               </Button>
               <Button type="button" onClick={() => onSubmitCharacters(characters)} disabled={characters.length === 0}>
                 Continue
+              </Button>
+            </DialogFooter>
+          </>
+        ) : view === "cast" && castOffered ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>{CAST_PICKER_TEXT.entryTitle}</DialogTitle>
+              <DialogDescription>{CAST_PICKER_TEXT.entryDescription}</DialogDescription>
+            </DialogHeader>
+            <CastPickerForm provider={provider} onAdd={(members) => onSubmitCast?.(members)} submitLabel={CAST_PICKER_TEXT.start} className="py-2" />
+            <DialogFooter className="flex items-center justify-between sm:justify-between">
+              <Button type="button" variant="ghost" onClick={() => setView("character")}>
+                <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
+                Back
               </Button>
             </DialogFooter>
           </>
