@@ -9,8 +9,7 @@ export const MIN_BRIDGE_VERSION = "0.1.0"
 export const BRIDGE_NAME = "Booru Prompt Gallery for ComfyUI"
 
 /** Where to read about installing the add-on. Null hides the link until there is one. */
-// Set to the repo's install section once it is public.
-export const BRIDGE_INSTALL_URL: string | null = null
+export const BRIDGE_INSTALL_URL: string | null = "https://github.com/Mexes-GM/comfyui-booru-prompt-gallery#install"
 
 /** One line, shown when ComfyUI answers but blocks the site. */
 export const BRIDGE_INSTALL_STEP = `Install ${BRIDGE_NAME} and restart ComfyUI.`
