@@ -224,7 +224,7 @@ export interface UsePackBriefScenesResult {
   peopleSelected: readonly PackPeople[]
   /** Make-ups the scenes have with no room for the characters: shown, not offered. */
   peopleBlocked: readonly PoseComposition[]
-  /** Scenes that fit (left-out ones included, so they stay on the sheet); null until worked out once. */
+  /** Scenes that fit (left-out ones included, so the builder can count them); null until worked out once. */
   candidates: SceneCandidate[] | null
   /** The scenes are being worked out again; `candidates` are the previous ones. */
   candidatesPending: boolean
@@ -473,9 +473,9 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   useEffect(() => { setRoutePermanence(permanence ?? undefined) }, [permanence])
 
   // ── Identity ─────────────────────────────────────────────────────────────────
-  // Everything but the left-out scenes: leaving a scene out must not rebuild the pool or the sheet.
-  // A one-part pack keeps the whole-scene choices (they rule out scenes) and shows its
-  // variants left out on the sheet; the scene that repeats is part of it.
+  // Everything but the left-out scenes: leaving a scene out must not rebuild the pool or the candidates.
+  // A one-part pack keeps the whole-scene choices (they rule out scenes) and keeps its
+  // variants left out in the list; the scene that repeats is part of it.
   const axis = oneAxis(brief)
   const coreKey = coreKeyOf(brief)
   const coreBrief = useMemo<PackBrief>(
@@ -972,7 +972,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     kept === 0 ? issues : issues.map((issue) =>
       issue.kind === "few-scenes" || issue.kind === "few-variations" ? { ...issue, prompts: issue.prompts + kept } : issue)
 
-  // The scene the sheet marks as the one that repeats is the one Generate repeats.
+  // The first candidate of a one-part pack is the scene that repeats: the one Generate repeats.
   // Only from the list made for this pool, part and arguments (not one still being replaced).
   const fixedBase = axis && candidateState?.pool === pool && candidateState.axis === axis && candidateState.args === candidateArgs &&
     candidateState.list[0]?.axisRole === "base" ? candidateState.list[0].postId : undefined
@@ -1026,7 +1026,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
       lockedScenes,
       skipScenes: turn.exclude,
       slots,
-      // With locked rows, the scene they repeat is the pack's; otherwise the one the sheet marks.
+      // With locked rows, the scene they repeat is the pack's; otherwise the brief's pick or the first candidate.
       baseScene: axis ? (locked.size > 0 ? before?.made.baseScene : undefined) ?? brief.baseScene ?? fixedBase : undefined,
       rerolls: [],
       sourceKey,

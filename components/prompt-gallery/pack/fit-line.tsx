@@ -39,8 +39,6 @@ const TONE: Record<FitState["kind"], { icon: typeof Check; className: string }> 
 
 export interface FitLineProps {
   state: FitState
-  /** A quiet second half, e.g. how to leave a scene out. */
-  hint?: string
   /** False when the page has one live region for every line (see fitText's `spoken`). */
   announce?: boolean
   /** For a short pack that more pictures could fill: the offer of sensitive pictures on its line. */
@@ -52,12 +50,17 @@ export interface FitLineProps {
   loaded?: { text: string; onFindMore?: () => void }
   /** The toggle that shows what the pack searches (the panel is the caller's, `controls` its id). */
   searches?: { open: boolean; onToggle: () => void; controls: string }
-  /** The first line: the sheet's heading, a step larger. */
+  /**
+   * Scenes a saved pack left out, which the builder no longer shows one by one: one action
+   * puts them all back.
+   */
+  putBack?: { count: number; onPutBack: () => void }
+  /** The first line, a step larger. */
   lead?: boolean
   className?: string
 }
 
-export const FitLine = memo(function FitLine({ state, hint, announce = true, onIncludeSensitive, loaded, searches, lead = false, className }: FitLineProps) {
+export const FitLine = memo(function FitLine({ state, announce = true, onIncludeSensitive, loaded, searches, putBack, lead = false, className }: FitLineProps) {
   const offer = (state.kind === "short" || state.kind === "few-variations") && state.offerSensitive ? onIncludeSensitive : undefined
   const { text, spoken } = fitText(state)
   const { icon: Icon, className: tone } = TONE[state.kind]
@@ -70,7 +73,6 @@ export const FitLine = memo(function FitLine({ state, hint, announce = true, onI
           <span aria-hidden>{text}</span>
           {/* Goes on the sentence ("76 scenes fit from 240 posts…"), or follows it as its own. */}
           {loaded && <span className="font-normal text-muted-foreground"> {/[.!?…]$/.test(text) ? `${loaded.text.charAt(0).toUpperCase()}${loaded.text.slice(1)}.` : loaded.text}</span>}
-          {hint && <span aria-hidden className="font-normal text-muted-foreground"> · {hint}</span>}
         </span>
       </span>
       {searches && (
@@ -89,6 +91,11 @@ export const FitLine = memo(function FitLine({ state, hint, announce = true, onI
           {BUILDER_TEXT.howItSearches}
           <ChevronDown className={cn("size-3.5 transition-transform duration-150", searches.open && "rotate-180")} aria-hidden />
         </button>
+      )}
+      {putBack && putBack.count > 0 && (
+        <Button type="button" variant="outline" size="sm" onClick={putBack.onPutBack} className="h-7 px-2.5 text-xs pointer-coarse:h-11">
+          {BUILDER_TEXT.putBack(putBack.count)}
+        </Button>
       )}
       {loaded?.onFindMore && (
         <Button type="button" variant="outline" size="sm" onClick={loaded.onFindMore} className="h-7 px-2.5 text-xs pointer-coarse:h-11">

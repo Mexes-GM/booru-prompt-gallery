@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils"
 import { ComfyInlineJob, ComfyInlineJobPresence } from "../comfyui-inline-job"
 import { SendGlyph } from "../comfyui-motion"
 import { CAST_MODE_TEXT, COPY_FAILED, SEND_TEXT, SIZE_TEXT } from "./pack-text"
-import { SCENE_TEXT } from "./scene-tile"
+import { SCENE_TEXT } from "./scene-ref"
 import { useCopyResult } from "./use-copy-result"
 
 export interface ResultRowProps {

@@ -1,5 +1,5 @@
 // Datos de ejemplo escritos a mano para la vista previa del kit de Pack. Solo contenido seguro.
-import type { CharacterInfo, ExampleBrief, SceneThumb, TagSuggestion } from "@/components/prompt-gallery/pack"
+import type { CharacterInfo, ExampleBrief, TagSuggestion } from "@/components/prompt-gallery/pack"
 
 /** Taxonomía mínima para que addTag mande cada tag a su hueco. */
 export const OVERRIDES: Record<string, string> = {
@@ -76,20 +76,11 @@ export const CHARACTER_INFO: Record<string, CharacterInfo> = {
 export const OFFICIAL_OUTFITS = ["Advent Children", "Remake", "Sporty dress"]
 
 /** Escenas de ejemplo: ids estables y números de post creíbles. */
-export function makeScenes(count: number, offset = 0): SceneThumb[] {
+export function makeScenes(count: number, offset = 0): { id: string; postId: number }[] {
   return Array.from({ length: count }, (_, i) => {
     const n = i + offset
     return { id: `scene-${n}`, postId: 4_800_000 + ((n * 7919) % 900_000) }
   })
-}
-
-/** Escenas con el número de personas (cuando cambia entre ellas) y una inventada. */
-export function makeMixedScenes(count: number): SceneThumb[] {
-  return makeScenes(count).map((s, i) =>
-    i === 4
-      ? { id: "scene-invented", postId: -1, name: "Invented", spokenName: "Invented scene", detail: "Solo" }
-      : { ...s, detail: i % 3 === 0 ? "2 people" : "Solo" },
-  )
 }
 
 export const SAMPLE_PROMPTS: string[][] = [

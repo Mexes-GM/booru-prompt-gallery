@@ -1,17 +1,16 @@
 "use client"
 
 /**
- * The pack builder made of the brief: Who, Wearing, Doing, Where, Also and Never, the
- * scenes that fit on a contact sheet, a line on how well they fit, Generate, and the
- * prompts. It owns the pack's whole state (usePackBrief), its source (usePackSources),
- * the characters' looks and the engine (usePackBriefScenes); the gallery only gives
+ * The pack builder made of the brief: Who, Wearing, Doing, Where, Also and Never, a line
+ * on how well the scenes fit, Generate, and the prompts. It owns the pack's whole state
+ * (usePackBrief), its source (usePackSources), the characters' looks and the engine (usePackBriefScenes); the gallery only gives
  * it the environment (taxonomy, booru, search, exit) and the characters it starts with; it
  * reads and edits the app's prompt settings itself (usePackPromptSettings, "Customize prompt").
  *
  * A full screen of its own: while it is open the gallery is hidden behind it and does no work
  * (PromptGallery), and focus stays inside until it closes. Before generating it shows the brief,
- * the sheet, the fit line and Generate; after, the prompts, with the brief folded into one line
- * that opens it again.
+ * the fit line and Generate; after, the prompts, with the brief folded into one line that opens
+ * it again.
  */
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react"
 import { AlertTriangle, ChevronDown, Info, Package, X } from "lucide-react"
@@ -109,6 +108,7 @@ import {
   type BriefOutfit,
   type ConditionSupply,
   type FitNote,
+  leftOutPosts,
 } from "@/lib/pack/brief-pack"
 import type { PackPrompt } from "@/lib/pack/pack-generator"
 import { preferredSearchIds, type SourcePlan } from "@/lib/pack/source-plan"
@@ -125,12 +125,11 @@ import { BUILDER_SWITCH_TEXT } from "./builder-switch"
 import type { EntryOption } from "./tag-entry"
 import { BriefSummary } from "./brief-summary"
 import type { Choice } from "./choice-group"
-import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contact-sheet"
-import { scenePostHref, sceneThumbs } from "./scene-tile"
+import { scenePostHref } from "./scene-ref"
 import { FitLine } from "./fit-line"
 import { GenerateBar, ResultsToolbar } from "./generate-bar"
 import { PackBriefPanel } from "./pack-brief-panel"
-import { BLOCKED, BUILDER_TEXT, CAST_MODE_TEXT, RANDOM_CAST_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, DEFAULTS_TEXT, SIZE_TEXT, STYLE_TEXT, PEOPLE_TEXT, COMPOSITION_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState } from "./pack-text"
+import { BLOCKED, BUILDER_TEXT, CAST_MODE_TEXT, RANDOM_CAST_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, WEARING_TEXT, copyNoteText, DEFAULTS_TEXT, SIZE_TEXT, STYLE_TEXT, PEOPLE_TEXT, COMPOSITION_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState } from "./pack-text"
 import type { BriefPackResult } from "@/hooks/use-pack-brief-scenes"
 import type { BriefOffer } from "./pack-brief-panel"
 import { ResultRow } from "./result-row"
@@ -1051,8 +1050,7 @@ function BriefWorkspace({
   // ── Brief edits ─────────────────────────────────────────────────────────────────
   const [routed, setRouted] = useState<{ slot: SlotId | "people"; key: number } | null>(null)
   const suggestions = useTagSuggestions(overrides)
-  const { add, addOther, never, remove, unnever, removeCharacter, setRole, removeLook, restoreLook, leaveOutScene, restoreScene, setPeople, undo } = pack
-  const { leaveOutVariant, restoreVariant, setBaseScene } = pack
+  const { add, addOther, never, remove, unnever, removeCharacter, setRole, removeLook, restoreLook, setPeople, undo } = pack
   const cast = identity.cast
   const onAddTags = useCallback((tags: string[], slot: SlotId, picked?: TagSuggestion) => {
     let elsewhere: SlotId | "people" | null = null
@@ -1329,33 +1327,6 @@ function BriefWorkspace({
   const { setRandomCast } = pack
   const autoGender = randomCastGender("auto", brief)
   const randomCastControl = useMemo(() => ({ autoGender, onChange: setRandomCast }), [autoGender, setRandomCast])
-  const onToggleScene = useCallback(
-    (id: string) => {
-      if (axis) return leftOut.has(id) ? restoreVariant(id) : leaveOutVariant(id)
-      return leftOut.has(id) ? restoreScene(id) : leaveOutScene(id)
-    },
-    [axis, leftOut, leaveOutScene, restoreScene, leaveOutVariant, restoreVariant]
-  )
-  // One-part packs: the first tile is the scene that repeats; selecting it chooses another.
-  const [pickingFixed, setPickingFixed] = useState(false)
-  const fixedId = axis && candidates?.[0]?.axisRole === "base" ? String(candidates[0].postId) : null
-  if (pickingFixed && !fixedId) setPickingFixed(false)
-  // With locked rows the scene that repeats is the pack's: choosing another waits until they're unlocked.
-  const fixedLocked = !!axis && !!result && result.locked.length > 0
-  const fixed = useMemo(() => (fixedId
-    ? {
-        id: fixedId,
-        picking: pickingFixed && !fixedLocked,
-        blockedReason: fixedLocked ? SHEET_TEXT.fixedLocked : undefined,
-        onStartPick: () => { if (!fixedLocked) setPickingFixed(true) },
-        onCancelPick: () => setPickingFixed(false),
-        onPick: (id: string) => {
-          setPickingFixed(false)
-          setBaseScene(Number(id))
-        },
-      }
-    : undefined), [fixedId, pickingFixed, fixedLocked, setBaseScene])
-
 
   // ── What the start brought ──────────────────────────────────────────────────────
   // The card's outfit and pose are offered, never copied: a request is a condition.
@@ -1499,13 +1470,6 @@ function BriefWorkspace({
     return out
   }, [engineBrief.who, characterInfo])
 
-  // ── The contact sheet ───────────────────────────────────────────────────────────
-  const thumbs = useMemo<SceneThumb[]>(
-    () => sceneThumbs(candidates ?? []),
-    [candidates]
-  )
-  // The sheet never shows its own error: the builder's one line above covers every failed load.
-  const sheetStatus: ContactSheetStatus = !candidates && !loadError && (finding || !engine.ready) ? "loading" : "ready"
   const { loadFailed: dataFailed, retryLoad } = engine
   // Retries everything that failed, data and pages; each clears its error as it starts again.
   const retryAll = useCallback(() => {
@@ -1526,6 +1490,21 @@ function BriefWorkspace({
     const label = ex.tags.length > 0 ? `Added ${ex.tags.map((t) => t.tag).join(", ")}` : "Changed what varies"
     changeTo(briefWithExample(brief, ex, overrides), label)
   }, [brief, overrides, changeTo])
+  // Scenes left out of a saved pack (or its one-part variants): the builder no longer lists the
+  // scenes to leave them out one by one, so the ones this pool has are offered back all at once.
+  const leftOutKey = leftOutPosts(brief).join(",")
+  const poolScenes = engine.pool?.scenes
+  const leftOutInPool = useMemo(() => {
+    if (!leftOutKey || !poolScenes) return 0
+    const inPool = new Set(poolScenes.map((sc) => sc.postId))
+    return [...new Set(leftOutKey.split(",").map(Number))].filter((id) => inPool.has(id)).length
+  }, [leftOutKey, poolScenes])
+  const putBackScenes = useCallback(() => {
+    const { leftOutVariants, ...rest } = brief
+    void leftOutVariants
+    changeTo({ ...rest, leftOut: [] }, BUILDER_TEXT.putBackDone(leftOutInPool))
+  }, [brief, changeTo, leftOutInPool])
+  const putBack = useMemo(() => (leftOutInPool > 0 ? { count: leftOutInPool, onPutBack: putBackScenes } : undefined), [leftOutInPool, putBackScenes])
   // Each tip shows the first time it is useful, and never again (marked as seen when shown).
   const [tipsSeen] = useState<ReadonlySet<string>>(() => {
     try {
@@ -1536,17 +1515,15 @@ function BriefWorkspace({
   })
   const [tipsClosed, setTipsClosed] = useState<ReadonlySet<string>>(() => new Set())
   const tipOn = (id: string, when: boolean) => open && when && !tipsSeen.has(id) && !tipsClosed.has(id)
-  const sheetTip = tipOn("sheet", showBrief && !axis && thumbs.length > 0)
-  const axisTip = tipOn("axis", showBrief && !!axis && !!fixedId)
   const resultsTip = tipOn("results", !!result && result.prompts.length > 0)
   useEffect(() => {
-    const shown = [sheetTip && "sheet", axisTip && "axis", resultsTip && "results"].filter((id): id is string => !!id)
+    const shown = [resultsTip && "results"].filter((id): id is string => !!id)
     try {
       shown.forEach((id) => userPreferences.markPackTipSeen(id))
     } catch {
       // Storage unavailable: the tip may show again next time.
     }
-  }, [sheetTip, axisTip, resultsTip])
+  }, [resultsTip])
   const closeTip = useCallback((id: string) => setTipsClosed((prev) => new Set(prev).add(id)), [])
 
   // ── Generate ────────────────────────────────────────────────────────────────────
@@ -1565,10 +1542,11 @@ function BriefWorkspace({
           ? BLOCKED.noScenes
           : undefined
 
-  // Before generating, on a wide panel, the brief and the scenes sit side by side, each scrolling on
-  // its own: what changes in the brief shows on the sheet at once. Folded after generating (and on
-  // a phone, tablet or narrow window), one column: the brief's line, the fit line, the prompts.
-  const split = showBrief && !narrow
+  // On a wide panel, the brief opened again over its prompts sits beside them, each scrolling on its
+  // own: what changes in the brief shows on the fit line and the prompts at once. Before the first
+  // prompts (the other column would hold only the fit line), folded after generating, and on a
+  // phone, tablet or narrow window: one column, the brief (or its line), the fit line, the prompts.
+  const split = showBrief && !narrow && !!result && result.prompts.length > 0
   return (
     <>
       <div
@@ -1613,7 +1591,7 @@ function BriefWorkspace({
               outfitSource={shownOutfit(outfit, engine.usualOutfitKnown)}
               onOutfitSourceChange={setOutfit}
               officialOutfits={engine.officialOutfits}
-              outfitNote={axis === "outfit" ? SHEET_TEXT.outfitChanges : undefined}
+              outfitNote={axis === "outfit" ? WEARING_TEXT.changes : undefined}
               assumedRoles={assumedRoles}
               onCastModeChange={pack.setCastMode}
               castPicker={castPicker}
@@ -1668,7 +1646,7 @@ function BriefWorkspace({
                   announce={false}
                   state={state}
                   onIncludeSensitive={includeSensitive}
-                  hint={i === 0 && showBrief && thumbs.length > 0 && !result ? (axis ? SHEET_TEXT.hint(axis) : BUILDER_TEXT.sheetHint) : undefined}
+                  putBack={i === 0 ? putBack : undefined}
                   loaded={i === fitStates.length - 1 && !isGenerating ? loaded ?? undefined : undefined}
                   searches={i === fitStates.length - 1 && searchesToggle ? searchesToggle : undefined}
                 />
@@ -1689,22 +1667,6 @@ function BriefWorkspace({
           {showExamples && (
             <PackEmptyState heading={EXAMPLES_HEADING} examples={examples} onPick={pickExample} />
           )}
-          {sheetTip && <PackTip text={TIP_TEXT.sheet} onDismiss={() => closeTip("sheet")} />}
-          {axisTip && axis && <PackTip text={TIP_TEXT.axis(axis)} onDismiss={() => closeTip("axis")} />}
-          {/* With no character yet the examples are where to start; an empty sheet would only say nothing fits. */}
-          {showBrief && !(loadError && thumbs.length === 0) && !(showExamples && !named) && (
-            <ContactSheet
-              scenes={thumbs}
-              leftOut={leftOutList}
-              emptyTitle={rolesMissing ? BLOCKED.roles : undefined}
-              emptyHint={rolesMissing ? "" : undefined}
-              onToggle={onToggleScene}
-              fixed={fixed}
-              status={sheetStatus}
-              expected={count}
-            />
-          )}
-
           {resultsTip && <PackTip text={TIP_TEXT.results} onDismiss={() => closeTip("results")} />}
           {result && result.prompts.length > 0 && (
             <Results

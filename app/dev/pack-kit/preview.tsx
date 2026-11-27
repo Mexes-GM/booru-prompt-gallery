@@ -14,13 +14,11 @@ import {
   addTag,
   briefFromPrompt,
   emptyBrief,
-  leaveOutScene,
   removeCharacter,
   removeLook,
   removeNever,
   removeTag,
   restoreLook,
-  restoreScene,
   routeTag,
   typedRole,
   addOther,
@@ -35,7 +33,6 @@ import type { PackPeople } from "@/lib/pack/scene/scene-pool"
 import {
   BriefSummary,
   ChangesSelect,
-  ContactSheet,
   FitLine,
   GenerateBar,
   PackBriefPanel,
@@ -67,16 +64,12 @@ import {
   OVERRIDES,
   SAMPLE_NATURAL,
   SAMPLE_PROMPTS,
-  makeMixedScenes,
   makeScenes,
   suggest,
 } from "./fixtures"
 
 const noop = () => {}
 const SCENES_60 = makeScenes(60)
-const SCENES_300 = makeScenes(300)
-const SCENES_10 = makeScenes(10, 100)
-const SCENES_MIXED = makeMixedScenes(16)
 
 const PEOPLE_OPTIONS: PeopleOption[] = [
   { people: { girls: 1, boys: 1 }, scenes: 41 },
@@ -229,14 +222,8 @@ function Playground() {
     if (elsewhere) setRouted({ slot: elsewhere, key: Date.now() })
   }
 
-  const scenes = SCENES_60
-  const inUse = scenes.length - brief.leftOut.length
-  const fit: FitState = inUse >= count ? { kind: "fit", scenes: inUse } : { kind: "reuse", scenes: inUse, reused: count - inUse }
-
-  const onToggleScene = (id: string) => {
-    const out = brief.leftOut.includes(id)
-    change(out ? "Put a scene back" : "Left out a scene", out ? restoreScene(brief, id) : leaveOutScene(brief, id))
-  }
+  const scenes = SCENES_60.length
+  const fit: FitState = scenes >= count ? { kind: "fit", scenes } : { kind: "reuse", scenes, reused: count - scenes }
 
   const generate = () => {
     if (progress !== null) return
@@ -382,10 +369,7 @@ function Playground() {
         </div>
       )}
 
-      <div className="space-y-2">
-        <FitLine state={fit} hint="Select a scene to leave it out" />
-        <ContactSheet scenes={scenes} leftOut={brief.leftOut} onToggle={onToggleScene} />
-      </div>
+      <FitLine state={fit} />
 
       <GenerateBar
         count={count}
@@ -465,11 +449,6 @@ function StaticPanel({ brief, people, changes }: { brief: PackBrief; people?: bo
 }
 
 export function PackKitPreview() {
-  const [sheetOut, setSheetOut] = useState<string[]>(["scene-2", "scene-7", "scene-8"])
-  const toggleSheet = useCallback(
-    (id: string) => setSheetOut((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id])),
-    [],
-  )
   const [changes, setChangesValue] = useState<ChangesAxis>("scene")
   const [people, setPeopleValue] = useState<PackPeople | null>(null)
   const [count, setCount] = useState(10)
@@ -597,40 +576,6 @@ export function PackKitPreview() {
           </div>
         </Section>
 
-        <Section title="Hoja de contactos" note="Toca una escena para dejarla fuera y otra vez para volver a meterla. Sin imágenes: número de post y, si cambia, cuántas personas.">
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 [&>*]:min-w-0">
-            <Specimen label="60 scenes, 3 out" width="mid">
-              <ContactSheet scenes={SCENES_60} leftOut={sheetOut} onToggle={toggleSheet} />
-            </Specimen>
-            <Specimen label="loading · 9 so far" width="phone">
-              <ContactSheet scenes={SCENES_10.slice(0, 9)} leftOut={[]} onToggle={noop} status="loading" expected={24} />
-            </Specimen>
-            <Specimen label="10 scenes" width="phone">
-              <ContactSheet scenes={SCENES_10} leftOut={["scene-103"]} onToggle={noop} />
-            </Specimen>
-            <Specimen label="people count · invented · 1 out" width="phone">
-              <ContactSheet scenes={SCENES_MIXED} leftOut={["scene-2"]} onToggle={noop} />
-            </Specimen>
-            <Specimen label="one part changes (Repeats)" width="phone">
-              <ContactSheet
-                scenes={SCENES_10}
-                leftOut={["scene-104"]}
-                onToggle={noop}
-                fixed={{ id: SCENES_10[0].id, picking: false, onStartPick: noop, onPick: noop, onCancelPick: noop }}
-              />
-            </Specimen>
-            <Specimen label="empty" width="phone">
-              <ContactSheet scenes={[]} leftOut={[]} onToggle={noop} />
-            </Specimen>
-            <Specimen label="error" width="phone">
-              <ContactSheet scenes={[]} leftOut={[]} onToggle={noop} status="error" onRetry={noop} />
-            </Specimen>
-            <Specimen label="300 scenes (Show all)" width="mid">
-              <ContactSheet scenes={SCENES_300} leftOut={sheetOut} onToggle={toggleSheet} />
-            </Specimen>
-          </div>
-        </Section>
-
         <Section title="Línea de ajuste">
           <Specimen label="states" width="mid">
             <div className="space-y-1">
@@ -638,6 +583,9 @@ export function PackKitPreview() {
                 <FitLine key={s.kind} state={s} />
               ))}
             </div>
+          </Specimen>
+          <Specimen label="saved pack with scenes left out" width="phone">
+            <FitLine state={{ kind: "fit", scenes: 38 }} putBack={{ count: 3, onPutBack: noop }} lead />
           </Specimen>
         </Section>
 
