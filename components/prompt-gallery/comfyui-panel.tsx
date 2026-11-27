@@ -29,6 +29,7 @@ import { checkNodesAgainstObjectInfo, importBridgeRecord, importWorkflowFile, ty
 import { nodeTitle, rolesFit, testSize } from "@/lib/comfyui/role-choices"
 import { detectRoles, randomSeed } from "@/lib/comfyui/roles"
 import { getComfySession } from "@/lib/comfyui/session"
+import type { ComfyPanelReason } from "@/lib/comfyui/panel-request"
 import type {
   BridgeWorkflowSummary,
   ComfyOptions,
@@ -660,9 +661,20 @@ function TestRun({
 export interface ComfyUIPanelProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Why a Send button opened the panel, shown as a hint while it still applies. */
+  reason?: ComfyPanelReason | null
+  /** Changes each time a Send button opens the panel. */
+  requestId?: number
+  /** Gets focus back when the panel closes (the Send button that opened it). */
+  returnFocusTo?: HTMLElement | null
 }
 
-export function ComfyUIPanel({ open, onOpenChange }: ComfyUIPanelProps) {
+const REASON_HINT: Record<ComfyPanelReason, string> = {
+  workflow: "Choose a workflow to send prompts with.",
+  "prompt-role": "Pick the Prompt input in Roles so Send can write the card's prompt.",
+}
+
+export function ComfyUIPanel({ open, onOpenChange, reason = null, requestId, returnFocusTo }: ComfyUIPanelProps) {
   const settings = useComfyUISettings()
   const { enabled, url, workflows, activeWorkflow, options } = settings
   const { diagnosis, checking, check } = useDiagnosis(url, open)
@@ -675,7 +687,14 @@ export function ComfyUIPanel({ open, onOpenChange }: ComfyUIPanelProps) {
   const [objectInfo, setObjectInfo] = useState<ObjectInfo | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [showGraph, setShowGraph] = useState(false)
+  const [showGraph, setShowGraph] = useState(reason === "prompt-role")
+
+  // Opened by Send for a missing prompt input: show the graph, where it is picked.
+  const [graphRequest, setGraphRequest] = useState(requestId)
+  if (requestId !== graphRequest) {
+    setGraphRequest(requestId)
+    if (reason === "prompt-role") setShowGraph(true)
+  }
 
   const fetchBridge = useCallback(async () => {
     try {
@@ -793,6 +812,13 @@ export function ComfyUIPanel({ open, onOpenChange }: ComfyUIPanelProps) {
       ? "Choose a workflow to run a test."
       : "Pick the node whose image to show to run a test."
 
+  const reasonHint =
+    reason === "workflow" && !activeWorkflow
+      ? REASON_HINT.workflow
+      : reason === "prompt-role" && activeWorkflow && !activeWorkflow.roles.prompt
+        ? REASON_HINT["prompt-role"]
+        : null
+
   const ids = { connection: useId(), workflows: useId(), roles: useId(), options: useId(), test: useId() }
   const switchId = useId()
 
@@ -803,6 +829,12 @@ export function ComfyUIPanel({ open, onOpenChange }: ComfyUIPanelProps) {
         onOpenAutoFocus={(e) => {
           e.preventDefault()
           ;(e.currentTarget as HTMLElement | null)?.focus()
+        }}
+        onCloseAutoFocus={(e) => {
+          if (returnFocusTo?.isConnected) {
+            e.preventDefault()
+            returnFocusTo.focus()
+          }
         }}
         className={cn(
           "flex max-h-[calc(100dvh-1rem)] flex-col gap-0 overflow-hidden p-0 focus:outline-none sm:max-h-[min(56rem,calc(100dvh-3rem))]",
@@ -817,6 +849,12 @@ export function ComfyUIPanel({ open, onOpenChange }: ComfyUIPanelProps) {
         </DialogHeader>
 
         <div className="flex flex-col gap-5 overflow-y-auto overscroll-contain px-4 pb-6 sm:px-6">
+          {reasonHint && (
+            <p role="status" className="flex items-start gap-2 rounded-lg bg-warning-soft px-3 py-2.5 text-sm text-foreground">
+              <AlertCircle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-warning-text" />
+              <span className="text-pretty">{reasonHint}</span>
+            </p>
+          )}
           <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 px-3 py-3">
             <label htmlFor={switchId} className="flex min-w-0 cursor-pointer flex-col gap-0.5">
               <span className="text-sm font-medium text-foreground">Send to ComfyUI</span>
