@@ -8,7 +8,7 @@ import type { TagCategory } from '@/lib/tag-classifier'
 import type { PackLearningModel } from '@/lib/pack/pack-learning'
 import type { AxisTagMode } from '@/lib/pack/pack-generator'
 import { isPromptFormat, type PromptFormat } from '@/lib/prompt/prompt-format'
-import { normalizeComfyUrl } from '@/lib/comfyui/client'
+import { normalizeComfyUrl } from '@/lib/comfyui/url'
 import type { ComfyOptions, Roles, SavedComfyWorkflow } from '@/lib/comfyui/types'
 
 // Safe localStorage wrapper that handles SSR and errors
