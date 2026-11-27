@@ -21,6 +21,12 @@ export const BUILDER_SWITCH_TEXT = {
   /** While a card is picked for the new builder. */
   pickCard: "Pick a card and press Use as base to start the pack.",
   backToPack: "Back to pack",
+  /** A card's "Make a pack" while the pack in the builder has prompts. */
+  replaceTitle: "Replace your pack?",
+  replaceBody: (prompts: number) =>
+    `Your pack has ${prompts} ${prompts === 1 ? "prompt" : "prompts"}. A pack from this card replaces it.`,
+  replaceKeep: "Keep my pack",
+  replaceStart: "Start new pack",
 } as const
 
 const norm = (s: string) => s.toLowerCase().replace(/_/g, " ").trim()

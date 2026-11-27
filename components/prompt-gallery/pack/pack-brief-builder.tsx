@@ -32,6 +32,12 @@ import { useTagSuggestions } from "@/hooks/use-tag-suggestions"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useStableCallback } from "@/hooks/use-stable-callback"
 import { useNaturalPrompt, usePromptFormat } from "@/hooks/use-natural-prompt"
+import { useTagSlotEnrichment } from "@/hooks/use-tag-slot-enrichment"
+import { packPromptFormat } from "@/lib/pack/pack-config-migration"
+import { storedPackRating, withPackRating } from "@/lib/pack/pack-rating"
+import { track } from "@/lib/analytics"
+import { recordPromptCopy } from "@/lib/support-prompt"
+import { toastError } from "@/lib/toast-error"
 import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
 import type { BooruPost, BooruProvider } from "@/lib/booru/types"
 import {
@@ -158,14 +164,15 @@ export interface PackBriefBuilderProps {
   open: boolean
   /** Opens the entry dialog for another pack; this one stays if the user cancels. */
   onNewPack: () => void
-  /** Tag slots in use, growing as tags are looked up. */
-  overrides: Record<string, string>
-  /** Looks up the slots of tags the overrides don't cover yet. */
-  enrichTagSlots: (tags: string[]) => Promise<boolean>
+  /** The app's tag slots. The builder looks up the ones they don't cover itself, and keeps them. */
+  tagOverrides: Record<string, string>
   provider: BooruProvider
-  /** The pack rating preference, shared with the old builder. */
-  rating: PackRatingMode
-  onRatingChange: (rating: PackRatingMode) => void
+  /**
+   * The rating a pack starts with when none is saved. The builder keeps its own and saves it in the
+   * preference it shares with the classic builder; `onRatingChange` only hears about it.
+   */
+  initialRating: PackRatingMode
+  onRatingChange?: (rating: PackRatingMode) => void
   /** The gallery's search, for a brief without a named character. */
   gallerySearch: string
   cleanOptions: Pick<
@@ -175,8 +182,6 @@ export interface PackBriefBuilderProps {
   globalWeights: Record<string, number>
   isGlobalWeightsEnabled: boolean
   outfitOptions: { styles: readonly OutfitStyle[]; detail: OutfitDetail }
-  /** Copies text in a format; resolves true when it worked. */
-  onCopy: (text: string, format: PromptFormat) => Promise<boolean>
   onExit: () => void
   /** Opens the pack's card or character in the classic builder. */
   onOpenClassic?: () => void
@@ -219,12 +224,16 @@ function begin(
  * here) but inert: not shown, not focusable, and the environment it works from is held as
  * it was when it closed, so nothing is fetched, timed or worked out until it opens again.
  */
-export function PackBriefBuilder(props: PackBriefBuilderProps) {
-  const { start, open, overrides, rating, onRatingChange, onExit, onNewPack, onOpenClassic } = props
+export const PackBriefBuilder = memo(function PackBriefBuilder(props: PackBriefBuilderProps) {
+  const { start, open, tagOverrides, onExit, onNewPack, onOpenClassic } = props
+  // The slots of tags the app's don't cover, looked up for this pack and kept here: the lookups
+  // that every page of posts brings re-render the pack, never the gallery behind it.
+  const slots = useTagSlotEnrichment(tagOverrides)
+  const overrides = slots.overrides
   const [begun] = useState(() => ({
-    ...begin(start, overrides),
+    ...begin(start, tagOverrides),
     // The same start with the permanence data: the brief above may be made before it loads.
-    remake: (permanence: (tag: string) => Permanence) => begin(start, overrides, permanence).brief,
+    remake: (permanence: (tag: string) => Permanence) => begin(start, tagOverrides, permanence).brief,
   }))
   const pack = usePackBrief(overrides, begun.brief, { seeded: start.kind === "restored", remake: begun.remake })
   // The environment while open; held while closed.
@@ -235,6 +244,27 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
     ? { provider: start.saved.provider, gallerySearch: start.saved.gallerySearch }
     : { provider: props.provider, gallerySearch: props.gallerySearch })
   const onProviderChange = useCallback((provider: BooruProvider) => setStartSource((s) => ({ ...s, provider })), [])
+  // The rating is the pack's own, like its site: saved in the preference the classic builder
+  // reads, never set in the gallery while the pack is open.
+  const [rating, setRating] = useState<PackRatingMode>(() => {
+    try {
+      return storedPackRating(userPreferences.getPackSourceAnswers(), props.initialRating)
+    } catch {
+      return props.initialRating
+    }
+  })
+  const { onRatingChange } = props
+  const changeRating = useCallback((next: PackRatingMode) => {
+    setRating(next)
+    try {
+      userPreferences.setPackSourceAnswers(withPackRating(userPreferences.getPackSourceAnswers(), next, {
+        ratingMode: next, tagsSource: "current", searchTags: startSource.gallerySearch, booruProvider: startSource.provider,
+      }))
+    } catch {
+      // Storage unavailable: the choice lasts this pack.
+    }
+    onRatingChange?.(next)
+  }, [onRatingChange, startSource])
   // While closed, the rest of the environment is held as it was when it closed.
   const [held, setHeld] = useState<PackBriefBuilderProps | null>(null)
   const [wasOpen, setWasOpen] = useState(open)
@@ -242,7 +272,7 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
     setWasOpen(open)
     setHeld(open ? null : props)
   }
-  const env = { ...(open || !held ? props : held), ...startSource, onProviderChange }
+  const env = { ...(open || !held ? props : held), ...startSource, onProviderChange, overrides, enrichTagSlots: slots.enrich, rating }
 
   // Focus goes into the panel when it opens and back where it was when it closes.
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -309,7 +339,7 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
               </Button>
             )}
             <ProviderMenu value={startSource.provider} rating={rating} onChange={onProviderChange} />
-            <RatingMenu value={rating} onChange={onRatingChange} />
+            <RatingMenu value={rating} onChange={changeRating} />
             <Button
               type="button"
               variant="ghost"
@@ -329,7 +359,7 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
       </section>
     </TooltipProvider>
   )
-}
+})
 
 const MENU_TRIGGER = cn(
   "inline-flex h-8 max-w-[12rem] items-center gap-1 rounded-md border border-border bg-background px-2 text-xs pointer-coarse:h-11",
@@ -478,6 +508,15 @@ function suggestedKind(picked?: TagSuggestion): SuggestedKind | undefined {
   return picked.kind ? undefined : "general"
 }
 
+/** What the shell works out for the workspace: the pack's own site, rating and tag slots. */
+interface WorkspaceEnv {
+  onProviderChange: (provider: BooruProvider) => void
+  /** The app's slots plus the ones looked up for this pack. */
+  overrides: Record<string, string>
+  enrichTagSlots: (tags: string[]) => Promise<boolean>
+  rating: PackRatingMode
+}
+
 function BriefWorkspace({
   pack,
   overrides,
@@ -485,16 +524,15 @@ function BriefWorkspace({
   provider,
   rating,
   gallerySearch,
+  onProviderChange,
   cleanOptions,
   globalWeights,
   isGlobalWeightsEnabled,
   outfitOptions,
-  onCopy,
   open,
   start,
   startNote,
-  onProviderChange,
-}: PackBriefBuilderProps & { pack: UsePackBriefResult; startNote: StartNote; onProviderChange: (provider: BooruProvider) => void }) {
+}: PackBriefBuilderProps & WorkspaceEnv & { pack: UsePackBriefResult; startNote: StartNote }) {
   const { brief, preferences } = pack
   const count = preferences.promptCount
   const restored = start.kind === "restored" ? start.saved : null
@@ -522,6 +560,13 @@ function BriefWorkspace({
     [originOf, donorKey]
   )
 
+  // The pack's own prompt format: the gallery's until one is picked here, and picking one here
+  // never changes the gallery's cards (it is a preference of the builder).
+  const { format: galleryFormat, fullDetail } = usePromptFormat()
+  const promptFormat = packPromptFormat(preferences, galleryFormat)
+  const { setPromptFormat: setFormat } = pack
+  const copy = useCallback((text: string, format: PromptFormat) => copyPackText(text, format, provider), [provider])
+
   const engine = usePackBriefScenes({
     brief,
     posts,
@@ -542,6 +587,7 @@ function BriefWorkspace({
     globalWeights,
     isGlobalWeightsEnabled,
     outfitOptions,
+    promptFormat,
   })
   const { plan, identity, candidates, candidatesPending, result, isGenerating, othersTag } = engine
   // The start's tags placed before the permanence data loaded go where it says, once it has.
@@ -869,7 +915,6 @@ function BriefWorkspace({
   // ── Corrections from the results ────────────────────────────────────────────────
   // The tag menu changes the brief and the pack is remade at once with the same seed and
   // scenes; Undo puts brief, prompts, locks and format back as they were.
-  const { format: promptFormat, setFormat } = usePromptFormat()
   const correctionIdRef = useRef(0)
   const { addLook, addExactly } = pack
   const correct = useCallback((kind: "always" | "never", raw: string) => {
@@ -1322,7 +1367,10 @@ function BriefWorkspace({
           busyReason={engine.sourceChanged ? BUILDER_TEXT.busySource : engine.poolPending ? BUILDER_TEXT.busyReloading : BUILDER_TEXT.busyRunning}
           naturalSourceOf={engine.naturalSourceOf}
           overrides={overrides}
-          onCopy={onCopy}
+          format={promptFormat}
+          fullDetail={fullDetail}
+          onFormatChange={setFormat}
+          onCopy={copy}
           onReroll={onReroll}
           onAlways={onAlways}
           onNever={onNever}
@@ -1381,6 +1429,32 @@ function startNoteText(note: StartNote, poolPending: boolean): string | null {
 
 // ── Results ──────────────────────────────────────────────────────────────────────
 
+/**
+ * Copies a pack's text without the gallery: no card is marked copied and no gallery state changes.
+ * The rows and the toolbar say it was copied; a failure says so here.
+ */
+async function copyPackText(text: string, format: PromptFormat, provider: BooruProvider): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    toastError({
+      title: "Error",
+      description: "Could not copy prompt",
+      errorSource: "copy_to_clipboard",
+      context: { provider, postId: 0, isPrompt: true },
+    })
+    return false
+  }
+  track("prompt_copied", {
+    copy_type: "ai_text",
+    booru_source: provider,
+    has_translated_tags: text.includes("Masterpiece"),
+    prompt_format: format,
+  })
+  recordPromptCopy()
+  return true
+}
+
 const warnTagsCopied = () => toast({ description: BUILDER_TEXT.convertFailed, variant: "destructive", duration: 3000 })
 
 function Results({
@@ -1394,6 +1468,9 @@ function Results({
   onToggleLock,
   naturalSourceOf,
   overrides,
+  format,
+  fullDetail,
+  onFormatChange: setFormat,
   onCopy,
   onReroll,
   onAlways,
@@ -1413,12 +1490,15 @@ function Results({
   onToggleLock: (index: number) => void
   naturalSourceOf: (prompt: PackPrompt) => NaturalPromptSource
   overrides: Record<string, string>
+  /** The pack's own format (never the gallery's) and its "every detail" length, read from the app. */
+  format: PromptFormat
+  fullDetail: boolean
+  onFormatChange: (format: PromptFormat) => void
   onCopy: (text: string, format: PromptFormat) => Promise<boolean>
   onReroll: (index: number) => boolean
   onAlways: (tag: string) => void
   onNever: (tag: string) => void
 }) {
-  const { format, fullDetail, setFormat } = usePromptFormat()
   const lockedSet = useMemo(() => new Set(locked), [locked])
   // Text on screen per row, so a copy matches what is shown.
   const shownRef = useRef(new Map<number, string>())

@@ -183,3 +183,8 @@ export function readSavedPack(v: unknown): SavedPack | null {
   if (v.result !== null && !isResult(v.result)) return null
   return v as unknown as SavedPack
 }
+
+/** Prompts the saved pack holds: what a new pack would replace (0 for none). */
+export function savedPackPromptCount(saved: SavedPack | null): number {
+  return saved?.result?.prompts.length ?? 0
+}

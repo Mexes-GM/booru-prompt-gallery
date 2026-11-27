@@ -174,7 +174,18 @@ const PackSourceModal = dynamic(() => loadPackSourceModal().then(m => m.PackSour
 const PackBuilderStickyFooter = dynamic(() => loadPackBuilderStickyFooter().then(m => m.PackBuilderStickyFooter), { ssr: false, loading: () => null })
 const PackBriefBuilder = dynamic(() => loadPackBriefBuilder().then(m => m.PackBriefBuilder), { ssr: false, loading: () => null })
 import type { PackBriefStart } from "./pack/pack-brief-builder"
-import type { SavedPack } from "@/lib/pack/saved-pack"
+import { savedPackPromptCount, type SavedPack } from "@/lib/pack/saved-pack"
+import { useStableCallback } from "@/hooks/use-stable-callback"
+import {
+  AlertDialog as PackReplaceDialog,
+  AlertDialogAction as PackReplaceAction,
+  AlertDialogCancel as PackReplaceCancel,
+  AlertDialogContent as PackReplaceContent,
+  AlertDialogDescription as PackReplaceDescription,
+  AlertDialogFooter as PackReplaceFooter,
+  AlertDialogHeader as PackReplaceHeader,
+  AlertDialogTitle as PackReplaceTitle,
+} from "@/components/ui/alert-dialog"
 import { BUILDER_SWITCH_TEXT, baseOfStart, sameBriefStart } from "./pack/builder-switch"
 import { usableSearchTags } from "@/lib/pack/brief-pack"
 import { StickyMiniControlPanel } from "./sticky-mini-control-panel"
@@ -1201,6 +1212,8 @@ export function PromptGallery() {
   )
   // A card starts the pack builder with the card's character, and offers its outfit and pose.
   // The same card again brings back the pack it started.
+  // A card that would replace a pack with prompts, waiting for the user to confirm.
+  const [packReplaceCard, setPackReplaceCard] = useState<{ post: BooruPost; prompts: number } | null>(null)
   const setAsPackBaseNow = useCallback((post: BooruPost) => {
     // The classic builder takes the card as its base, as it always did.
     if (packBuilderKind === 'classic') {
@@ -1213,8 +1226,26 @@ export function PromptGallery() {
       setPackEntryOpen(false)
       return
     }
+    // A card asked for while the user picks one for a new pack starts it. Any other card
+    // would replace a pack with prompts without a word: it asks first.
+    if (!packPickingCard) {
+      let prompts = 0
+      try {
+        prompts = savedPackPromptCount(userPreferences.getSavedPack())
+      } catch {
+        // Storage unavailable: nothing saved to lose.
+      }
+      if (prompts > 0) {
+        setPackReplaceCard({ post, prompts })
+        return
+      }
+    }
     startNewPackBrief({ kind: 'card', post })
-  }, [packBrief, packBuilderKind, startClassicPack, startNewPackBrief])
+  }, [packBrief, packBuilderKind, packPickingCard, startClassicPack, startNewPackBrief])
+  const handleConfirmPackReplace = useCallback(() => {
+    if (packReplaceCard) startNewPackBrief({ kind: 'card', post: packReplaceCard.post })
+    setPackReplaceCard(null)
+  }, [packReplaceCard, startNewPackBrief])
 
   // Switching builders: the other one starts from the same card, prompt or characters (its own
   // pack with that base comes back as it was); the rest of the pack stays with the one it was made in.
@@ -1223,6 +1254,8 @@ export function PromptGallery() {
     startClassicPack(packBrief.start)
     toast({ description: BUILDER_SWITCH_TEXT.toClassic, duration: 6000 })
   }, [packBrief, startClassicPack, toast])
+  // The pack builder is memoized: its props stay the same while the gallery renders.
+  const stableOpenClassicBuilder = useStableCallback(handleOpenClassicBuilder)
   const packClassicStart = useMemo<PackBriefStart | null>(() => {
     if (packMode.baseCard) return { kind: 'card', post: packMode.baseCard }
     if (packMode.baseFromCharacter) return { kind: 'characters', names: packCastNames.length > 0 ? packCastNames : [packMode.basePrompt] }
@@ -1286,15 +1319,18 @@ export function PromptGallery() {
     setPackEntryStartInPrompt(false)
     setPackEntryOpen(true)
   }, [])
+  // The pack builder keeps its own rating and saves it (the preference the classic builder reads);
+  // the classic builder's source takes it once the pack closes, so nothing here renders meanwhile.
+  const packBriefRatingRef = useRef<PackRatingMode | null>(null)
   const handlePackBriefRating = useCallback((ratingMode: PackRatingMode) => {
-    const next = { ...packSourceAnswers, ratingMode }
-    setPackSourceAnswers(next)
-    try {
-      userPreferences.setPackSourceAnswers(next)
-    } catch {
-      // Non-fatal: the choice lasts this session.
-    }
-  }, [packSourceAnswers])
+    packBriefRatingRef.current = ratingMode
+  }, [])
+  useEffect(() => {
+    const ratingMode = packBriefRatingRef.current
+    if (packBriefOpen || !ratingMode) return
+    packBriefRatingRef.current = null
+    setPackSourceAnswers((prev) => (prev.ratingMode === ratingMode ? prev : { ...prev, ratingMode }))
+  }, [packBriefOpen])
 
   const handlePackEntryCancel = useCallback(() => {
     setPackEntryOpen(false)
@@ -1870,11 +1906,6 @@ export function PromptGallery() {
     }
   }, [search.booruProvider, toast])
 
-  // The brief builder copies its prompts the way every card does.
-  const packBriefCopy = useCallback(
-    (text: string, format: PromptFormat) => copyToClipboard(text, 0, true, undefined, format),
-    [copyToClipboard]
-  )
   // Sincronizar refs con los callbacks reales (asignación barata, sin efecto)
   useLayoutEffect(() => {
     copyToClipboardRef.current = copyToClipboard
@@ -2741,21 +2772,31 @@ export function PromptGallery() {
           start={packBrief.start}
           open={packBriefOpen}
           onNewPack={handleNewPackBrief}
-          overrides={packMode.effectiveTagOverrides}
-          enrichTagSlots={packMode.enrichTagSlots}
+          tagOverrides={tagOverrides}
           provider={search.booruProvider}
-          rating={packSourceAnswers.ratingMode}
+          initialRating={packSourceAnswers.ratingMode}
           onRatingChange={handlePackBriefRating}
           gallerySearch={search.searchTags}
           cleanOptions={packCleanOptions}
           globalWeights={globalWeights}
           isGlobalWeightsEnabled={isGlobalWeightsEnabled}
           outfitOptions={packOutfitOptions}
-          onCopy={packBriefCopy}
           onExit={handleExitPackBrief}
-          onOpenClassic={handleOpenClassicBuilder}
+          onOpenClassic={stableOpenClassicBuilder}
         />
       )}
+      <PackReplaceDialog open={!!packReplaceCard} onOpenChange={(open) => { if (!open) setPackReplaceCard(null) }}>
+        <PackReplaceContent>
+          <PackReplaceHeader>
+            <PackReplaceTitle>{BUILDER_SWITCH_TEXT.replaceTitle}</PackReplaceTitle>
+            <PackReplaceDescription>{BUILDER_SWITCH_TEXT.replaceBody(packReplaceCard?.prompts ?? 0)}</PackReplaceDescription>
+          </PackReplaceHeader>
+          <PackReplaceFooter>
+            <PackReplaceCancel>{BUILDER_SWITCH_TEXT.replaceKeep}</PackReplaceCancel>
+            <PackReplaceAction onClick={handleConfirmPackReplace}>{BUILDER_SWITCH_TEXT.replaceStart}</PackReplaceAction>
+          </PackReplaceFooter>
+        </PackReplaceContent>
+      </PackReplaceDialog>
       {/* The new builder's own hint while a card is picked for it. */}
       {packModeIsPackMode && packBuilderKind === 'brief' && packPickingCard && (
         <div

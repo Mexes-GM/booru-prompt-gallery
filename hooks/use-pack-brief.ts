@@ -15,6 +15,7 @@ import type { CastRole } from '@/lib/pack/scene/cast'
 import type { Permanence } from '@/lib/pack/scene/permanence'
 import type { PackPeople } from '@/lib/pack/scene/scene-pool'
 import { userPreferences, type PackPreferences } from '@/lib/storage'
+import type { PromptFormat } from '@/lib/prompt/prompt-format'
 
 /** What the interface shows next to "Undo" for each kind of change. */
 export const BRIEF_LABELS = {
@@ -102,6 +103,8 @@ export interface UsePackBriefResult {
   preferences: PackPreferences
   setPromptCount: (count: number) => void
   setIncludeSensitive: (value: boolean) => void
+  /** The builder's own prompt format (never the gallery's), kept for the next packs. */
+  setPromptFormat: (format: PromptFormat) => void
   addNeverDefault: (tag: string) => void
   removeNeverDefault: (tag: string) => void
   /**
@@ -316,6 +319,10 @@ export function usePackBrief(
     (value: boolean) => updatePreferences({ ...preferencesRef.current, includeSensitive: value }),
     [updatePreferences]
   )
+  const setPromptFormat = useCallback(
+    (format: PromptFormat) => updatePreferences({ ...preferencesRef.current, promptFormat: format }),
+    [updatePreferences]
+  )
   const addNeverDefault = useCallback(
     (tag: string) => updatePreferences({
       ...preferencesRef.current,
@@ -357,7 +364,7 @@ export function usePackBrief(
     leaveOutScene: leaveOutSceneAction, restoreScene: restoreSceneAction,
     setBaseScene: setBaseSceneAction, leaveOutVariant: leaveOutVariantAction, restoreVariant: restoreVariantAction,
     startEmpty, startWith, startFromCharacters, startFromPrompt, startFromCard, placeWith,
-    preferences, setPromptCount, setIncludeSensitive, addNeverDefault, removeNeverDefault,
+    preferences, setPromptCount, setIncludeSensitive, setPromptFormat, addNeverDefault, removeNeverDefault,
     rowDefaults: getRowDefaults, setRowDefaults, removeRowDefault,
   }
 }
