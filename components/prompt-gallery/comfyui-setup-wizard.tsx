@@ -281,6 +281,13 @@ function InstallStatus({ diagnosis, url }: { diagnosis: Diagnosis | null; url: s
   )
 }
 
+/** The Manager route, the way most people install nodes. */
+const INSTALL_STEPS: { key: string; text: ReactNode }[] = [
+  { key: "open", text: <>Open <strong className="font-semibold">Manager</strong>, then <strong className="font-semibold">Custom Nodes Manager</strong>.</> },
+  { key: "search", text: <>Search for <strong className="font-semibold">{BRIDGE_MANAGER_NAME}</strong> and click <strong className="font-semibold">Install</strong>.</> },
+  { key: "restart", text: <>Restart ComfyUI. Its console then shows “{BRIDGE_CONSOLE_LINE}”.</> },
+]
+
 function InstallStep({
   diagnosis,
   url,
@@ -314,17 +321,13 @@ function InstallStep({
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3">
         <Lead>In ComfyUI:</Lead>
-        <ol className="flex list-none flex-col gap-2.5 text-sm text-foreground [counter-reset:step]">
-          {[
-            <>Open <strong className="font-semibold">Manager</strong>, then <strong className="font-semibold">Custom Nodes Manager</strong>.</>,
-            <>Search for <strong className="font-semibold">{BRIDGE_MANAGER_NAME}</strong> and click <strong className="font-semibold">Install</strong>.</>,
-            <>Restart ComfyUI. Its console then shows “{BRIDGE_CONSOLE_LINE}”.</>,
-          ].map((text, i) => (
-            <li key={i} className="flex gap-3">
+        <ol className="flex list-none flex-col gap-2.5 text-sm text-foreground">
+          {INSTALL_STEPS.map((step, i) => (
+            <li key={step.key} className="flex gap-3">
               <span aria-hidden className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold tabular-nums text-foreground/80">
                 {i + 1}
               </span>
-              <span className="text-pretty leading-relaxed">{text}</span>
+              <span className="text-pretty leading-relaxed">{step.text}</span>
             </li>
           ))}
         </ol>
