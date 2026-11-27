@@ -29,7 +29,7 @@ const COMFY_KEYS: ReadonlySet<string> = new Set([
 ])
 
 /** Same-tab writes, other tabs, and the extension's settings bridge. */
-function subscribeComfySettings(onChange: () => void): () => void {
+export function subscribeComfySettings(onChange: () => void): () => void {
   const onLocal = (e: Event) => {
     if (COMFY_KEYS.has((e as CustomEvent<{ key?: string }>).detail?.key ?? "")) onChange()
   }
@@ -112,4 +112,14 @@ const actions = {
 export function useComfyUISettings(): ComfyUIState & typeof actions {
   const state = useSyncExternalStore(subscribeComfySettings, getComfyUISettings, getServerSnapshot)
   return { ...state, ...actions }
+}
+
+const getEnabledServer = () => false
+
+/**
+ * Only whether Send mode is on. For components that render many cards and
+ * should not re-render when a workflow or option changes.
+ */
+export function useComfyEnabled(): boolean {
+  return useSyncExternalStore(subscribeComfySettings, getComfyEnabled, getEnabledServer)
 }
