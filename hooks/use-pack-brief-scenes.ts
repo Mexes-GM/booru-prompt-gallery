@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { BooruPost, BooruProvider } from "@/lib/booru/types"
 import type { PackBrief } from "@/lib/pack/brief"
-import { briefCompositions, briefConditions, isOthersTag, setRoutePermanence, toSceneRequests, turnBriefs } from "@/lib/pack/brief"
+import { briefCompositions, briefConditions, isOthersTag, setRoutePermanence, toSceneRequests, turnBriefs, weighPrompt } from "@/lib/pack/brief"
 import { assignTurns, generateTurnsAsync } from "@/lib/pack/cast-turns"
 import { knownAliases, loadConditionAliases } from "@/lib/pack/condition-aliases"
 import {
@@ -919,9 +919,12 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
    * (generateTurnsAsync), each with their share of `made.turns`, the run's scene choices (preferred
    * posts, locked and skipped scenes) and their own pool.
    */
-  const runPack = useCallback((forBrief: PackBrief, made: PackMade, ctl: ReturnType<typeof control>) => {
-    if (!made.turns) return generateScenePackAsync(made.pool, runArgs(forBrief, made), ctl)
-    return generateTurnsAsync(made.turns, (character) => {
+  const runPack = useCallback(async (forBrief: PackBrief, made: PackMade, ctl: ReturnType<typeof control>) => {
+    // The engine works on the bare tags; the brief's weights go on the finished prompts, over the global ones.
+    const weigh = <R extends { prompts: PackPrompt[] }>(out: R | null): R | null =>
+      out && forBrief.weights ? { ...out, prompts: out.prompts.map((p) => weighPrompt(p, forBrief)) } : out
+    if (!made.turns) return weigh(await generateScenePackAsync(made.pool, runArgs(forBrief, made), ctl))
+    return weigh(await generateTurnsAsync(made.turns, (character) => {
       const from = poolFor(character, made.pool)
       if (!from) return null
       const args = argsFor(forBrief, made.seed, made.genCount, made.baseScene, character)
@@ -934,7 +937,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
           removedScenes: [...(args.removedScenes ?? []), ...made.lockedScenes, ...(made.skipScenes ?? [])],
         },
       }
-    }, ctl)
+    }, ctl))
   }, [runArgs, poolFor, argsFor, preferredFor])
 
   /** The character a row is for, one per prompt: its own while still in Who, else whoever has fewest rows. */
@@ -955,7 +958,8 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
       const character = rowCharacter(out, index)
       const from = poolFor(character, made.pool)
       const made1 = from ? rerollScenePrompt(from, out, index, argsFor(forBrief, r.seed, made.genCount, made.baseScene, character)) : null
-      const replacement = made1 && character ? { ...made1, character } : made1
+      const weighed = made1 && weighPrompt(made1, forBrief)
+      const replacement = weighed && character ? { ...weighed, character } : weighed
       if (!replacement) continue
       out = out.map((p, i) => (i === index ? replacement : p))
       kept.push({ ...r, index })
@@ -1136,7 +1140,8 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     // One character per prompt: the row stays the same character's.
     const character = rowCharacter(now.prompts, index)
     const from = poolFor(character, now.made.pool)
-    const fresh = from ? rerollScenePrompt(from, now.prompts, index, argsFor(brief, seed, now.made.genCount, now.made.baseScene, character)) : null
+    const made1 = from ? rerollScenePrompt(from, now.prompts, index, argsFor(brief, seed, now.made.genCount, now.made.baseScene, character)) : null
+    const fresh = made1 && weighPrompt(made1, brief)
     const replacement = fresh && character ? { ...fresh, character } : fresh
     if (!replacement) return false
     const slot = now.made.slots.indexOf(index)

@@ -51,6 +51,7 @@ import {
   canBeCondition,
   briefCompositions,
   briefFromPrompt,
+  briefTagName,
   routeTag,
   typedRole,
   briefRole,
@@ -62,6 +63,7 @@ import {
   type CastMember,
   type PackBrief,
 } from "@/lib/pack/brief"
+import { readWeightedTag } from "@/lib/weight-utils"
 import { DEFAULT_ROWS, briefFromCharacters, rowDefaults, rowMatchesDefaults, type DefaultRow } from "@/lib/pack/brief-history"
 import type { CastRole } from "@/lib/pack/scene/cast"
 import type { Permanence } from "@/lib/pack/scene/permanence"
@@ -722,8 +724,8 @@ const SAVE_DELAY_MS = 600
 /** A sentence that ends with its stop, once. */
 const sentence = (text: string) => (/[.!?…]$/.test(text) ? text : `${text}.`)
 
-/** A tag of a prompt as the brief spells it: no weight, no brackets. */
-const bareToken = (token: string) => token.replace(/^\(+/, "").replace(/(:[\d.]+)?\)+$/, "").trim()
+/** A tag of a prompt as the brief spells it: no weight, no brackets ("kashima (kancolle)" keeps its qualifier). */
+const bareToken = (token: string) => readWeightedTag(token).tag
 
 /**
  * The slot of the brief a typed tag lands in, by its role (routeTag); null for a people count
@@ -1116,10 +1118,11 @@ function BriefWorkspace({
   const rowDefaultsProps = useMemo(() => {
     const prefs = pack.preferences
     const make = (row: DefaultRow, label: string) => {
-      const saved = new Set(rowDefaults(prefs, row).map(normalizeTagForPack))
+      // By the bare tag: a default saved with its weight ("(masterpiece:1.2)") marks the chip "masterpiece".
+      const saved = new Set(rowDefaults(prefs, row).map(briefTagName))
       const tags = DEFAULT_ROWS[row].tagsOf(brief)
       return {
-        has: (tag: string) => saved.has(normalizeTagForPack(tag)),
+        has: (tag: string) => saved.has(briefTagName(tag)),
         matches: rowMatchesDefaults(brief, prefs, row),
         empty: tags.length === 0,
         onUse: () => {

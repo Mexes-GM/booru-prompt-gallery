@@ -6,6 +6,7 @@
  */
 import { getTagSlotFromOverrides } from '../tag-taxonomy'
 import { splitCommaSeparatedTags } from '../utils/tag-utils'
+import { readWeightedTag, writeWeight } from '../weight-utils'
 import { normalizeTagForPack } from './pack-generator'
 import { COUNT_TAG_RE, createPermanence, type Permanence } from './scene/permanence'
 import { briefRouteOf, tagRole, type TagRole, type TagRoleContext } from './tag-role'
@@ -80,6 +81,13 @@ export interface PackBrief {
    * most posted ones or a series (lib/pack/random-cast.ts). Ends when a character is named.
    */
   randomCast?: RandomCast
+  /**
+   * Prompt weights the user typed with a tag ("(excessive cum:2)"), by normalized tag. The brief
+   * routes, matches and asks for the bare tag; the weight is written on that tag in every prompt
+   * it appears in (writeBriefWeights), over the app's global weight for it. Never 1, never on a
+   * Never tag, and only for tags the brief has (pruneWeights). Missing: no weights.
+   */
+  weights?: Record<string, number>
 }
 
 /** Random known characters, one per prompt. */
@@ -131,6 +139,100 @@ export type BriefRoute =
   | { kind: 'people' }      // a people-count tag, or "solo"
   | { kind: 'composition' } // who is in the picture and how they pair up ("hetero", "male focus"): set by People, never a tag
   | { kind: 'literal' }     // how the picture is made (style, meta), a name of an artist or a work, or unknown
+
+// ── Weighted tags ───────────────────────────────────────────────────────────────
+
+/**
+ * A tag as typed or pasted, read once for every way into the brief: `name` is what the brief
+ * routes, matches and stores (normalized, no weight), `typed` the bare tag as typed (the Style row
+ * keeps it so), `weight` the weight the text gave (undefined: none given).
+ */
+export function readBriefTag(raw: string): { name: string; typed: string; weight?: number } {
+  const { tag, weight } = readWeightedTag(raw)
+  return { name: normalizeTagForPack(tag), typed: tag, ...(weight !== undefined ? { weight } : {}) }
+}
+
+/** The brief's name of a typed tag: normalized, without a weight ("(Excessive_Cum:2)" -> "excessive cum"). */
+export const briefTagName = (raw: string): string => readBriefTag(raw).name
+
+/** Sets the weight of a tag on a brief being built (`next` is a clone): 1 clears it, undefined leaves it. */
+function setWeight(next: PackBrief, name: string, weight: number | undefined): void {
+  if (weight === undefined || !name) return
+  const weights = { ...(next.weights ?? {}) }
+  if (weight === 1) delete weights[name]
+  else weights[name] = weight
+  if (Object.keys(weights).length > 0) next.weights = weights
+  else delete next.weights
+}
+
+/** The brief without weights for tags it no longer puts in the prompts (removed, or in Never). */
+function pruneWeights(brief: PackBrief): PackBrief {
+  if (!brief.weights) return brief
+  const kept = new Set(briefTags(brief).map(normalizeTagForPack))
+  const entries = Object.entries(brief.weights).filter(([name]) => kept.has(name))
+  if (entries.length === Object.keys(brief.weights).length) return brief
+  const next = { ...brief }
+  if (entries.length > 0) next.weights = Object.fromEntries(entries)
+  else delete next.weights
+  return next
+}
+
+/** The weight the brief gives a tag, if any. */
+export const tagWeight = (brief: Pick<PackBrief, 'weights'>, tag: string): number | undefined =>
+  brief.weights?.[briefTagName(tag)]
+
+/** A tag as the brief shows and stores it in a list of typed tags (Style defaults): with its weight. */
+export const weightedTag = (brief: Pick<PackBrief, 'weights'>, tag: string): string => writeWeight(tag, tagWeight(brief, tag))
+
+/**
+ * A finished prompt with the brief's weights written on its tags: "excessive cum" becomes
+ * "(excessive cum:2)". A tag the app's global weights already weighted takes the brief's weight
+ * instead (the pack's own wins); every other tag stays as it is. Without weights, the same text.
+ */
+export function writeBriefWeights(prompt: string, weights: Readonly<Record<string, number>> | undefined): string {
+  if (!weights || Object.keys(weights).length === 0 || !prompt) return prompt
+  let changed = false
+  const out = prompt.split(',').map((piece) => {
+    const token = piece.trim()
+    if (!token) return piece
+    const { tag } = readWeightedTag(token)
+    const weight = weights[normalizeTagForPack(tag)]
+    if (weight === undefined) return piece
+    changed = true
+    return writeWeight(tag, weight)
+  })
+  return changed ? out.map((t) => t.trim()).filter(Boolean).join(', ') : prompt
+}
+
+/** A pack prompt with the brief's weights written on it (writeBriefWeights); the same object without any. */
+export function weighPrompt<P extends { prompt: string }>(prompt: P, brief: Pick<PackBrief, 'weights'>): P {
+  const text = writeBriefWeights(prompt.prompt, brief.weights)
+  return text === prompt.prompt ? prompt : { ...prompt, prompt: text }
+}
+
+/**
+ * A brief stored before weights were read (a pack kept across a reload): weight syntax left in its
+ * tags ("(excessive cum:2)" as a request) becomes the bare tag and its weight. The same object
+ * when there is none.
+ */
+export function liftBriefWeights(brief: PackBrief): PackBrief {
+  const weighted = (t: string) => readWeightedTag(t).weight !== undefined
+  const lists = [brief.never, brief.literal, brief.others, ...brief.who.map((c) => c.addedLook), brief.requests.map((r) => r.tag), brief.who.flatMap((c) => (c.tag ? [c.tag] : []))]
+  if (!lists.some((list) => list.some(weighted))) return brief
+  const next = cloneBrief(brief)
+  const lift = (t: string, keep?: 'typed') => {
+    const read = readBriefTag(t)
+    if (read.weight === undefined) return t
+    setWeight(next, read.name, read.weight)
+    return keep ? read.typed : read.name
+  }
+  next.requests = next.requests.map((r) => ({ ...r, tag: lift(r.tag) }))
+  next.literal = next.literal.map((t) => lift(t, 'typed'))
+  next.others = next.others.map((t) => lift(t))
+  next.who = next.who.map((c) => ({ ...c, tag: c.tag === null ? null : lift(c.tag), addedLook: c.addedLook.map((t) => lift(t)) }))
+  next.never = next.never.map(briefTagName)
+  return pruneWeights(next)
+}
 
 const same = (a: string, b: string) => normalizeTagForPack(a) === normalizeTagForPack(b)
 const without = (list: readonly string[], tag: string) => list.filter((t) => !same(t, tag))
@@ -206,7 +308,7 @@ function castContext(base: TagRoleContext, cast: readonly CastRole[]): TagRoleCo
 
 /** The role of a tag as the brief reads it (taxonomy, permanence, relations). */
 export const briefRole = (tag: string, overrides: Record<string, string>, permanence?: (tag: string) => Permanence): TagRole =>
-  tagRole(tag, routeContext(overrides, permanence))
+  tagRole(briefTagName(tag), routeContext(overrides, permanence))
 
 /**
  * Decides where a tag goes from its role (lib/pack/tag-role.ts briefRouteOf), one rule for every
@@ -218,7 +320,7 @@ export const briefRole = (tag: string, overrides: Record<string, string>, perman
  * and what nothing knows, to Style. People counts come first. `permanence`: see routePermanence.
  */
 export function routeTag(tag: string, overrides: Record<string, string>, permanence?: (tag: string) => Permanence): BriefRoute {
-  const normalized = normalizeTagForPack(tag)
+  const normalized = briefTagName(tag)
   if (isPeopleTag(normalized)) return { kind: 'people' }
   return routeOfRole(briefRole(normalized, overrides, permanence))
 }
@@ -267,7 +369,7 @@ export function typedRole(tag: string, typedIn: TypedRow, overrides: Record<stri
   if (route.kind === 'request') return route.role
   if (route.kind !== 'literal') return undefined
   if (briefRole(tag, overrides).kind !== 'unknown') return undefined
-  if (tag.trim().startsWith('@')) return undefined
+  if (readWeightedTag(tag).tag.startsWith('@')) return undefined
   if (suggested) return suggested === 'general' ? 'also' : undefined
   return typedIn === 'wearing' || typedIn === 'doing' || typedIn === 'where' ? typedIn : undefined
 }
@@ -288,25 +390,27 @@ export function isOthersTag(
 ): boolean {
   const cast = Array.from(new Set(castRoles.filter((r): r is CastRole => !!r)))
   if (cast.length !== 1) return false
-  if (isPeopleTag(normalizeTagForPack(tag))) return false
-  const role = tagRole(tag, castContext(routeContext(overrides, permanence), cast))
+  const name = briefTagName(tag)
+  if (isPeopleTag(name)) return false
+  const role = tagRole(name, castContext(routeContext(overrides, permanence), cast))
   if (role.owner === 'others') return role.kind !== 'composition'
   // The genitals of the other sex are another person's, a lasting trait too ("huge penis" next to a girl).
   if (role.kind !== 'aspect') return false
   const other = cast[0] === 'girl' ? MALE_GENITALS : FEMALE_GENITALS
-  return other.test(normalizeTagForPack(tag))
+  return other.test(name)
 }
 const MALE_GENITALS = /\b(penis(es)?|testicles|scrotum|foreskin)\b/
 const FEMALE_GENITALS = /\b(pussy|vulva|vagina|clitoris|labia)\b/
 
 /** Adds a tag to the others' look (and takes it off Never and the characters' added look). */
 export function addOther(brief: PackBrief, tag: string): PackBrief {
-  const name = normalizeTagForPack(tag)
+  const { name, weight } = readBriefTag(tag)
   if (!name) return brief
   const next = cloneBrief(brief)
   next.never = without(next.never, name)
   next.who.forEach((c) => { c.addedLook = without(c.addedLook, name) })
   if (!has(next.others, name)) next.others.push(name)
+  setWeight(next, name, weight)
   return next
 }
 
@@ -324,6 +428,7 @@ function cloneBrief(brief: PackBrief): PackBrief {
     ...(brief.outfitStyles ? { outfitStyles: [...brief.outfitStyles] } : {}),
     ...(brief.peopleMix ? { peopleMix: brief.peopleMix.map((p) => ({ ...p })) } : {}),
     ...(brief.randomCast ? { randomCast: { ...brief.randomCast, drawn: brief.randomCast.drawn.map((m) => ({ ...m })) } } : {}),
+    ...(brief.weights ? { weights: { ...brief.weights } } : {}),
   }
 }
 
@@ -387,8 +492,7 @@ export function addTag(
   into?: RequestRole,
   permanence?: (tag: string) => Permanence
 ): PackBrief {
-  const typed = tag.trim()
-  const name = normalizeTagForPack(typed)
+  const { name, typed, weight } = readBriefTag(tag)
   if (!name) return brief
   const route = routeTag(name, overrides, permanence)
   // A count sets People; a pairing ("hetero") or a focus is who is in the picture: neither is a tag of the brief.
@@ -398,9 +502,12 @@ export function addTag(
   // Asking for a tag undoes a "never" for it.
   next.never = without(next.never, name)
 
-  if (route.kind === 'character') return addCharacter(next, name)
-
-  if (route.kind === 'look') return addLook(next, next.who[0].tag, name)
+  if (route.kind === 'character' || route.kind === 'look') {
+    const added = route.kind === 'character' ? addCharacter(next, name) : addLook(next, next.who[0].tag, name)
+    if (added === next) return next
+    setWeight(added, name, weight)
+    return pruneWeights(added)
+  }
 
   const role: RequestRole | null = route.kind === 'request' ? route.role : into ?? null
   if (role) {
@@ -410,6 +517,7 @@ export function addTag(
   } else if (!has(next.literal, name)) {
     next.literal.push(typed)
   }
+  setWeight(next, name, weight)
   return next
 }
 
@@ -420,11 +528,12 @@ export function addTag(
  * a pasted single-character prompt must not become a group.
  */
 export function addCharacter(brief: PackBrief, name: string): PackBrief {
-  const tag = normalizeTagForPack(name)
+  const { name: tag, weight } = readBriefTag(name)
   if (!tag) return brief
   const next = cloneBrief(brief)
   // A named character ends random characters.
   delete next.randomCast
+  setWeight(next, tag, weight)
   if (next.who.some((c) => c.tag !== null && same(c.tag, tag))) return next
   const [first] = next.who
   if (next.who.length === 1 && first.tag === null) {
@@ -432,7 +541,7 @@ export function addCharacter(brief: PackBrief, name: string): PackBrief {
   } else if (next.who.length < castLimit(next)) {
     next.who.push({ tag, addedLook: [], removedLook: [] })
   }
-  return next
+  return pruneWeights(next)
 }
 
 /** A character a quick cast adds (lib/pack/cast-picker.ts): their name and, when the data knows it, their gender. */
@@ -449,15 +558,15 @@ export interface CastMember {
  * while the pack has no more than MAX_CAST.
  */
 export function addCast(brief: PackBrief, members: readonly CastMember[]): PackBrief {
-  const fresh = members.filter((m) => normalizeTagForPack(m.tag))
+  const fresh = members.filter((m) => briefTagName(m.tag))
   if (fresh.length === 0) return brief
   let next = cloneBrief(brief)
   const wasTurns = next.castMode === 'turns'
   next.castMode = 'turns'
   for (const member of fresh) {
-    const tag = normalizeTagForPack(member.tag)
+    const tag = briefTagName(member.tag)
     const had = namedCount(next)
-    next = addCharacter(next, tag)
+    next = addCharacter(next, member.tag)
     if (namedCount(next) === had || !member.role) continue
     const added = next.who.find((c) => c.tag !== null && same(c.tag, tag))
     if (added && !added.role) added.role = member.role
@@ -473,12 +582,13 @@ const findCharacter = (brief: PackBrief, character: string | null) =>
 
 /** Adds a look tag to a character and takes it off that character's removed look. Unknown character: unchanged. */
 export function addLook(brief: PackBrief, character: string | null, tag: string): PackBrief {
-  const name = normalizeTagForPack(tag)
+  const { name, weight } = readBriefTag(tag)
   if (!name || !findCharacter(brief, character)) return brief
   const next = cloneBrief(brief)
   const target = findCharacter(next, character)!
   target.removedLook = without(target.removedLook, name)
   if (!has(target.addedLook, name)) target.addedLook.push(name)
+  setWeight(next, name, weight)
   return next
 }
 
@@ -487,13 +597,13 @@ export function addLook(brief: PackBrief, character: string | null, tag: string)
  * the character's usual traits and joins the removed look. Unknown character: unchanged.
  */
 export function removeLook(brief: PackBrief, character: string | null, tag: string): PackBrief {
-  const name = normalizeTagForPack(tag)
+  const name = briefTagName(tag)
   if (!name || !findCharacter(brief, character)) return brief
   const next = cloneBrief(brief)
   const target = findCharacter(next, character)!
   if (has(target.addedLook, name)) target.addedLook = without(target.addedLook, name)
   else if (!has(target.removedLook, name)) target.removedLook.push(name)
-  return next
+  return pruneWeights(next)
 }
 
 /** Gives back a usual trait that was taken off a character. Unknown character: unchanged. */
@@ -501,41 +611,46 @@ export function restoreLook(brief: PackBrief, character: string | null, tag: str
   if (!findCharacter(brief, character)) return brief
   const next = cloneBrief(brief)
   const target = findCharacter(next, character)!
-  target.removedLook = without(target.removedLook, tag)
+  target.removedLook = without(target.removedLook, briefTagName(tag))
   return next
 }
 
 /** Takes a tag off the requests, the literals, the others' look and every character's added look. */
 export function removeTag(brief: PackBrief, tag: string): PackBrief {
+  return pruneWeights(dropTag(brief, briefTagName(tag)))
+}
+
+/** removeTag, keeping the weight (settleStart puts the tag back elsewhere). */
+function dropTag(brief: PackBrief, name: string): PackBrief {
   const next = cloneBrief(brief)
-  next.requests = next.requests.filter((r) => !same(r.tag, tag))
-  next.literal = without(next.literal, tag)
-  next.others = without(next.others, tag)
-  next.who.forEach((c) => { c.addedLook = without(c.addedLook, tag) })
+  next.requests = next.requests.filter((r) => !same(r.tag, name))
+  next.literal = without(next.literal, name)
+  next.others = without(next.others, name)
+  next.who.forEach((c) => { c.addedLook = without(c.addedLook, name) })
   return next
 }
 
-/** "Never include": the tag leaves everything the brief asks for and joins `never`. */
+/** "Never include": the tag leaves everything the brief asks for and joins `never`, without a weight. */
 export function addNever(brief: PackBrief, tag: string): PackBrief {
-  const name = normalizeTagForPack(tag)
+  const name = briefTagName(tag)
   if (!name) return brief
-  const next = removeTag(brief, name)
+  const next = dropTag(brief, name)
   if (!has(next.never, name)) next.never.push(name)
-  return next
+  return pruneWeights(next)
 }
 
 export function removeNever(brief: PackBrief, tag: string): PackBrief {
   const next = cloneBrief(brief)
-  next.never = without(next.never, tag)
+  next.never = without(next.never, briefTagName(tag))
   return next
 }
 
 /** Drops a character; the brief always keeps at least the unnamed one. */
 export function removeCharacter(brief: PackBrief, tag: string): PackBrief {
   const next = cloneBrief(brief)
-  next.who = next.who.filter((c) => c.tag === null || !same(c.tag, tag))
+  next.who = next.who.filter((c) => c.tag === null || !same(c.tag, briefTagName(tag)))
   if (next.who.length === 0) next.who = [unnamedCharacter()]
-  return next
+  return pruneWeights(next)
 }
 
 /** Sets (or, with undefined, clears) the role of the character with this tag; null picks the unnamed one. */
@@ -642,7 +757,7 @@ export function briefFromPrompt(
   let brief = emptyBrief()
   const peopleTags: string[] = []
   for (const tag of splitCommaSeparatedTags(text)) {
-    const name = normalizeTagForPack(tag)
+    const name = briefTagName(tag)
     if (!name) continue
     // Counts set People; a pairing or focus ("hetero") is who is in the picture too: kept apart, never lost.
     const kind = routeTag(name, overrides, permanence).kind
@@ -670,11 +785,11 @@ export function briefFromCard(
   const peopleTags: string[] = []
   const offer = (list: string[], name: string) => { if (!list.includes(name)) list.push(name) }
   for (const tag of tags) {
-    const name = normalizeTagForPack(tag)
+    const name = briefTagName(tag)
     if (!name) continue
     const route = routeTag(name, overrides, permanence)
     if (route.kind === 'people' || route.kind === 'composition') offer(peopleTags, name)
-    else if (route.kind === 'character' || route.kind === 'look') brief = addTag(brief, name, overrides, undefined, permanence)
+    else if (route.kind === 'character' || route.kind === 'look') brief = addTag(brief, tag, overrides, undefined, permanence)
     else if (route.kind === 'request' && route.role === 'wearing') offer(offered.outfit, name)
     else if (route.kind === 'request' && route.role === 'doing') offer(offered.pose, name)
   }
@@ -710,7 +825,7 @@ export function settleStart(start: PackBrief, settled: PackBrief, current: PackB
     if (was === now || placeOf(next, name) !== was) continue
     // Put elsewhere by the user (Never, Others) or a character: theirs.
     if (has(next.never, name) || has(next.others, name) || next.who.some((c) => c.tag !== null && same(c.tag, name))) continue
-    next = removeTag(next, name)
+    next = dropTag(next, name)
     if (now === 'look') {
       const owner = settled.who.find((c) => has(c.addedLook, name))?.tag ?? null
       next = addLook(next, findCharacter(next, owner) ? owner : next.who[0].tag, name)
@@ -720,7 +835,7 @@ export function settleStart(start: PackBrief, settled: PackBrief, current: PackB
       next.requests.push({ ...settled.requests.find((r) => same(r.tag, name))! })
     }
   }
-  return next
+  return pruneWeights(next)
 }
 
 export function toSceneRequests(brief: PackBrief): BriefSceneRequests {
@@ -774,7 +889,8 @@ export function briefConditions(brief: Pick<PackBrief, 'requests'>, overrides: R
 }
 
 /** Marks a Wearing or Where tag exact (the same tag in every prompt) or back to a condition. */
-export function setRequestExact(brief: PackBrief, tag: string, exact: boolean): PackBrief {
+export function setRequestExact(brief: PackBrief, raw: string, exact: boolean): PackBrief {
+  const tag = briefTagName(raw)
   if (!brief.requests.some((r) => same(r.tag, tag))) return brief
   const next = cloneBrief(brief)
   next.requests = next.requests.map((r) => {
@@ -813,6 +929,7 @@ export function setOutfitDetail(brief: PackBrief, detail: 'simple' | 'full'): Pa
  */
 export function addTagExactly(brief: PackBrief, tag: string, overrides: Record<string, string>, into?: RequestRole): PackBrief {
   const next = addTag(brief, tag, overrides, into)
-  const added = next.requests.find((r) => same(r.tag, tag))
-  return added && (added.role === 'wearing' || added.role === 'where') ? setRequestExact(next, tag, true) : next
+  const name = briefTagName(tag)
+  const added = next.requests.find((r) => same(r.tag, name))
+  return added && (added.role === 'wearing' || added.role === 'where') ? setRequestExact(next, name, true) : next
 }

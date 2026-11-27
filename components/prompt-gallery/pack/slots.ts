@@ -5,7 +5,8 @@
  */
 import { Ban, Palette, Plus, UserRound, UsersRound, type LucideIcon } from "lucide-react"
 import { TAG_CATEGORY_ICONS } from "@/components/tag-category-icon"
-import type { PackBrief, RequestRole } from "@/lib/pack/brief"
+import { tagWeight, type PackBrief, type RequestRole } from "@/lib/pack/brief"
+import { writeWeight } from "@/lib/weight-utils"
 import type { PackPeople } from "@/lib/pack/scene/scene-pool"
 
 export type SlotId = "who" | RequestRole | "style" | "never" | "others"
@@ -131,6 +132,13 @@ export function characterName(tag: string, info?: Pick<CharacterInfo, "name">): 
 
 /** A tag as the card shows it: spaces, not underscores. */
 export const showTag = (tag: string) => tag.replace(/_/g, " ")
+
+/**
+ * A chip's text: the tag (or a character's name) with the weight the pack gives it, written as the
+ * gallery writes weights: "(excessive cum:2)". Without a weight, the text alone.
+ */
+export const weightedLabel = (brief: Pick<PackBrief, "weights">, tag: string, text: string = showTag(tag)) =>
+  writeWeight(text, tagWeight(brief, tag))
 
 /** Splits typed or pasted text into tags. */
 export function splitTyped(text: string): string[] {
