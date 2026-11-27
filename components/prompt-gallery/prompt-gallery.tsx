@@ -971,7 +971,17 @@ export function PromptGallery() {
   // A new base, or Discard, starts over; leaving Pack Mode forgets the flag.
   const [packBuilderHidden, setPackBuilderHidden] = useState(false)
   if (packBuilderHidden && !packModeIsPackMode) setPackBuilderHidden(false)
-  const handleHidePackBuilder = useCallback(() => setPackBuilderHidden(true), [])
+  // The classic builder opened from the pack screen ("Classic builder" in its header): closing
+  // it goes back to that screen, not to a kept classic pack.
+  const packClassicFromBriefRef = useRef(false)
+  const handleHidePackBuilder = useCallback(() => {
+    if (packClassicFromBriefRef.current) {
+      packClassicFromBriefRef.current = false
+      setPackBuilderKind('brief')
+      return
+    }
+    setPackBuilderHidden(true)
+  }, [])
   const handleShowPackBuilder = useCallback(() => setPackBuilderHidden(false), [])
   const packModeSetBasePromptForDiscard = packMode.setBasePrompt
   // "Discard" on the kept-pack bar: drops the base (and with it the pack) and goes
@@ -1258,6 +1268,7 @@ export function PromptGallery() {
   const handleOpenClassicBuilder = useCallback(() => {
     if (!packBrief) return
     startClassicPack(packBrief.start)
+    packClassicFromBriefRef.current = true
     toast({ description: BUILDER_SWITCH_TEXT.toClassic, duration: 6000 })
   }, [packBrief, startClassicPack, toast])
   // The pack builder is memoized: its props stay the same while the gallery renders.
@@ -2232,8 +2243,12 @@ export function PromptGallery() {
                       setIsAiConvertMode(false)
                       if (mergeModeIsMergeMode) mergeModeDisableMergeMode()
                       packMode.enablePackMode()
-                      // A pack already made in the builder in use comes back as it was; otherwise, the entry dialog.
-                      if (packBuilderKind === 'brief' ? !packBrief && !restoreSavedPackBrief() : !packMode.hasBase) {
+                      // The Pack button always opens the pack screen (the classic builder is reached
+                      // from there): its pack comes back as it was; with none, the entry dialog.
+                      packClassicFromBriefRef.current = false
+                      setPackBuilderKind('brief')
+                      setPackPickingCard(false)
+                      if (!packBrief && !restoreSavedPackBrief()) {
                         setPackEntryStartInPrompt(false)
                         setPackEntryOpen(true)
                       }
@@ -2892,6 +2907,7 @@ export function PromptGallery() {
           setPackFetcherActive(false)
           setPackBuilderHidden(false)
           // The new builder is the one that opens next time.
+          packClassicFromBriefRef.current = false
           setPackBuilderKind('brief')
         }}
         savedPostCount={packSeedSnapshot?.savedCount ?? 0}
