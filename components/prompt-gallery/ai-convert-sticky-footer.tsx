@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { X, Copy, Check, Sparkles, Settings2, Loader2, RefreshCw, AlertCircle, History, Trash2 } from "lucide-react"
+import { X, Copy, Check, Sparkles, Settings2, Loader2, RefreshCw, AlertCircle, History, Trash2, Send } from "lucide-react"
 import { useLLMSettings, LLMProvider } from '@/hooks/use-llm-settings'
 import { apiUrl } from '@/lib/api-client'
 import { Turnstile, isTurnstileEnabled } from "@/components/turnstile"
@@ -15,6 +15,8 @@ import { toast } from '@/hooks/use-toast'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useLowMotion } from '@/hooks/use-low-motion'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
+import { useComfySend } from '@/hooks/use-comfyui-send'
+import { ComfyInlineJob } from './comfyui-inline-job'
 import { cn } from '@/lib/utils'
 import { OpenAIIcon, AnthropicIcon, GoogleIcon, DeepSeekIcon, OpenRouterIcon, CloudflareIcon } from "@/components/icons/brand-icons"
 import { track } from '@/lib/analytics'
@@ -107,6 +109,7 @@ const AiConvertStickyFooterComponent = ({
   const [hasConverted, setHasConverted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isCopied, triggerCopyFeedback, resetCopyFeedback] = useCopyFeedback()
+  const comfy = useComfySend()
   const [isPulseActive, setIsPulseActive] = useState(false)
   const [dailyRemaining, setDailyRemaining] = useState<number | null>(null)
   // Turnstile token for the free AI tier. Stays null
@@ -160,6 +163,13 @@ const AiConvertStickyFooterComponent = ({
       title: 'Copied!',
       description: 'The natural language prompt has been copied to your clipboard.',
     })
+  }
+
+  // ComfyUI mode: history items send instead of copying; progress shows in the footer.
+  const sendHistoryItem = async (text: string) => {
+    if (await comfy.send(text, () => copyHistoryItem(text))) {
+      toast({ title: 'Sent to ComfyUI', description: 'Its progress shows below the converted prompt.' })
+    }
   }
 
   // Local state for settings form
@@ -444,6 +454,19 @@ const AiConvertStickyFooterComponent = ({
                               {item.result}
                             </p>
                             <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                              {comfy.enabled ? (
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  className="h-7 px-2 text-xs"
+                                  onClick={() => void sendHistoryItem(item.result)}
+                                  disabled={comfy.sending}
+                                  aria-label="Send this prompt to ComfyUI"
+                                >
+                                  <Send className="w-3 h-3 mr-1" aria-hidden="true" />
+                                  Send
+                                </Button>
+                              ) : (
                               <Button
                                 size="sm"
                                 variant="secondary"
@@ -453,6 +476,7 @@ const AiConvertStickyFooterComponent = ({
                                 <Copy className="w-3 h-3 mr-1" />
                                 Copy
                               </Button>
+                              )}
                             </div>
                           </div>
                         ))
@@ -672,6 +696,15 @@ const AiConvertStickyFooterComponent = ({
               {/* Action buttons row — pinned at bottom, never overlapping text */}
               {(hasConverted || error) && !isLoading && (
                 <div className="flex justify-end gap-2 px-3 pb-3 pt-1 shrink-0">
+                  {comfy.enabled && comfy.job && (
+                    <ComfyInlineJob
+                      key={comfy.job.jobId}
+                      jobId={comfy.job.jobId}
+                      api={comfy.job.api}
+                      onDismiss={comfy.dismiss}
+                      className="mr-auto"
+                    />
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
@@ -683,7 +716,24 @@ const AiConvertStickyFooterComponent = ({
                     <RefreshCw className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" />
                     Regenerate
                   </Button>
-                  {!error && (
+                  {!error && comfy.enabled && (
+                    <Button
+                      size="sm"
+                      onClick={() => void comfy.send(result, handleCopy)}
+                      disabled={!result}
+                      aria-busy={comfy.sending || undefined}
+                      aria-label="Send prompt to ComfyUI"
+                      className="h-8 px-3 rounded-lg text-xs font-bold transition-colors shadow-sm bg-primary hover:bg-primary/90 text-primary-foreground"
+                    >
+                      {comfy.sending ? (
+                        <Loader2 className="w-3.5 h-3.5 mr-1 motion-safe:animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5 mr-1" aria-hidden="true" />
+                      )}
+                      Send
+                    </Button>
+                  )}
+                  {!error && !comfy.enabled && (
                     <Button
                       size="sm"
                       onClick={handleCopy}

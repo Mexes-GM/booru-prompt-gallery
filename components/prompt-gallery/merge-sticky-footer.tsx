@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, memo, useCallback, useMemo } from 'react'
 import { Button } from "@/components/ui/button"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
-import { X, Copy, Trash2, Check, Shuffle, Type, Dices, Settings2 } from "lucide-react"
+import { X, Copy, Trash2, Check, Shuffle, Type, Dices, Settings2, Send, Loader2 } from "lucide-react"
 import { BooruPost } from '@/lib/booru/types'
 import { SelectedPostParts, MergeModeType, RandomSettings, MergedPromptSegment } from '@/hooks/use-merge-mode'
 import { TagCategory } from '@/lib/tag-classifier'
@@ -9,6 +9,8 @@ import { track } from '@/lib/analytics'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useLowMotion } from '@/hooks/use-low-motion'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
+import { useComfySend } from '@/hooks/use-comfyui-send'
+import { ComfyInlineJob } from './comfyui-inline-job'
 import Image from 'next/image'
 import { getPostThumbnailUrl } from "@/lib/proxy-url"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -115,11 +117,9 @@ const MergeStickyFooterComponent = ({
     const lowMotion = useLowMotion()
     const [isCopied, triggerCopyFeedback] = useCopyFeedback()
     const [isCleared, setIsCleared] = useState(false)
-    
-    const handleCopy = (text: string) => {
-        onCopy(text)
-        triggerCopyFeedback()
-        
+    const comfy = useComfySend()
+
+    const trackUse = () => {
         if (mergeModeType === 'variations') {
             track('variant_mode_used', {
                 merged_posts_count: selectedPosts.size
@@ -129,6 +129,17 @@ const MergeStickyFooterComponent = ({
                 merged_posts_count: selectedPosts.size
             })
         }
+    }
+
+    const handleCopy = (text: string) => {
+        onCopy(text)
+        triggerCopyFeedback()
+        trackUse()
+    }
+
+    // ComfyUI mode: the same text goes to ComfyUI instead of the clipboard.
+    const handleSend = async (text: string) => {
+        if (await comfy.send(text, () => handleCopy(text))) trackUse()
     }
 
     const handleClear = () => {
@@ -516,7 +527,33 @@ const MergeStickyFooterComponent = ({
                                 )}
                             </div>
 
-                            <div className="absolute bottom-2 right-2 flex gap-2 z-10">
+                            <div className={comfy.enabled ? "absolute bottom-2 right-2 left-2 flex items-center justify-end gap-2 z-10 pointer-events-none" : "absolute bottom-2 right-2 flex gap-2 z-10"}>
+                                {comfy.enabled && comfy.job && (
+                                    <ComfyInlineJob
+                                        key={comfy.job.jobId}
+                                        jobId={comfy.job.jobId}
+                                        api={comfy.job.api}
+                                        onDismiss={comfy.dismiss}
+                                        className="pointer-events-auto h-8 rounded-md border border-border/60 bg-background/95 pl-1 pr-1 shadow-sm"
+                                    />
+                                )}
+                                {comfy.enabled ? (
+                                    <Button
+                                        size="sm"
+                                        onClick={() => void handleSend(mergedPrompt)}
+                                        disabled={!mergedPrompt}
+                                        aria-busy={comfy.sending || undefined}
+                                        aria-label="Send prompt to ComfyUI"
+                                        className="pointer-events-auto shrink-0 shadow-sm opacity-90 hover:opacity-100"
+                                    >
+                                        {comfy.sending ? (
+                                            <Loader2 className="w-4 h-4 mr-2 motion-safe:animate-spin" aria-hidden="true" />
+                                        ) : (
+                                            <Send className="w-4 h-4 mr-2" aria-hidden="true" />
+                                        )}
+                                        Send
+                                    </Button>
+                                ) : (
                                 <Button
                                     size="sm"
                                     onClick={() => handleCopy(mergedPrompt)}
@@ -555,6 +592,7 @@ const MergeStickyFooterComponent = ({
                                         {isCopied && <Particles color="green" />}
                                     </AnimatePresence>
                                 </Button>
+                                )}
                             </div>
                         </div>
 
