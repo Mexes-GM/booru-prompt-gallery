@@ -3,20 +3,38 @@
  * the later pages, the page counts), all searches and ratings together, for as long as the
  * pack's source runs. A change of plan doesn't start a new budget.
  *
- * The two caps keep what the page caps meant, counted in requests instead of pages (a page
- * of a two-rating search is two requests):
- *  - AUTO_REQUEST_CAP: what the pack loads by itself. The page cap it replaces was 15 pages,
- *    about 30 requests on a two-rating pack, plus the page-range probes it didn't count
- *    (8 or 9 per search and rating). A typical pack stops well before: its first pages
- *    and one or two more are enough.
- *  - SESSION_REQUEST_CAP: past it, "Find more scenes" stops too. The session cap it replaces
- *    was 35 pages, about 70 requests on a two-rating pack.
+ * The caps keep the page caps they replace, counted in requests: a page of a search is one
+ * request per rating the source asks for, so each cap is its old page count times the
+ * plan's ratings (requestCaps). No pack goes past what the page caps allowed, and a
+ * one-rating pack doesn't get twice the pages of a two-rating one.
+ *  - Automatic: what the pack loads by itself. The page cap was 15 pages, plus the
+ *    page-range probes it didn't count (8 or 9 per search and rating). A typical pack stops
+ *    well before: its first pages and one or two more are enough.
+ *  - Session: past it, "Find more scenes" stops too. The session cap was 35 pages.
  *
  * Pure: a small store with subscribe/getSnapshot for useSyncExternalStore.
  */
+import { MAX_RATINGS } from "./source-plan"
 
-export const AUTO_REQUEST_CAP = 30
-export const SESSION_REQUEST_CAP = 70
+/** Old AUTO_PAGE_CAP: requests the pack loads by itself, per rating. */
+export const AUTO_REQUESTS_PER_RATING = 15
+/** Old MAX_SESSION_PAGE_LOADS: requests by hand and by itself together, per rating. */
+export const SESSION_REQUESTS_PER_RATING = 35
+
+export interface RequestCaps {
+  auto: number
+  session: number
+}
+
+/** The caps of a source that asks for `ratings` ratings (1..MAX_RATINGS). The one place they are worked out. */
+export function requestCaps(ratings: number): RequestCaps {
+  const r = Math.min(MAX_RATINGS, Math.max(1, Math.floor(ratings) || 1))
+  return { auto: AUTO_REQUESTS_PER_RATING * r, session: SESSION_REQUESTS_PER_RATING * r }
+}
+
+/** The caps of a two-rating pack: the largest a pack gets. */
+export const AUTO_REQUEST_CAP = requestCaps(MAX_RATINGS).auto
+export const SESSION_REQUEST_CAP = requestCaps(MAX_RATINGS).session
 
 export class PackRequestBudget {
   private spentCount = 0
@@ -34,9 +52,9 @@ export class PackRequestBudget {
     this.listeners.forEach((listener) => listener())
   }
 
-  /** True when `n` more requests stay within the session cap. */
-  allows(n = 1): boolean {
-    return this.spentCount + n <= SESSION_REQUEST_CAP
+  /** True when `n` more requests stay within the session cap (by default, a two-rating pack's). */
+  allows(n = 1, sessionCap = SESSION_REQUEST_CAP): boolean {
+    return this.spentCount + n <= sessionCap
   }
 
   subscribe = (listener: () => void): (() => void) => {

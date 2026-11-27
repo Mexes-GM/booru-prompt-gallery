@@ -104,7 +104,6 @@ import { SearchDetails } from "./search-details"
 import { savedResultOf, type SavedPack } from "@/lib/pack/saved-pack"
 import { BUILDER_SWITCH_TEXT } from "./builder-switch"
 import type { EntryOption } from "./tag-entry"
-import { AUTO_REQUEST_CAP } from "@/lib/pack/request-budget"
 import { BriefSummary } from "./brief-summary"
 import type { Choice } from "./choice-group"
 import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contact-sheet"
@@ -583,8 +582,8 @@ function BriefWorkspace({
   const have = usable ? (poses.length > 0 && !axis ? usable.filter((c) => c.hasPose).length : usable.length) : 0
   // Pages go one at a time to the search that can bring most; one the pace limit doesn't
   // allow yet waits and goes by itself (usePackSources). By itself the pack stops at
-  // AUTO_REQUEST_CAP requests; "Find more scenes" goes on from there.
-  const canLoad = !!source && !source.noMoreResults && !source.failed && !source.sessionCapReached && source.requests < AUTO_REQUEST_CAP
+  // its automatic request cap (autoRequestCap); "Find more scenes" goes on from there.
+  const canLoad = !!source && !source.noMoreResults && !source.failed && !source.sessionCapReached && source.requests < source.autoRequestCap
   // While the pool alone says there can't be enough scenes yet, the next page goes as soon as the
   // pool has taken the last one, without waiting for the scenes that fit (they wait for the batch).
   const collectingNow = open && canLoad && engine.sceneEstimate !== null && engine.sceneEstimate < count

@@ -46,7 +46,7 @@ import type { BooruPost } from "@/lib/api-client"
 import { MAX_DONOR_FEEDS, assignFeedSlots, planDonorFeeds, planFeeds, type DonorSearch, type FeedSlot, type SceneSearchKind, type SourcePlan } from "@/lib/pack/source-plan"
 import { useSingleRatingFeed, type UsePackSeedSearchResult } from "./use-pack-seed-search"
 import { sitePacer } from "@/lib/booru/request-pacer"
-import { PackRequestBudget, SESSION_REQUEST_CAP } from "@/lib/pack/request-budget"
+import { PackRequestBudget, requestCaps } from "@/lib/pack/request-budget"
 import { NO_PAGING, nextSearch, recordPage, searchEnded, type SearchPaging } from "@/lib/pack/source-paging"
 import { firstFittingSearch, postFitsSearch, postTagSet, type LoadedPost } from "@/lib/pack/source-fit"
 import type { BooruProvider } from "@/lib/booru/types"
@@ -95,6 +95,8 @@ export interface UsePackSourcesResult extends UsePackSeedSearchResult {
   pages: number
   /** Requests the pack's source has sent, all searches and ratings together (its budget so far). */
   requests: number
+  /** Requests the pack may send by itself (requestCaps for the plan's ratings): past them, only by hand. */
+  autoRequestCap: number
 }
 
 type Feed = ReturnType<typeof useSingleRatingFeed>
@@ -193,6 +195,8 @@ export function usePackSources({ plan, shortConditions = NO_SHORT, onSessionCapR
   })
   const spent = useSyncExternalStore(budget.subscribe, budget.getSnapshot, budget.getSnapshot)
   const feedOptions = useMemo(() => ({ budget }), [budget])
+  // Its caps follow the plan's ratings: a page is one request per rating (lib/pack/request-budget.ts).
+  const { auto: autoRequestCap, session: sessionRequestCap } = requestCaps(plan.ratings.length)
 
   // The plan's feeds change only with its scene key.
   const wanted = useMemo(
@@ -387,10 +391,11 @@ export function usePackSources({ plan, shortConditions = NO_SHORT, onSessionCapR
     firstPageOnly: s.donor && !shortConditions.includes(s.kind as DonorSearch["kind"]),
   })))
   // Its feeds that still have pages: one request each.
-  const targetKey = target >= 0 ? slotsBySearch[target].filter((i) => !feeds[i].noMoreResults).join(",") : ""
+  const endedFeeds = feeds.map((f) => (f.noMoreResults ? "1" : "0")).join("")
+  const targetKey = target >= 0 ? slotsBySearch[target].filter((i) => endedFeeds[i] !== "1").join(",") : ""
   const targetRequests = targetKey ? targetKey.split(",").length : 0
   // The session's cap: the next page would take the pack past it.
-  const sessionCapReached = spent + Math.max(1, targetRequests) > SESSION_REQUEST_CAP
+  const sessionCapReached = spent + Math.max(1, targetRequests) > sessionRequestCap
   useEffect(() => { if (sessionCapReached) capCallbackRef.current?.() }, [sessionCapReached])
 
   const loadMoreGuardRef = useRef(false)
@@ -414,7 +419,7 @@ export function usePackSources({ plan, shortConditions = NO_SHORT, onSessionCapR
   // Fetches the target search's next page now; false when the guards or the pace say no.
   const startPage = useCallback((): boolean => {
     if (loadMoreGuardRef.current || isLoadingMoreRef.current) return false
-    if (!targetKey || spent + targetRequests > SESSION_REQUEST_CAP) return false
+    if (!targetKey || spent + targetRequests > sessionRequestCap) return false
     const pacer = sitePacer(provider)
     if (pacer.msUntil(targetRequests) > 0) return false
     pacer.take(targetRequests)
@@ -423,7 +428,7 @@ export function usePackSources({ plan, shortConditions = NO_SHORT, onSessionCapR
     const adds = [addPages0, addPages1, addPages2, addPages3, addPages4, addPages5, addPages6, addPages7]
     for (const i of targetKey.split(",").map(Number)) adds[i](1)
     return true
-  }, [targetKey, targetRequests, spent, record, provider, addPages0, addPages1, addPages2, addPages3, addPages4, addPages5, addPages6, addPages7])
+  }, [targetKey, targetRequests, spent, sessionRequestCap, record, provider, addPages0, addPages1, addPages2, addPages3, addPages4, addPages5, addPages6, addPages7])
   const [waiting, setWaiting] = useState(false)
   const waitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const clearWait = useCallback(() => {
@@ -438,7 +443,7 @@ export function usePackSources({ plan, shortConditions = NO_SHORT, onSessionCapR
   const loadMoreRef = useRef<() => boolean>(() => false)
   const loadMore = useCallback((): boolean => {
     if (waitTimerRef.current || loadMoreGuardRef.current || isLoadingMoreRef.current) return false
-    if (!targetKey || spent + targetRequests > SESSION_REQUEST_CAP) return false
+    if (!targetKey || spent + targetRequests > sessionRequestCap) return false
     const wait = sitePacer(provider).msUntil(targetRequests)
     if (wait <= 0 && startPage()) return true
     // Waits for the pace, then asks again with the target of that moment (another request
@@ -450,7 +455,7 @@ export function usePackSources({ plan, shortConditions = NO_SHORT, onSessionCapR
       loadMoreRef.current()
     }, Math.max(wait, 100) + 50)
     return true
-  }, [targetKey, targetRequests, spent, provider, startPage])
+  }, [targetKey, targetRequests, spent, sessionRequestCap, provider, startPage])
   useEffect(() => { loadMoreRef.current = loadMore }, [loadMore])
 
   const { retry: retry0 } = feed0
@@ -480,9 +485,10 @@ export function usePackSources({ plan, shortConditions = NO_SHORT, onSessionCapR
     waiting,
     pages: totalPages,
     requests: spent,
+    autoRequestCap,
     failed,
     retry,
     originOf,
     searches,
-  }), [allPosts, isLoadingMore, noMoreResults, sessionCapReached, loadMore, waiting, totalPages, spent, failed, retry, originOf, searches])
+  }), [allPosts, isLoadingMore, noMoreResults, sessionCapReached, loadMore, waiting, totalPages, spent, autoRequestCap, failed, retry, originOf, searches])
 }
