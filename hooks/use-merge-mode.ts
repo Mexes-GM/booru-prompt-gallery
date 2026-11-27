@@ -5,6 +5,7 @@ import { PACK_AXES, TAG_CATEGORY_IDS } from '@/lib/tag-taxonomy'
 import { processBackgroundTags, type BackgroundMode } from '@/lib/background-detector'
 import { deriveBackgroundContext, type MatchStrictness } from '@/lib/background-context'
 import { applyWordReplacementsToList, buildPostMetaTagSet, isMetaTag, type WordReplacementRule } from '@/lib/cleanPrompt'
+import { clampSharedPosts, filterBySharedCount, maxSharedPosts } from '@/lib/merge-shared-tags'
 
 // Helper: filter meta tags from raw tag array. `postMetaTags` is the post's own
 // tag_string_meta (see buildPostMetaTagSet) — passing it catches the meta tags
@@ -250,6 +251,17 @@ export function useMergeMode(
 
     const [excludedTags, setExcludedTags] = useState<Set<string>>(new Set())
 
+    // Merge mode only: keep tags found in at least this many selected posts.
+    // Session state, like randomSettings. Lowered when posts are removed so the
+    // stepper never shows a value the selection can't reach.
+    const [minSharedPosts, setMinSharedPostsRaw] = useState(1)
+    const sharedPostsMax = maxSharedPosts(selectedPosts.size)
+    const effectiveMinSharedPosts = clampSharedPosts(minSharedPosts, selectedPosts.size)
+    if (minSharedPosts !== effectiveMinSharedPosts) setMinSharedPostsRaw(effectiveMinSharedPosts)
+    const setMinSharedPosts = useCallback((value: number) => {
+        setMinSharedPostsRaw(Math.max(1, Math.floor(value)))
+    }, [])
+
     const excludeTag = useCallback((tag: string) => {
         setExcludedTags(prev => {
             const next = new Set(prev)
@@ -260,8 +272,9 @@ export function useMergeMode(
 
     // Helper for escaping parentheses in tags removed (moved to outer scope)
 
-    const mergedPromptSegments = useMemo(() => {
-        const segments: MergedPromptSegment[] = []
+    const { segments: mergedPromptSegments, hiddenCount: hiddenByMinShared } = useMemo(() => {
+        let segments: MergedPromptSegment[] = []
+        let hiddenCount = 0
         const seenTags = new Set<string>()
         // Post-derived segment per tag, so repeats across posts bump its count
         const postSegments = new Map<string, MergedPromptSegment>()
@@ -336,7 +349,16 @@ export function useMergeMode(
             })
         })
 
-        // 3. Apply Background Processing Mode (Only for simple merge mode)
+        // 3. Keep only the tags shared by enough posts (merge mode). Runs before
+        // the background step so Detailed Random takes its location hints from
+        // the scenery that survives the filter.
+        if (mergeModeType === 'merge') {
+            const filtered = filterBySharedCount(segments, effectiveMinSharedPosts)
+            segments = filtered.kept
+            hiddenCount = filtered.hiddenCount
+        }
+
+        // 4. Apply Background Processing Mode (Only for simple merge mode)
         if (backgroundMode !== 'keep' && mergeModeType === 'merge') {
             const rawTextArray = segments.map(s => s.text);
             // Deterministic seed derived from the selected post ids, sorted so
@@ -397,11 +419,11 @@ export function useMergeMode(
                     });
                 }
             });
-            return finalSegments;
+            return { segments: finalSegments, hiddenCount };
         }
 
-        return segments
-    }, [selectedPosts, excludedTags, globalWeights, isGlobalWeightsEnabled, addedTagsInput, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, mergeModeType, detailedBackgroundsList, backgroundMatchStrictness])
+        return { segments, hiddenCount }
+    }, [selectedPosts, excludedTags, globalWeights, isGlobalWeightsEnabled, addedTagsInput, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, mergeModeType, detailedBackgroundsList, backgroundMatchStrictness, effectiveMinSharedPosts])
 
     const mergedPrompt = useMemo(() => {
         if (mergeModeType === 'merge') {
@@ -469,6 +491,10 @@ export function useMergeMode(
         setRandomSettings,
         mergedPrompt,
         mergedPromptSegments,
-        excludeTag
+        excludeTag,
+        minSharedPosts: effectiveMinSharedPosts,
+        maxSharedPosts: sharedPostsMax,
+        setMinSharedPosts,
+        hiddenByMinShared
     }
 }
