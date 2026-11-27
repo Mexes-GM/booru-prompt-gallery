@@ -344,6 +344,9 @@ export const PackBriefBuilder = memo(function PackBriefBuilder(props: PackBriefB
     if (!open) return
     const screen = screenRef.current
     if (!screen) return
+    // A control from an earlier opening is not where this one left off: until a control is used,
+    // focus comes back to the title.
+    lastInsideRef.current = null
     const bringBack = () => {
       const last = lastInsideRef.current
       if (last && screen.contains(last) && isFocusable(last)) last.focus({ preventScroll: true })
