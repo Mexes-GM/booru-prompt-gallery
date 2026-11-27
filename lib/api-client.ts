@@ -10,7 +10,7 @@ import { apiUrl, urlHasHost } from './booru/urls'
 import { buildBooruQuery, createPostsKey } from './booru/posts-key'
 import { takePrefetchedPosts } from './booru/posts-prefetch'
 import { getAuthHeader } from './booru/auth-header'
-import { transformAibooruPost, transformDanbooruPost, transformE621Post } from './booru/post-transformers'
+import { transformAibooruPost, transformDanbooruPost, transformE621Post, transformE621Posts } from './booru/post-transformers'
 import { relaxScoreFloorInUrl, SCORE_FLOOR_BY_PROVIDER, type BooruProvider as TagLimitsBooruProvider, type ScoreTier } from './booru/tag-limits'
 
 export { transformAibooruPost, transformE621Post }
@@ -397,21 +397,12 @@ const fetcher = async (url: string, skipPage1Queue = false) => {
             resultPosts = []
           }
         } else if (urlHasHost(url, 'e621.net') || urlHasHost(url, 'e6ai.net')) {
-          // Direct E621/e6ai API response — { posts: [...] } format
-          // ponytail: direct client fetch, no server enrichment. Tags come pre-categorized from E621.
+          // Direct E621/e6ai API response, legacy `{ posts }` or current bare-array
+          // format (see lib/booru/e621-format.ts). ponytail: direct client fetch, no
+          // server enrichment; the URL asks for tags grouped by category.
           const e621Family = urlHasHost(url, 'e6ai.net') ? 'e6ai' : 'e621'
           identifiedProvider = e621Family
-          const posts = (data as { posts?: unknown[] })?.posts
-          if (Array.isArray(posts)) {
-            resultPosts = posts
-              .filter(post =>
-                post && (post as Record<string, unknown>).id &&
-                ((post as Record<string, unknown>).file as Record<string, unknown>)?.url
-              )
-              .map(post => transformE621Post(post, e621Family))
-          } else {
-            resultPosts = []
-          }
+          resultPosts = transformE621Posts(data, e621Family)
         } else if (
           url.includes('/api/posts') ||
           url.includes('/api/favorites') ||

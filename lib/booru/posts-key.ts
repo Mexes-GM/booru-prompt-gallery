@@ -1,5 +1,6 @@
 import { PROVIDER_URLS, USER_AGENT } from "@/lib/constants"
 import { apiUrl, buildDirectDanbooruUrl } from "./urls"
+import { E621_POSTS_MODE } from "./e621-format"
 import {
   getScoreFloor,
   isTagCountSupportedProvider,
@@ -141,6 +142,8 @@ export function createPostsKey({
         limit: "60",
         page: effectivePage,
         tags: [query, orderTag].filter(Boolean).join(' '),
+        // Tags grouped by category (lib/booru/e621-format.ts).
+        mode: E621_POSTS_MODE,
         _client: USER_AGENT,
       })
       if (isRandom) {

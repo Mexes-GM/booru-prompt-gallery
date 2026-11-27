@@ -7,7 +7,8 @@ import type { BooruPost } from "@/lib/booru/types"
 import { PROVIDER_URLS, USER_AGENT } from "@/lib/constants"
 import { createClient } from "@/lib/supabase/client"
 import { apiUrl, buildDanbooruIdsUrl } from "@/lib/booru/urls"
-import { transformAibooruPost, transformDanbooruPost, transformE621Post } from "@/lib/booru/post-transformers"
+import { transformAibooruPost, transformDanbooruPost, transformE621Posts } from "@/lib/booru/post-transformers"
+import { E621_POSTS_MODE } from "@/lib/booru/e621-format"
 import { addFavoritesBreadcrumb, setFavoritesContext } from "@/lib/error-context"
 import { favKey } from "@/lib/favorites-logic"
 import {
@@ -56,14 +57,10 @@ const e621FamilyPlan = (provider: 'e621' | 'e6ai', baseUrl: string): FetchPlan =
   url: (ids) => `${baseUrl}/posts.json?${new URLSearchParams({
     limit: String(ids.length),
     tags: `id:${ids.join(',')}`,
+    mode: E621_POSTS_MODE,
     _client: USER_AGENT,
   })}`,
-  parse: (data) => {
-    const posts = (data as { posts?: unknown[] } | null)?.posts
-    return Array.isArray(posts)
-      ? posts.filter(p => p && (p as { id?: unknown }).id).map(p => transformE621Post(p, provider))
-      : []
-  },
+  parse: (data) => transformE621Posts(data, provider),
 })
 
 const FETCH_PLANS: Record<string, FetchPlan> = {
