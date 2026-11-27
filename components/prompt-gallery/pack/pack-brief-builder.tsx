@@ -132,7 +132,7 @@ import { ResultRow } from "./result-row"
 import { SLOTS, briefSummaryParts, characterName, companionsLabel, showTag, type CharacterInfo, type SlotId, type TagSuggestion } from "./slots"
 import { UndoNotice } from "./undo-notice"
 import { useCharacterIndex } from "./cast-picker"
-import { castBrief, drawKey, drawRandomCast, drawsCast, needsRedraw, randomCastGender } from "@/lib/pack/random-cast"
+import { castBrief, drawKey, drawRandomCast, drawsCast, needsRedraw, randomCastGender, redrawUsable } from "@/lib/pack/random-cast"
 import { PackEmptyState, type ExampleBrief } from "./pack-empty-state"
 import { PackTip } from "./pack-tip"
 import { userPreferences } from "@/lib/storage"
@@ -1295,9 +1295,13 @@ function BriefWorkspace({
         provider,
         keep,
       })
-      redrawCast(drawn)
-      setPendingDraw(drawKey(drawn))
-      return
+      // A draw with nobody new (the source ran out of characters) would leave Who unnamed: keep the
+      // current draw and generate with it, so the button never waits for characters that won't come.
+      if (redrawUsable(drawn, keep)) {
+        redrawCast(drawn)
+        setPendingDraw(drawKey(drawn))
+        return
+      }
     }
     generate()
   }, [generate, castIndex, brief, count, result, provider, redrawCast])

@@ -96,6 +96,14 @@ export function needsRedraw(brief: Pick<PackBrief, 'who' | 'randomCast'>, needed
   return generatedBefore || brief.randomCast!.drawn.length < needed
 }
 
+/**
+ * True when a new draw is worth using: it names at least one character beyond the kept ones. A draw
+ * with nobody new (the series or gender has no candidates left) would leave Who unnamed, so the
+ * pack keeps the draw it has instead.
+ */
+export const redrawUsable = (drawn: ReadonlyArray<unknown>, keep: ReadonlyArray<unknown>): boolean =>
+  drawn.length > 0 && drawn.length > keep.length
+
 /** A draw as a key: the characters' names in order, to tell when the engine has a draw's characters. */
 export const drawKey = (members: ReadonlyArray<Pick<CastMember, 'tag'>>): string =>
   members.map((m) => normalizeTagForPack(m.tag)).filter(Boolean).join('|')
