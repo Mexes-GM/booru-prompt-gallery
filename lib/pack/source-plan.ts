@@ -18,7 +18,7 @@ import { getProviderTagLimit, processTagsForAPI } from '../booru/tag-limits'
 import type { PackRatingMode } from '../../hooks/use-pack-seed-search'
 import { toSceneRequests, type PackBrief } from './brief'
 import { normalizeTagForPack } from './pack-generator'
-import { castPeople, compositionQuery, type CastRole } from './scene/cast'
+import { castPeople, compositionQuery, holdsCast, type CastRole } from './scene/cast'
 import type { PackPeople } from './scene/scene-pool'
 
 /**
@@ -45,6 +45,11 @@ export interface SceneSearch extends PlannedSearch {
   kind: SceneSearchKind
   /** The requested poses (brief spelling) this search asks for. */
   poses: string[]
+  /**
+   * The composition this search asks for, in a pack that mixes several (one search per
+   * composition of two or more). Missing elsewhere: the plan's `people` says it.
+   */
+  people?: PackPeople
 }
 
 export interface AppearanceSearch extends PlannedSearch {
@@ -77,6 +82,15 @@ export interface LeftOutTag {
   reason: 'tag-limit'
 }
 
+/** A scene search the plan wanted and had no room for: a pack runs at most MAX_SCENE_SEARCHES. */
+export interface LeftOutSearch {
+  kind: SceneSearchKind
+  query: string
+  /** The composition it would have asked for (a mixed pack's), or null. */
+  people: PackPeople | null
+  reason: 'search-limit'
+}
+
 export interface SourcePlan {
   provider: BooruProvider
   rating: PackRatingMode
@@ -102,6 +116,8 @@ export interface SourcePlan {
   donors: DonorSearch[]
   /** Requested tags no scene search could hold. */
   leftOut: LeftOutTag[]
+  /** Scene searches past MAX_SCENE_SEARCHES, least preferred last. Empty but in a mixed pack with many compositions. */
+  leftOutSearches: LeftOutSearch[]
   /** The head count the scene searches ask for, or null (the character's own posts, or any). */
   people: PackPeople | null
   /** A cast whose roles aren't all known yet: the base character's own search stands in until they are. */
@@ -134,10 +150,12 @@ export interface SourcePlanEnv {
    */
   conditions?: readonly string[]
   /**
-   * The compositions a pack mixes (ScenePackArgs.compositions), when two or more: no search asks
-   * for a head count (one count would leave the others out). The scene searches are those of a
-   * single character: its own posts by name with no pose (and alone too when the mix has one
-   * person), the pose without any count with one. One or missing: the plan as before.
+   * The compositions a pack mixes (ScenePackArgs.compositions), in the order they were ticked,
+   * when two or more. Each composition of two or more people gets the search a pack of only that
+   * composition has (its head count, with the first pose when one is asked), between the
+   * character's own search (alone, or with the pose) and the search that reaches every
+   * composition (by name, or the pose without any count). The plan keeps MAX_SCENE_SEARCHES of
+   * them in that order and reports the rest in `leftOutSearches`. One or missing: the plan as before.
    */
   compositions?: ReadonlyArray<PackPeople>
 }
@@ -267,6 +285,38 @@ function groupLead(people: PackPeople, provider: BooruProvider, rating: PackRati
 }
 
 /**
+ * The compositions of a mixed pack that get a search of their own: two or more people, room for
+ * every named character (and for their roles, once all are known), each once, in the order given.
+ */
+function groupCompositions(compositions: ReadonlyArray<PackPeople>, roles: ReadonlyArray<CastRole | null>): PackPeople[] {
+  const cast = roles.length > 0 && roles.every(Boolean) ? castPeople(roles) : null
+  const out: PackPeople[] = []
+  for (const people of compositions) {
+    const size = people.girls + people.boys
+    if (size < Math.max(2, roles.length)) continue
+    if (cast && !holdsCast(people, cast)) continue
+    if (out.some((have) => have.girls === people.girls && have.boys === people.boys)) continue
+    out.push({ girls: people.girls, boys: people.boys })
+  }
+  return out
+}
+
+/**
+ * The scene searches whose posts a pack uses first (ScenePackArgs.preferredPosts): the character's
+ * own searches and, when the plan also has those, the searches of a mixed pack's compositions
+ * without a pose. A composition's search stands for that composition as it would in a pack of
+ * only that composition, which has no own search above it; placed after the own searches, its
+ * posts would only be used once the character's own posts ran out, and the composition would get
+ * almost none of the pack. A search with a pose ('theme') stays after the own one, as in a pack of
+ * one composition. Without an own search, none: every post counts alike.
+ */
+export function preferredSearchIds(plan: Pick<SourcePlan, 'scenes'>): string[] {
+  const own = plan.scenes.filter((s) => s.kind === 'own')
+  if (own.length === 0) return []
+  return plan.scenes.filter((s) => s.kind === 'own' || (s.kind === 'group' && !!s.people)).map((s) => s.id)
+}
+
+/**
  * The plan for a brief. In preference order:
  *  - no pose asked: the cast's mix of people (a cast, or a head count of two or more the user
  *    set); else, for one named character, their posts alone ("name, solo", which fills a pack of
@@ -279,6 +329,14 @@ function groupLead(people: PackPeople, provider: BooruProvider, rating: PackRati
  * The first pose written is the anchor: it goes in every pose search, and later ones
  * fill the room the limit leaves. A named character's look is read from their own
  * solo posts whenever the pool doesn't show only them alone.
+ *
+ * A pack that mixes compositions (env.compositions) asks for no head count in those searches,
+ * and adds one search per composition of two or more people, built as a pack of only that
+ * composition builds it, right after the character's own first search: without a pose,
+ * "name, solo" (when the mix has them alone), each composition's group search in the order
+ * ticked, then "name"; with a pose, "name, pose", each composition's theme search, then the
+ * pose without any count (and the first pose alone). Past MAX_SCENE_SEARCHES the last ones go
+ * to `leftOutSearches`.
  */
 export function planSources(brief: PackBrief, env: SourcePlanEnv): SourcePlan {
   const { provider, rating } = env
@@ -289,7 +347,7 @@ export function planSources(brief: PackBrief, env: SourcePlanEnv): SourcePlan {
   const roles = named.map((c, i) => env.roles?.[i] ?? c.role ?? null)
   const mixed = (env.compositions?.length ?? 0) >= 2
   const group = groupPeople(brief, roles)
-  // A mixed pack asks for no head count: every search reaches all its compositions.
+  // A mixed pack has no one head count: each of its compositions gets a search (mixGroups below).
   const people = mixed ? null : group.people
   const rolesPending = mixed ? false : group.rolesPending
 
@@ -303,34 +361,60 @@ export function planSources(brief: PackBrief, env: SourcePlanEnv): SourcePlan {
   const anchor = poses[0] ?? null
   const base = named[0]?.tag ?? null
 
-  const scenes: SceneSearch[] = []
-  const leftOut: LeftOutTag[] = []
+  // A mixed pack's compositions of two or more people that can hold the cast, in the order ticked.
+  const mixGroups = mixed ? groupCompositions(env.compositions ?? [], roles) : []
+  const forGroup = (search: SceneSearch, group: PackPeople): SceneSearch => ({ ...search, people: { girls: group.girls, boys: group.boys } })
 
+  // Every search the plan wants, preferred first; trimmed to MAX_SCENE_SEARCHES below.
+  const wanted: Array<{ search: SceneSearch; galleryRest?: string[] }> = []
   if (!anchor) {
     if (people) {
-      scenes.push(sceneSearch(provider, 'group', groupLead(people, provider, rating, null), []))
-    } else if (base) {
-      if (named.length === 1 && soloSearchFits(env, mixed, limit)) scenes.push(sceneSearch(provider, 'own', [toBooru(base), 'solo'], []))
-      scenes.push(sceneSearch(provider, 'own', [toBooru(base)], []))
+      wanted.push({ search: sceneSearch(provider, 'group', groupLead(people, provider, rating, null), []) })
     } else {
-      const { tags, rest } = gallerySearchTags(env.gallerySearch ?? '', limit)
-      scenes.push(sceneSearch(provider, 'gallery', tags, []))
-      rest.forEach((tag) => leftOut.push({ tag, from: 'gallery-search', reason: 'tag-limit' }))
+      if (base && named.length === 1 && soloSearchFits(env, mixed, limit)) wanted.push({ search: sceneSearch(provider, 'own', [toBooru(base), 'solo'], []) })
+      for (const group of mixGroups) wanted.push({ search: forGroup(sceneSearch(provider, 'group', groupLead(group, provider, rating, null), []), group) })
+      if (base) {
+        wanted.push({ search: sceneSearch(provider, 'own', [toBooru(base)], []) })
+      } else {
+        const { tags, rest } = gallerySearchTags(env.gallerySearch ?? '', limit)
+        wanted.push({ search: sceneSearch(provider, 'gallery', tags, []), galleryRest: rest })
+      }
     }
   } else {
     if (base && named.length === 1) {
       const own = fill([toBooru(base)], [anchor], limit)
-      if (own.taken.length > 0) scenes.push(sceneSearch(provider, 'own', own.tags, own.taken))
+      if (own.taken.length > 0) wanted.push({ search: sceneSearch(provider, 'own', own.tags, own.taken) })
+    }
+    // Each composition of a mixed pack: the theme search a pack of only that composition has.
+    for (const group of mixGroups) {
+      const own = fill(groupLead(group, provider, rating, anchor), poses, limit)
+      wanted.push({ search: forGroup(sceneSearch(provider, 'theme', own.tags, own.taken), group) })
     }
     const lead = people ? groupLead(people, provider, rating, anchor) : []
     const theme = fill(lead, poses, limit)
-    scenes.push(sceneSearch(provider, 'theme', theme.tags, theme.taken))
-    theme.rest.forEach((tag) => leftOut.push({ tag, from: 'pose', reason: 'tag-limit' }))
+    wanted.push({ search: sceneSearch(provider, 'theme', theme.tags, theme.taken) })
     if (theme.taken.length > 1) {
       const alone = fill(lead, [anchor], limit)
-      scenes.push(sceneSearch(provider, 'anchor', alone.tags, alone.taken))
+      wanted.push({ search: sceneSearch(provider, 'anchor', alone.tags, alone.taken) })
     }
   }
+
+  const scenes: SceneSearch[] = []
+  const leftOut: LeftOutTag[] = []
+  const leftOutSearches: LeftOutSearch[] = []
+  for (const { search, galleryRest } of wanted) {
+    // Two compositions can make the same search (the same lead on a booru with few tags): one is enough.
+    if (scenes.some((s) => s.id === search.id)) continue
+    if (scenes.length >= MAX_SCENE_SEARCHES) {
+      leftOutSearches.push({ kind: search.kind, query: search.query, people: search.people ?? null, reason: 'search-limit' })
+      continue
+    }
+    scenes.push(search)
+    galleryRest?.forEach((tag) => leftOut.push({ tag, from: 'gallery-search', reason: 'tag-limit' }))
+  }
+  // A requested pose no search kept holds is reported, in the order written.
+  const searched = new Set(scenes.flatMap((s) => s.poses))
+  poses.filter((pose) => !searched.has(pose)).forEach((tag) => leftOut.push({ tag, from: 'pose', reason: 'tag-limit' }))
 
   // The pool gives the base character's look only when all of it shows them alone; everyone
   // else (a cast waiting for its roles) still has their look read apart.
@@ -353,6 +437,7 @@ export function planSources(brief: PackBrief, env: SourcePlanEnv): SourcePlan {
     baseLookFromPool,
     donors,
     leftOut,
+    leftOutSearches,
     people,
     rolesPending,
     sceneKey,

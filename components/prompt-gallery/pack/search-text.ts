@@ -28,10 +28,12 @@ const listWords = (tags: readonly string[]) =>
  * gallery search". `character` is the name the card shows.
  */
 export function searchDescription(
-  search: Pick<SceneSearch, "kind" | "poses"> & { tags?: readonly string[] },
+  search: Pick<SceneSearch, "kind" | "poses"> & { tags?: readonly string[]; people?: PackPeople },
   character: string | null,
-  people: PackPeople | null
+  planPeople: PackPeople | null
 ): string {
+  // A mixed pack's composition search says its own composition.
+  const people = search.people ?? planPeople
   const doing = search.poses.length > 0 ? ` doing ${listWords(search.poses)}` : ""
   const withPeople = people ? `, with ${peopleWords(people)}` : ""
   switch (search.kind) {
