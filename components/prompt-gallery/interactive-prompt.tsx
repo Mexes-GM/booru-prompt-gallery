@@ -1,5 +1,6 @@
 "use client"
 
+import { copyText } from "@/lib/clipboard"
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { createPortal } from "react-dom"
 import { motion, AnimatePresence } from "framer-motion"
@@ -223,7 +224,7 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
 
   const copyTag = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(tag.text)
+      await copyText(tag.text)
       
       track('dynamic_tag_copied')
 

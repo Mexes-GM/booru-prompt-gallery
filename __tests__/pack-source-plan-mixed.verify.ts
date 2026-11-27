@@ -82,7 +82,7 @@ check(() => {
 
 // Per provider: Danbooru's two tags, Rule34's own spelling, both from compositionQuery.
 check(() => {
-  for (const provider of ["danbooru", "aibooru", "gelbooru", "rule34", "e621", "e6ai"] as const) {
+  for (const provider of ["danbooru", "aibooru", "gelbooru", "rule34", "e621", "floofgens"] as const) {
     for (const rating of ["sfw", "questionable", "explicit", "both"] as const) {
       for (const brief of [tifa(), withTags(tifa(), "hug"), withTags(tifa(), "hug", "sitting")]) {
         const plan = planSources(brief, env({ provider, rating, includeSensitive: true, compositions: [ALONE, ONE_BOY, TWO_BOYS, TWO_GIRLS] }))

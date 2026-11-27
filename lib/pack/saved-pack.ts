@@ -127,7 +127,7 @@ export function savedPackToStore(pack: SavedPackInput, now: number, max: number 
 
 // ── Reading ──────────────────────────────────────────────────────────────────
 
-const PROVIDERS: readonly string[] = ['danbooru', 'aibooru', 'rule34', 'e621', 'e6ai', 'gelbooru']
+const PROVIDERS: readonly string[] = ['danbooru', 'aibooru', 'rule34', 'e621', 'floofgens', 'gelbooru']
 const ROLES: readonly string[] = ['wearing', 'doing', 'where', 'also']
 const CHANGES: readonly string[] = ['scene', 'outfit', 'pose', 'place', 'expression']
 const OUTFITS: readonly string[] = ['scene', 'usual', 'official', 'library']

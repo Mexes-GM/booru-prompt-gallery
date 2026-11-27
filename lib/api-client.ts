@@ -10,7 +10,7 @@ import { apiUrl, urlHasHost } from './booru/urls'
 import { buildBooruQuery, createPostsKey } from './booru/posts-key'
 import { takePrefetchedPosts } from './booru/posts-prefetch'
 import { getAuthHeader } from './booru/auth-header'
-import { transformAibooruPost, transformDanbooruPost, transformE621Post } from './booru/post-transformers'
+import { transformAibooruPost, transformDanbooruPost, transformE621Post, transformE621Posts } from './booru/post-transformers'
 import { relaxScoreFloorInUrl, SCORE_FLOOR_BY_PROVIDER, type BooruProvider as TagLimitsBooruProvider, type ScoreTier } from './booru/tag-limits'
 import { sitePacer } from './booru/request-pacer'
 
@@ -25,7 +25,7 @@ export type { BooruPost }
 // Export function
 export const isAibooruPost = checkIsAibooruPost
 
-export type BooruProvider = 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'e6ai' | 'gelbooru'
+export type BooruProvider = 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'floofgens' | 'gelbooru'
 
 // Helper function to get prompt from a post
 // Function to clean and extract prompt from malformed JSON data
@@ -244,12 +244,12 @@ const detectProviderFromUrl = (url: string): TagLimitsBooruProvider | null => {
   if (url.startsWith(PROVIDER_URLS.AIBOORU)) return 'aibooru'
   if (urlHasHost(url, 'danbooru.donmai.us')) return 'danbooru'
   if (urlHasHost(url, 'e621.net')) return 'e621'
-  if (urlHasHost(url, 'e6ai.net')) return 'e6ai'
+  if (urlHasHost(url, 'floofgens.net')) return 'floofgens'
   if (url.includes('/api/posts')) {
     if (url.includes('provider=gelbooru')) return 'gelbooru'
     if (url.includes('provider=rule34')) return 'rule34'
     if (url.includes('provider=e621')) return 'e621'
-    if (url.includes('provider=e6ai')) return 'e6ai'
+    if (url.includes('provider=floofgens')) return 'floofgens'
     if (url.includes('provider=aibooru')) return 'aibooru'
     return 'danbooru'
   }
@@ -364,7 +364,7 @@ const fetcher = async (url: string, skipPage1Queue = false) => {
         const data = await res.json()
 
         let resultPosts = data
-        let identifiedProvider: 'danbooru' | 'aibooru' | 'e621' | 'e6ai' | null = null
+        let identifiedProvider: 'danbooru' | 'aibooru' | 'e621' | 'floofgens' | null = null
 
         if (isDirectAibooru) {
           identifiedProvider = 'aibooru'
@@ -397,22 +397,13 @@ const fetcher = async (url: string, skipPage1Queue = false) => {
           } else {
             resultPosts = []
           }
-        } else if (urlHasHost(url, 'e621.net') || urlHasHost(url, 'e6ai.net')) {
-          // Direct E621/e6ai API response — { posts: [...] } format
-          // ponytail: direct client fetch, no server enrichment. Tags come pre-categorized from E621.
-          const e621Family = urlHasHost(url, 'e6ai.net') ? 'e6ai' : 'e621'
+        } else if (urlHasHost(url, 'e621.net') || urlHasHost(url, 'floofgens.net')) {
+          // Direct E621/Floofgens API response, legacy `{ posts }` or current bare-array
+          // format (see lib/booru/e621-format.ts). ponytail: direct client fetch, no
+          // server enrichment; the URL asks for tags grouped by category.
+          const e621Family = urlHasHost(url, 'floofgens.net') ? 'floofgens' : 'e621'
           identifiedProvider = e621Family
-          const posts = (data as { posts?: unknown[] })?.posts
-          if (Array.isArray(posts)) {
-            resultPosts = posts
-              .filter(post =>
-                post && (post as Record<string, unknown>).id &&
-                ((post as Record<string, unknown>).file as Record<string, unknown>)?.url
-              )
-              .map(post => transformE621Post(post, e621Family))
-          } else {
-            resultPosts = []
-          }
+          resultPosts = transformE621Posts(data, e621Family)
         } else if (
           url.includes('/api/posts') ||
           url.includes('/api/favorites') ||

@@ -55,7 +55,7 @@ export type PeopleReason =
 export type PeopleVocabulary = 'danbooru' | 'rule34' | 'e621'
 
 export const peopleVocabulary = (provider: BooruProvider | undefined): PeopleVocabulary =>
-  provider === 'rule34' ? 'rule34' : provider === 'e621' || provider === 'e6ai' ? 'e621' : 'danbooru'
+  provider === 'rule34' ? 'rule34' : provider === 'e621' || provider === 'floofgens' ? 'e621' : 'danbooru'
 
 const MULTIPLE = /^multiple (girls|boys|others)$/
 const OPEN_PLUS = /^\d+\+(girls?|boys?|others?)$/

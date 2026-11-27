@@ -9,6 +9,7 @@ import type { PackLearningModel } from '@/lib/pack/pack-learning'
 import type { AxisTagMode } from '@/lib/pack/pack-generator'
 import type { ScenePackSettings } from '@/lib/pack/scene-pack'
 import { isPromptFormat, type PromptFormat } from '@/lib/prompt/prompt-format'
+import { canonicalProvider } from '@/lib/booru/retired-providers'
 import { readSavedPack, savedPackToStore, type SavedPack, type SavedPackInput } from '@/lib/pack/saved-pack'
 
 // Safe localStorage wrapper that handles SSR and errors
@@ -318,10 +319,11 @@ export const userPreferences = {
   setPromptFullDetail: (fullDetail: boolean) =>
     storage.set(STORAGE_KEYS.PROMPT_FULL_DETAIL, fullDetail),
 
-  getBooruProvider: (): 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'e6ai' | 'gelbooru' =>
-    storage.get(STORAGE_KEYS.BOORU_PROVIDER, 'gelbooru'),
+  // A provider saved before it was retired (e6ai) reads as its replacement.
+  getBooruProvider: (): 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'floofgens' | 'gelbooru' =>
+    canonicalProvider(storage.get(STORAGE_KEYS.BOORU_PROVIDER, 'gelbooru')) as 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'floofgens' | 'gelbooru',
 
-  setBooruProvider: (provider: 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'e6ai' | 'gelbooru') =>
+  setBooruProvider: (provider: 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'floofgens' | 'gelbooru') =>
     storage.set(STORAGE_KEYS.BOORU_PROVIDER, provider),
 
   getBlacklist: (): string[] =>

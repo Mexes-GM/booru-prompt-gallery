@@ -27,7 +27,7 @@ import { shouldConfirmProvider, ADULT_ONLY_PROVIDER } from "@/lib/nsfw-consent"
 import { cn } from "@/lib/utils"
 
 /** The boorus the gallery searches, in the order its menu lists them. */
-export const PROVIDERS = ['danbooru', 'gelbooru', 'aibooru', 'rule34', 'e621', 'e6ai'] as const
+export const PROVIDERS = ['danbooru', 'gelbooru', 'aibooru', 'rule34', 'e621', 'floofgens'] as const
 
 export const PROVIDER_LABELS: Record<typeof PROVIDERS[number], string> = {
   danbooru: 'Danbooru',
@@ -35,7 +35,7 @@ export const PROVIDER_LABELS: Record<typeof PROVIDERS[number], string> = {
   aibooru: 'Aibooru',
   rule34: 'Rule34',
   e621: 'e621',
-  e6ai: 'e6AI',
+  floofgens: 'Floofgens',
 }
 
 interface ProviderSelectProps {

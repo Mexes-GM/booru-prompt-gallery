@@ -8,7 +8,7 @@ import { SOCIAL_URLS } from "@/lib/constants"
  * component stays usable without any client code.
  */
 
-const BOORUS = ["Danbooru", "Aibooru", "Rule34", "Gelbooru", "e621", "e6AI"]
+const BOORUS = ["Danbooru", "Aibooru", "Rule34", "Gelbooru", "e621", "Floofgens"]
 
 const SOCIALS = [
   { id: "social-civitai", label: "CivitAI", href: SOCIAL_URLS.CIVITAI_PROFILE },

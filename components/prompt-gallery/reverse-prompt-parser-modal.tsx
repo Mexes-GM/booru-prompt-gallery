@@ -1,5 +1,7 @@
 "use client"
 
+import { copyText } from "@/lib/clipboard"
+import { toast } from "@/hooks/use-toast"
 import { useState, useMemo } from "react"
 import { useCopyFeedback } from "@/hooks/use-copy-feedback"
 import {
@@ -22,6 +24,7 @@ import {
 } from "@/lib/reverse-prompt-parser"
 import { useImageExif } from "@/hooks/use-image-exif"
 import { PromptImportZone } from "./prompt-import-zone"
+import { PromptCompareView } from "./prompt-compare-view"
 import { motion, AnimatePresence } from "framer-motion"
 import { Copy, Check, Sparkles, Zap } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -114,6 +117,7 @@ export function ReversePromptParserModal({
   onImport,
   tagOverrides
 }: ReversePromptParserModalProps) {
+  const [mode, setMode] = useState<"clean" | "compare">("clean")
   const [rawInput, setRawInput] = useState("")
   const [copied, triggerCopyFeedback] = useCopyFeedback()
   const [selectedCategories, setSelectedCategories] = useState<Record<keyof typeof categoryConfig, boolean>>(
@@ -159,10 +163,14 @@ export function ReversePromptParserModal({
     return reconstructPrompt(parsed.classified, parsed.quality, selectedCategories)
   }, [parsed.classified, parsed.quality, selectedCategories])
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (!outputPrompt) return
-    navigator.clipboard.writeText(outputPrompt)
-    triggerCopyFeedback()
+    try {
+      await copyText(outputPrompt)
+      triggerCopyFeedback()
+    } catch {
+      toast({ title: "Couldn't copy", description: "Your browser blocked clipboard access. Select the text and copy it by hand.", variant: "destructive" })
+    }
   }
 
   const handleImport = () => {
@@ -197,13 +205,38 @@ export function ReversePromptParserModal({
               </DialogTitle>
             </div>
             <DialogDescription className="text-xs text-muted-foreground">
-              Paste a raw prompt and we&apos;ll clean, categorize, and let you refine it before using.
+              {mode === "clean"
+                ? <>Paste a raw prompt and we&apos;ll clean, categorize, and let you refine it before using.</>
+                : "Paste two prompts to see the tags they share and the tags only one of them has."}
             </DialogDescription>
           </DialogHeader>
+          <div role="group" aria-label="Mode" className="relative z-10 mt-3 inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+            {([["clean", "Clean"], ["compare", "Compare"]] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={mode === value}
+                onClick={() => setMode(value)}
+                className={cn(
+                  "rounded-md px-3 py-1 pointer-coarse:py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  mode === value
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Compare body. Both bodies stay mounted so switching keeps what was pasted. */}
+        <div className={cn("relative z-10 p-5 max-h-[calc(100vh-180px)] overflow-y-auto", mode !== "compare" && "hidden")}>
+          <PromptCompareView tagOverrides={tagOverrides} />
         </div>
 
         {/* Body */}
-        <div className="relative z-10 p-5 space-y-4 max-h-[calc(100vh-140px)] overflow-y-auto">
+        <div className={cn("relative z-10 p-5 space-y-4 max-h-[calc(100vh-140px)] overflow-y-auto", mode !== "clean" && "hidden")}>
           {/* Prompt Import Zone - Two sections: Image Drop & Text Input */}
           <PromptImportZone
             isDragActive={isDragActive}

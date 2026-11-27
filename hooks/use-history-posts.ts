@@ -6,6 +6,7 @@ import type { HistoryItem } from "@/lib/storage"
 import type { BooruPost } from "@/lib/booru/types"
 import { dedupeHistoryKeys } from "@/lib/history-order"
 import { favKey } from "@/lib/favorites-logic"
+import { canonicalProvider, migrateRetiredPost } from "@/lib/booru/retired-providers"
 
 /**
  * Hydrates full `BooruPost[]` for a list of copy-history entries.
@@ -42,7 +43,8 @@ export function useHistoryPosts(history: HistoryItem[]) {
         // That bug is fixed at the write site now, but existing localStorage
         // history entries may still carry a stale/wrong `item.provider` — the
         // embedded snapshot's `_provider` was always correct, so trust it first.
-        .map(item => ({ ...(item.post as BooruPost), _provider: item.post!._provider || item.provider })),
+        // Snapshots saved from a retired provider (e6ai) move to its replacement.
+        .map(item => migrateRetiredPost({ ...(item.post as BooruPost), _provider: item.post!._provider || item.provider })),
     [history]
   )
 
@@ -51,7 +53,7 @@ export function useHistoryPosts(history: HistoryItem[]) {
     () =>
       history
         .filter(item => !item.post)
-        .map(item => ({ provider: item.provider, id: item.postId })),
+        .map(item => ({ provider: canonicalProvider(item.provider) as FavoriteItem['provider'], id: item.postId })),
     [history]
   )
 

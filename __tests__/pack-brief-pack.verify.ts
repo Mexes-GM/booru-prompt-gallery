@@ -389,13 +389,13 @@ check("slotSuggestions: Others offers general tags the taxonomy files as appeara
 
 // ── Where the scenes come from ──────────────────────────────────────────────────
 
-check("packProviderChoices: every site in the gallery's order; Rule34 waits for its consent; e621 and e6ai say safe only", () => {
-  const sites = ["danbooru", "gelbooru", "aibooru", "rule34", "e621", "e6ai"] as const
+check("packProviderChoices: every site in the gallery's order; Rule34 waits for its consent; e621 and floofgens say safe only", () => {
+  const sites = ["danbooru", "gelbooru", "aibooru", "rule34", "e621", "floofgens"] as const
   const safe = packProviderChoices(sites, "sfw", false)
   assert.deepEqual(safe.map((c) => c.provider), [...sites])
   assert.deepEqual(safe.find((c) => c.provider === "rule34"), { provider: "rule34", available: false, reason: "adult-consent" })
   assert.deepEqual(safe.find((c) => c.provider === "e621"), { provider: "e621", available: true, note: "no-sensitive" })
-  assert.deepEqual(safe.find((c) => c.provider === "e6ai"), { provider: "e6ai", available: true, note: "no-sensitive" })
+  assert.deepEqual(safe.find((c) => c.provider === "floofgens"), { provider: "floofgens", available: true, note: "no-sensitive" })
   assert.deepEqual(safe.find((c) => c.provider === "danbooru"), { provider: "danbooru", available: true })
   // Other ratings exist everywhere; with the confirmation given, Rule34 is offered.
   const explicit = packProviderChoices(sites, "explicit", true)

@@ -128,7 +128,7 @@ for (const row of ROWS) {
 
 // Every provider and rating, with many poses and a cast: still within the limits.
 check(() => {
-  const providers: BooruProvider[] = ["danbooru", "aibooru", "gelbooru", "rule34", "e621", "e6ai"]
+  const providers: BooruProvider[] = ["danbooru", "aibooru", "gelbooru", "rule34", "e621", "floofgens"]
   const briefs = [tifa(), withTags(tifa(), "hug", "sitting", "running", "princess carry"), withTags(pair(), "hug", "sitting", "running"), withTags(emptyBrief(), "hug", "sitting", "running")]
   for (const provider of providers) {
     for (const rating of ["sfw", "questionable", "explicit", "both"] as const) {
@@ -285,7 +285,7 @@ check(() => {
   const show = (plan: SourcePlan) => ({ scenes: plan.scenes.map((s) => `${s.kind}: ${s.query}`), appearance: plan.appearance.map((a) => a.query), fromPool: plan.baseLookFromPool })
   const both = ["own: tifa_lockhart, solo", "own: tifa_lockhart"]
   // No pose, no People: their posts alone (fills the pack alone) and by name (every composition of theirs).
-  for (const provider of ["danbooru", "aibooru", "gelbooru", "rule34", "e621", "e6ai"] as const) {
+  for (const provider of ["danbooru", "aibooru", "gelbooru", "rule34", "e621", "floofgens"] as const) {
     const plan = planSources(tifa(), env({ provider }))
     invariants(plan, tifa(), `alone and by name on ${provider}`)
     assert.deepEqual(plan.scenes.map((s) => s.tags), [["tifa_lockhart", "solo"], ["tifa_lockhart"]], `${provider}: "name, solo" and "name"`)

@@ -204,3 +204,36 @@ export function reconstructPrompt(
 export function countClassifiedTags(classified: ClassifiedTags, quality: string[]): number {
   return TAG_CATEGORY_IDS.reduce((sum, category) => sum + classified[category].length, quality.length)
 }
+
+export interface TagComparison {
+  onlyA: string[]
+  both: string[]
+  onlyB: string[]
+}
+
+/**
+ * Splits two tag lists into the tags only in A, the tags in both, and the tags
+ * only in B. Tags match after normalize() ("Long_Hair" equals "long hair"), each
+ * tag appears once, and every list keeps the order of its source prompt
+ * ("both" follows A). Feed it parseRawPrompt(...).cleanedTags so weights and
+ * LoRAs are already handled the way the cleaner handles them.
+ */
+export function compareTagLists(a: string[], b: string[]): TagComparison {
+  const unique = (tags: string[]) => {
+    const map = new Map<string, string>()
+    for (const tag of tags) {
+      const key = normalize(tag)
+      if (key && !map.has(key)) map.set(key, tag)
+    }
+    return map
+  }
+  const mapA = unique(a)
+  const mapB = unique(b)
+
+  const onlyA: string[] = []
+  const both: string[] = []
+  for (const [key, tag] of mapA) (mapB.has(key) ? both : onlyA).push(tag)
+  const onlyB = [...mapB].filter(([key]) => !mapA.has(key)).map(([, tag]) => tag)
+
+  return { onlyA, both, onlyB }
+}

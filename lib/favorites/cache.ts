@@ -2,6 +2,7 @@ import type { BooruPost } from "@/lib/booru/types"
 import { createClient } from "@/lib/supabase/client"
 import { booruPostToCacheRow } from "@/lib/cache-utils"
 import { favKey } from "@/lib/favorites-logic"
+import { migrateRetiredPost } from "@/lib/booru/retired-providers"
 
 // ── LocalStorage cache for favorites posts ──
 // Extracted from lib/api-client.ts:
@@ -45,7 +46,7 @@ export function getCachedFavorites(key: string): BooruPost[] | null {
     const raw = allKeys.length > 0 ? localStorage.getItem(allKeys[allKeys.length - 1]) : null
     if (!raw) return null
     const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed) && parsed.length > 0) return parsed as BooruPost[]
+    if (Array.isArray(parsed) && parsed.length > 0) return (parsed as BooruPost[]).map(migrateRetiredPost)
   } catch { /* corrupt entry */ }
   return null
 }
@@ -99,7 +100,7 @@ export function getMergedCachedFavorites(favorites: FavoriteItem[]): BooruPost[]
         if (post && post._provider && post.id) {
           const entryKey = favKey(post._provider as string, post.id)
           // Let newer entries overwrite older (no has() check)
-          postMap.set(entryKey, post as BooruPost)
+          postMap.set(entryKey, migrateRetiredPost(post as BooruPost))
         }
       }
     } catch { /* corrupt entry, skip */ }
@@ -145,7 +146,7 @@ export function cachedRowToBooruPost(row: CachedPostRow): BooruPost {
       tagStr = all.join(' ')
     }
   }
-  return {
+  return migrateRetiredPost({
     id: row.post_id,
     file_url: row.file_url || '',
     large_file_url: row.large_file_url || row.file_url || '',
@@ -161,7 +162,7 @@ export function cachedRowToBooruPost(row: CachedPostRow): BooruPost {
     height: row.image_height || 0,
     _provider: row.provider,
     ai_metadata: row.ai_metadata as BooruPost['ai_metadata'] || undefined,
-  }
+  })
 }
 
 // Converting a BooruPost to a booru_posts_cache row lives in

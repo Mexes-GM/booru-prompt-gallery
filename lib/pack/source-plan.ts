@@ -230,8 +230,8 @@ export function planRatings(
 ): Pick<SourcePlan, 'ratings' | 'sensitive'> {
   switch (rating) {
     case 'sfw': {
-      // e621 and e6ai have no sensitive tier: their "safe" (what rating:general maps to) is all there is.
-      if (provider === 'e621' || provider === 'e6ai') return { ratings: ['rating:general'], sensitive: 'unavailable' }
+      // e621 and floofgens have no sensitive tier: their "safe" (what rating:general maps to) is all there is.
+      if (provider === 'e621' || provider === 'floofgens') return { ratings: ['rating:general'], sensitive: 'unavailable' }
       return includeSensitive
         ? { ratings: ['rating:general', 'rating:sensitive'], sensitive: 'included' }
         : { ratings: ['rating:general'], sensitive: 'excluded' }

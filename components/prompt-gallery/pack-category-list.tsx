@@ -17,7 +17,7 @@
  */
 import { memo, useCallback, useEffect, useMemo, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
-import { AlertTriangle, Ban, Check, ChevronDown, ChevronRight, Lock, Minus, Package, Pin, Plus, RefreshCw, RotateCcw, Shirt, Shuffle, X } from "lucide-react"
+import { AlertTriangle, Ban, Check, ChevronDown, ChevronRight, Lock, Package, Pin, Plus, RefreshCw, RotateCcw, Shirt, Shuffle, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
@@ -37,6 +37,7 @@ import { TAG_CATEGORIES, formatSubcategoryLabel, getTagSlotFromOverrides, slotsO
 import { DEFAULT_MIN_SET_TAGS, MAX_MIN_SET_TAGS, type ClassicChipControls, type PackCategoryState, type PackSlotState } from "@/hooks/use-pack-mode"
 import { AddTagsField } from "./add-tags-field"
 import { useLowMotion } from "@/hooks/use-low-motion"
+import { Stepper } from "./count-stepper"
 import { PACK_TOUR_OPEN_PARTS_EVENT } from "./pack-builder-tour"
 import { PackSceneIdeas } from "./pack-scene-ideas"
 import type { SceneIdeaControls } from "@/hooks/use-pack-mode"
@@ -156,49 +157,6 @@ export function pinnedConflictLines(conflicts: Readonly<Record<string, string>>,
     lines.push(`${tag} and ${other} rarely go together. Both are pinned, so both stay.`)
   }
   return lines
-}
-
-/** "− n +" stepper; 0 renders as `zeroLabel`. */
-function Stepper({
-  value,
-  min,
-  max,
-  onChange,
-  zeroLabel,
-  ariaLabel,
-}: {
-  value: number
-  min: number
-  max: number
-  onChange: (value: number) => void
-  zeroLabel?: string
-  ariaLabel: string
-}) {
-  return (
-    <div className="inline-flex items-center rounded-md border border-border/60 bg-background" role="group" aria-label={ariaLabel}>
-      <button
-        type="button"
-        onClick={() => onChange(Math.max(min, value - 1))}
-        disabled={value <= min}
-        aria-label={`Decrease ${ariaLabel}`}
-        className="h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11 grid place-items-center text-muted-foreground hover:text-foreground disabled:opacity-30"
-      >
-        <Minus className="w-3 h-3" />
-      </button>
-      <span className="min-w-[2.25rem] text-center text-xs font-semibold tabular-nums">
-        {value === 0 && zeroLabel ? zeroLabel : value}
-      </span>
-      <button
-        type="button"
-        onClick={() => onChange(Math.min(max, value + 1))}
-        disabled={value >= max}
-        aria-label={`Increase ${ariaLabel}`}
-        className="h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11 grid place-items-center text-muted-foreground hover:text-foreground disabled:opacity-30"
-      >
-        <Plus className="w-3 h-3" />
-      </button>
-    </div>
-  )
 }
 
 export { Stepper as PackStepper }

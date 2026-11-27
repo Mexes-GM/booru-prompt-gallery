@@ -50,15 +50,21 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
       // but don't report it as an error (was a recurring non-actionable issue).
       const isExpectedRateLimit =
         /for security purposes|only request this after|rate limit|too many/i.test(msg)
-      if (!isExpectedRateLimit) {
+      // The request never reached the sign-in service: offline, or blocked by
+      // a privacy extension or network filter. Not a bug we can act on.
+      const isNetworkFailure = /failed to fetch|networkerror|load failed|network request failed/i.test(msg)
+      if (!isExpectedRateLimit && !isNetworkFailure) {
         reportError(error, {
           tags: { context: "magic_link_login" }
         })
       }
       toastError({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Something went wrong",
+        title: isNetworkFailure ? "Couldn't reach sign-in" : "Error",
+        description: isNetworkFailure
+          ? "Check your connection. If an ad or tracker blocker is on, allow this site and try again."
+          : msg || "Something went wrong",
         errorSource: "magic_link_login",
+        reportable: !isNetworkFailure,
       })
       setIsLoading(false)
     }

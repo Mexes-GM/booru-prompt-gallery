@@ -1,5 +1,6 @@
 "use client"
 
+import { copyText } from "@/lib/clipboard"
 import type React from "react"
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, startTransition, useDeferredValue, lazy } from "react"
 import { Card, CardContent } from "@/components/ui/card"
@@ -1776,7 +1777,7 @@ export function PromptGallery() {
 
   const copyToClipboard = useCallback(async (content: string, postId: number, isPrompt: boolean = false, thumbnailUrl?: string, format: PromptFormat = 'tags') => {
     try {
-      await navigator.clipboard.writeText(content)
+      await copyText(content)
 
       // PostHog Tracking
       track('prompt_copied', {
@@ -1869,7 +1870,7 @@ export function PromptGallery() {
         urlHasHost(imageUrl, 'rule34.xxx') ||
         urlHasHost(imageUrl, 'gelbooru.com') ||
         urlHasHost(imageUrl, 'e621.net') ||
-        urlHasHost(imageUrl, 'e6ai.net')
+        urlHasHost(imageUrl, 'floofgens.net')
 
       // Danbooru: prefer the CloudFront proxy (edge cache + CORS) when configured.
       const cdnUrl = getDanbooruCdnUrl(imageUrl)
@@ -2743,6 +2744,10 @@ export function PromptGallery() {
         onRandomize={() => mergeMode.setRandomSelection(finalPosts)}
         randomSettings={mergeMode.randomSettings}
         setRandomSettings={mergeMode.setRandomSettings}
+        minSharedPosts={mergeMode.minSharedPosts}
+        maxSharedPosts={mergeMode.maxSharedPosts}
+        onMinSharedPostsChange={mergeMode.setMinSharedPosts}
+        hiddenTagCount={mergeMode.hiddenByMinShared}
       />}
       <NaturalPromptStatus />
       {aiConvertFooterMounted && <AiConvertStickyFooter
@@ -2951,34 +2956,6 @@ export function PromptGallery() {
         castSourceAuto={packSourceIsCastSearch && !!packSourceAnswers.fromCharacter}
         onUseCompositionSearch={handleUseCompositionSearch}
       />}
-
-      <GalleryModals
-        onTeachSuccess={refreshOverrides}
-        isQuickTeachOpen={isQuickTeachOpen}
-        setIsQuickTeachOpen={setIsQuickTeachOpen}
-        isGlobalWeightsEnabled={isGlobalWeightsEnabled}
-        tagOverrides={tagOverrides}
-        isGlobalWeightsModalOpen={isGlobalWeightsModalOpen}
-        setIsGlobalWeightsModalOpen={setIsGlobalWeightsModalOpen}
-        globalWeights={globalWeights}
-        onRemoveGlobalWeight={handleRemoveGlobalWeight}
-        onClearGlobalWeights={handleClearGlobalWeights}
-        onGlobalWeightsEnabledChange={setIsGlobalWeightsEnabled}
-        onGlobalWeightChange={handleGlobalWeightChange}
-        isReverseParserModalOpen={isReverseParserModalOpen}
-        setIsReverseParserModalOpen={setIsReverseParserModalOpen}
-        onImportRawPrompt={handleImportRawPrompt}
-        folderToDelete={folderToDelete}
-        setFolderToDelete={setFolderToDelete}
-        onConfirmDeleteFolder={() => {
-          if (folderToDelete) {
-            favs.deleteFolder(folderToDelete.id)
-            if (activeFavoriteFolder === folderToDelete.id) {
-              setActiveFavoriteFolder('all')
-            }
-          }
-        }}
-      />
     </TooltipProvider>
   )
 }

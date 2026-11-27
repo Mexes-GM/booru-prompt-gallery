@@ -85,7 +85,7 @@ export function roleFromSubject(tags: readonly string[]): CastRole | null {
 type Vocabulary = 'danbooru' | 'rule34' | 'e621'
 
 function vocabularyOf(provider: BooruProvider): Vocabulary {
-  if (provider === 'e621' || provider === 'e6ai') return 'e621'
+  if (provider === 'e621' || provider === 'floofgens') return 'e621'
   if (provider === 'rule34') return 'rule34'
   return 'danbooru'
 }

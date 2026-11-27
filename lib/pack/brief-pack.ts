@@ -1207,14 +1207,14 @@ export interface PackProviderChoice {
   available: boolean
   /** Rule34 is adult-only: the gallery asks once before showing it, and the pack does not ask in its place. */
   reason?: 'adult-consent'
-  /** The rating works there with a difference worth saying: e621 and e6ai have no sensitive tier. */
+  /** The rating works there with a difference worth saying: e621 and floofgens have no sensitive tier. */
   note?: 'no-sensitive'
 }
 
 /**
  * The boorus a pack can switch to, in the gallery's order. Every pack rating exists on
  * every booru (planRatings maps them); the safe rating's sensitive pictures do not
- * exist on e621 and e6ai, so a safe pack there is said to be safe only. Rule34 waits
+ * exist on e621 and floofgens, so a safe pack there is said to be safe only. Rule34 waits
  * for the gallery's adult-content confirmation.
  */
 export function packProviderChoices(

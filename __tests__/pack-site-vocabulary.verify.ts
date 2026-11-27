@@ -53,7 +53,7 @@ for (const vocabulary of ["rule34", "e621"] as const) {
   for (const tag of NEITHER) assert(sitePeopleRole(tag, vocabulary) === null, `W3 ${vocabulary}: "${tag}" is not the site's people words`)
 }
 for (const tag of [...PEOPLE, ...KIND]) assert(sitePeopleRole(tag, "danbooru") === null, `W4: on a Danbooru-like site "${tag}" is left as it is`)
-assert(peopleVocabulary("rule34") === "rule34" && peopleVocabulary("e621") === "e621" && peopleVocabulary("e6ai") === "e621", "W5: Rule34 and e621 write the people their own way")
+assert(peopleVocabulary("rule34") === "rule34" && peopleVocabulary("e621") === "e621" && peopleVocabulary("floofgens") === "e621", "W5: Rule34 and e621 write the people their own way")
 for (const provider of ["danbooru", "gelbooru", "aibooru", undefined] as const) assert(peopleVocabulary(provider) === "danbooru", `W5: ${provider ?? "no site"} counts Danbooru's way`)
 
 // ── S / D. The scene ─────────────────────────────────────────────────────────

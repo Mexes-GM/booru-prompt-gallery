@@ -5,6 +5,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { BooruProvider } from "./booru/types"
+import { canonicalProvider } from "./booru/retired-providers"
 
 export interface FavoriteItem {
   provider: BooruProvider
@@ -17,9 +18,11 @@ export interface FavoriteItem {
  * render). Fixes F9: previously the load/realtime paths lowercased the provider
  * but the toggle/render/isFavorite paths did not, which would desync the heart
  * state and folder filter for any provider stored with mixed case.
+ * A retired provider id (saved "e6ai") keys as its replacement, so old
+ * favorites and history match the posts now served by Floofgens.
  */
 export function favKey(provider: string, id: number | string): string {
-  return `${String(provider).toLowerCase()}:${id}`
+  return `${canonicalProvider(provider)}:${id}`
 }
 
 /**

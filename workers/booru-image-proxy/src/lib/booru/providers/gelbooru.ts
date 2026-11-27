@@ -25,6 +25,13 @@ export function isDirectBlock(error: unknown): boolean {
   return error.status === 403 || error.status === 429 || error.status >= 500
 }
 
+// Gelbooru's API serves offsets (pid × limit) up to this many posts. Past it
+// the answer is a 200 with a plain-text "Too deep!" body instead of JSON,
+// which used to surface as "provider unavailable" once infinite scroll went
+// that deep. Those pages are the end of what Gelbooru lets us browse, so they
+// are answered as empty without calling Gelbooru.
+export const MAX_OFFSET = 1000
+
 /** Test hook: forget a previous block. */
 export function resetGelbooruRoute(): void {
   directBlockedUntil = 0
@@ -88,6 +95,7 @@ export class GelbooruProvider extends BaseBooruProvider {
     if (options.limit) {
       params.limit = options.limit
     }
+    if (Number(pid) * Number(params.limit) > MAX_OFFSET) return []
     if (this.apiKey && this.userId) {
       params.api_key = this.apiKey
       params.user_id = this.userId
