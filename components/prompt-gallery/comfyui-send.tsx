@@ -9,11 +9,11 @@
 import { ToastAction } from "@/components/ui/toast"
 import { toast } from "@/hooks/use-toast"
 import { getComfyUISettings } from "@/hooks/use-comfyui-settings"
-import { BRIDGE_NAME, MIN_BRIDGE_VERSION } from "@/lib/comfyui/bridge"
-import { diagnose } from "@/lib/comfyui/client"
+import { BRIDGE_NAME } from "@/lib/comfyui/bridge"
 import { openComfyPanel } from "@/lib/comfyui/panel-request"
 import { randomSeed } from "@/lib/comfyui/roles"
 import { getComfyJobSnapshot, getComfySession, type ComfySession } from "@/lib/comfyui/session"
+import { getComfyStatus, refreshComfyStatus } from "@/lib/comfyui/status"
 import { ComfyError, type ApiWorkflow, type Diagnosis } from "@/lib/comfyui/types"
 import { clampMaxLongSide, computeGenerationResolution } from "@/lib/extension/generation-resolution"
 import { userPreferences } from "@/lib/storage"
@@ -140,6 +140,9 @@ export async function sendToComfy(req: ComfySendRequest): Promise<ComfySent | nu
       preview: options.livePreview,
     })
     if (req.previousJobId && req.previousJobId !== jobId) replacePrevious(session, req.previousJobId)
+    // A send that went through proves the connection; refresh a status that says otherwise.
+    const known = getComfyStatus()
+    if (known.url !== url || known.diagnosis?.state !== "ok") void refreshComfyStatus(url)
     return { jobId, api: workflow.api }
   } catch (error) {
     if (!(error instanceof ComfyError)) {
@@ -147,9 +150,8 @@ export async function sendToComfy(req: ComfySendRequest): Promise<ComfySent | nu
       showFailure("The workflow's roles no longer match it. Check them in the ComfyUI settings.")
       return null
     }
-    const diagnosis = await diagnose(url, { minBridgeVersion: MIN_BRIDGE_VERSION, timeoutMs: 3000 }).catch(
-      (): Diagnosis => ({ state: "unreachable" }),
-    )
+    // Also updates the status the settings row and the gallery chip show.
+    const diagnosis = await refreshComfyStatus(url)
     showFailure(reasonFor(diagnosis), req.onCopyInstead)
     return null
   }

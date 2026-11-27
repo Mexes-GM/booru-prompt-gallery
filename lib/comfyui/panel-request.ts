@@ -21,8 +21,12 @@ let current: ComfyPanelRequest | null = null
 let counter = 0
 const listeners = new Set<Listener>()
 
-export function openComfyPanel(reason: ComfyPanelReason | null = null): void {
-  const active = typeof document !== "undefined" ? document.activeElement : null
+/**
+ * Opens the panel. Focus returns to `returnFocus` when it closes, or by
+ * default to whatever has focus now.
+ */
+export function openComfyPanel(reason: ComfyPanelReason | null = null, returnFocus?: HTMLElement | null): void {
+  const active = returnFocus !== undefined ? returnFocus : typeof document !== "undefined" ? document.activeElement : null
   current = { id: ++counter, reason, returnFocus: active instanceof HTMLElement ? active : null }
   for (const l of Array.from(listeners)) l()
 }
