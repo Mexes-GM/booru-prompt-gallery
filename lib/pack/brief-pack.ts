@@ -12,7 +12,7 @@ import type { PackRatingMode } from '../../hooks/use-pack-seed-search'
 import { ADULT_OUTFIT_STYLES, OUTFIT_STYLES, outfitTags, type Outfit, type OutfitDetail, type OutfitStyle } from '../outfit-swap'
 import { planRatings } from './source-plan'
 import { withResolutionPrefix } from './prompt-resolution'
-import { addCharacter, addNever, addTag, briefFromCard, briefFromPrompt, setPeople, toSceneRequests, type ChangesAxis, type PackBrief } from './brief'
+import { addCharacter, addNever, addTag, briefFromCard, briefFromPrompt, castTurns, setPeople, toSceneRequests, turnBriefs, type ChangesAxis, type PackBrief } from './brief'
 import { castPeople, roleFromSubject, type CastRole } from './scene/cast'
 import { COUNT_TAG_RE, type Permanence } from './scene/permanence'
 import type { PackPeople } from './scene/scene-pool'
@@ -125,6 +125,12 @@ export interface BriefIdentity {
   castSize: number
   /** Characters of a cast whose role nobody knows yet: the brief asks. */
   missingRoles: string[]
+  /**
+   * One per prompt in turn (castTurns): each named character's identity as a pack of only them has
+   * it, in brief order. The fields above then are the first character's as a pack of one (subject,
+   * cast, castSize 1, identity), while `members`, `blocks` and `never` still cover everyone.
+   */
+  turns?: BriefIdentity[]
 }
 
 const unique = (tags: readonly string[]) => Array.from(new Set(tags.filter(Boolean)))
@@ -137,7 +143,16 @@ const NO_LOOK: ResolvedLook = { look: [], subject: [], source: 'none' }
  * `addedLook` adds traits (and, like "Always add" did, a typed trait of a kind replaces
  * the character's own); `removedLook` takes one out and keeps it out of every prompt.
  */
-export function briefIdentity({ brief, looks, profileRoles = {}, permanence, overrides }: BriefIdentityInput): BriefIdentity {
+export function briefIdentity(input: BriefIdentityInput): BriefIdentity {
+  const together = identityOf(input)
+  if (!castTurns(input.brief)) return together
+  // One per prompt: each character as a pack of only them, through the same path.
+  const turns = turnBriefs(input.brief).map((brief) => identityOf({ ...input, brief }))
+  const lead = turns[0]
+  return { ...together, identity: lead.identity, subject: lead.subject, cast: lead.cast, castSize: 1, missingRoles: [], turns }
+}
+
+function identityOf({ brief, looks, profileRoles = {}, permanence, overrides }: BriefIdentityInput): BriefIdentity {
   const requests = toSceneRequests(brief)
   const typed = [...requests.also, ...requests.literal]
   const members: BriefMember[] = brief.who.map((c) => {
