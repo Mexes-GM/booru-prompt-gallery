@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
-import { Pause, Play, RotateCcw, X } from "lucide-react"
+import { ArrowRight, Pause, Play, RotateCcw, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { safeTrack } from "@/lib/analytics"
-import { FEATURE_VIDEOS, chapterAt, chapterProgress, tabAfterKey, type FeatureVideoId } from "@/lib/feature-intro-videos"
+import { FEATURE_VIDEOS, chapterAt, chapterProgress, stepActions, tabAfterKey, type FeatureVideoId } from "@/lib/feature-intro-videos"
 import { cn } from "@/lib/utils"
 import { FEATURE_INTRO_RELEASE } from "@/components/prompt-gallery/feature-intro"
 
@@ -27,10 +27,14 @@ const prefersReducedMotion = () => window.matchMedia(REDUCED_MOTION).matches
 const tabId = (id: FeatureVideoId) => `feature-intro-tab-${id}`
 const PANEL_ID = "feature-intro-panel"
 
+const videoById = (id: FeatureVideoId) => FEATURE_VIDEOS.find((v) => v.id === id)!
+
 /**
- * The release's videos, one at a time: a tab per feature above its description and
- * chapters. Only the video on screen is in the page, so the other one downloads
- * nothing until its tab is chosen; with reduced motion, nothing downloads until Play.
+ * The release's videos, one at a time: a numbered tab per feature above its description
+ * and chapters. The tabs are steps: Next leads through them, and only the last one offers
+ * the features' buttons, so opening one never skips the rest. Only the video on screen is
+ * in the page, so the other one downloads nothing until its tab is chosen; with reduced
+ * motion, nothing downloads until Play.
  */
 export function FeatureIntroDialog({
   open,
@@ -39,7 +43,7 @@ export function FeatureIntroDialog({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** The main button of the video on screen, run once the dialog has closed. */
+  /** The feature button pressed on the last step, run once the dialog has closed. */
   onTry: (video: FeatureVideoId) => void
 }) {
   const reduceMotion = useSyncExternalStore(subscribeReducedMotion, prefersReducedMotion, () => false)
@@ -48,6 +52,8 @@ export function FeatureIntroDialog({
   const progressRef = useRef<HTMLSpanElement>(null)
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
   const closeMethod = useRef<CloseMethod>("outside")
+  // The feature whose button closed the dialog, opened once it has.
+  const tryVideo = useRef<FeatureVideoId | null>(null)
   // Furthest chapter reached in each video, and the videos opened, for the close event.
   const furthest = useRef<Partial<Record<FeatureVideoId, number>>>({})
   const [viewed] = useState(() => new Set<FeatureVideoId>([FEATURE_VIDEOS[0].id]))
@@ -58,6 +64,7 @@ export function FeatureIntroDialog({
   const [switched, setSwitched] = useState(false)
   const video = FEATURE_VIDEOS[active]
   const chapters = video.chapters
+  const actions = stepActions(FEATURE_VIDEOS, active)
 
   // Follow the playhead: highlight the current chapter and fill its bar.
   const syncChapter = useCallback(() => {
@@ -135,9 +142,20 @@ export function FeatureIntroDialog({
     onOpenChange(next)
   }
 
-  const tryIt = () => {
-    safeTrack("feature_intro_try_clicked", { release: FEATURE_INTRO_RELEASE, video: video.id })
+  // On the last step, opens one of the features; `step` says which tab it was pressed on.
+  const tryIt = (id: FeatureVideoId) => {
+    safeTrack("feature_intro_try_clicked", { release: FEATURE_INTRO_RELEASE, video: id, step: active + 1 })
+    tryVideo.current = id
     close("try")
+  }
+
+  // The next step, with focus on its tab: the button under the pointer becomes another
+  // one, and the tab announces the new step to screen readers.
+  const goNext = (id: FeatureVideoId) => {
+    const index = FEATURE_VIDEOS.findIndex((v) => v.id === id)
+    safeTrack("feature_intro_next_clicked", { release: FEATURE_INTRO_RELEASE, from: video.id, to: id, step: active + 1 })
+    select(index)
+    tabRefs.current[index]?.focus()
   }
 
   const playLabel = state === "playing" ? "Pause video" : state === "ended" ? "Replay video" : "Play video"
@@ -156,9 +174,9 @@ export function FeatureIntroDialog({
         }}
         onCloseAutoFocus={(e) => {
           // "Open Pack Mode" and "Set up ComfyUI" open their own screen, which takes focus.
-          if (closeMethod.current === "try") {
+          if (closeMethod.current === "try" && tryVideo.current) {
             e.preventDefault()
-            onTry(video.id)
+            onTry(tryVideo.current)
           }
         }}
         onEscapeKeyDown={() => {
@@ -229,7 +247,7 @@ export function FeatureIntroDialog({
             New in v{FEATURE_INTRO_RELEASE}
           </DialogTitle>
 
-          {/* One tab per feature; the arrow keys move between them. */}
+          {/* One numbered tab per feature, read as steps; the arrow keys move between them. */}
           <div
             role="tablist"
             aria-label="Features"
@@ -253,13 +271,22 @@ export function FeatureIntroDialog({
                   onClick={() => select(i)}
                   onKeyDown={onTabKeyDown}
                   className={cn(
-                    "h-8 min-w-0 flex-1 truncate rounded-md px-3 text-sm font-medium pointer-coarse:h-11",
+                    "flex h-8 min-w-0 flex-auto items-center justify-center gap-1.5 rounded-md px-3 text-sm font-medium pointer-coarse:h-11",
                     "transition-[color,background-color,box-shadow] duration-150 ease-out",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     selected ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  {v.label}
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "flex size-4 shrink-0 items-center justify-center rounded-full text-[0.6875rem] leading-none tabular-nums transition-colors duration-150 ease-out",
+                      selected ? "bg-primary text-primary-foreground" : "bg-muted-foreground/15 text-muted-foreground"
+                    )}
+                  >
+                    {i + 1}
+                  </span>
+                  <span className="truncate">{v.label}</span>
                 </button>
               )
             })}
@@ -315,20 +342,48 @@ export function FeatureIntroDialog({
           </div>
 
           {/* Pinned to the bottom while the dialog scrolls on short screens,
-              so both actions stay in reach. */}
+              so the actions stay in reach. With three buttons, the main one
+              takes a row of its own where they don't fit side by side. */}
           <div
             style={delay(3)}
             className={cn(
               RISE,
-              "sticky bottom-0 -mx-5 mt-auto flex flex-col-reverse gap-2 border-t border-border/60 bg-background px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 sm:-mx-6 sm:flex-row sm:justify-end sm:px-6 sm:pb-6 lg:static lg:mx-0 lg:border-0 lg:px-0 lg:pb-0 lg:pt-5"
+              "sticky bottom-0 -mx-5 mt-auto gap-2 border-t border-border/60 bg-background px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 sm:-mx-6 sm:px-6 sm:pb-6 lg:static lg:mx-0 lg:border-0 lg:px-0 lg:pb-0 lg:pt-5",
+              actions.kind === "try" && actions.others.length > 0
+                ? "grid grid-cols-2 sm:flex sm:justify-end lg:grid"
+                : "flex flex-col-reverse sm:flex-row sm:justify-end"
             )}
           >
             <Button type="button" variant="ghost" onClick={() => close("close_button")}>
               Close
             </Button>
-            <Button type="button" onClick={tryIt}>
-              {video.action}
-            </Button>
+            {actions.kind === "next" ? (
+              <Button
+                key="next"
+                type="button"
+                onClick={() => goNext(actions.next)}
+                aria-label={`Next: ${videoById(actions.next).label}`}
+              >
+                Next
+                <ArrowRight aria-hidden="true" />
+              </Button>
+            ) : (
+              <>
+                {actions.others.map((id) => (
+                  <Button key={id} type="button" variant="outline" onClick={() => tryIt(id)}>
+                    {videoById(id).action}
+                  </Button>
+                ))}
+                <Button
+                  key={actions.video}
+                  type="button"
+                  onClick={() => tryIt(actions.video)}
+                  className={cn(actions.others.length > 0 && "order-first col-span-2 sm:order-none lg:order-first")}
+                >
+                  {videoById(actions.video).action}
+                </Button>
+              </>
+            )}
           </div>
         </div>
 

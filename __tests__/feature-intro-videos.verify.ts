@@ -32,7 +32,7 @@ function assert(condition: boolean, label: string) {
   }
 }
 
-const { FEATURE_VIDEOS, chapterAt, chapterProgress, tabAfterKey } = intro
+const { FEATURE_VIDEOS, chapterAt, chapterProgress, stepActions, tabAfterKey } = intro
 const byId = (id: string) => FEATURE_VIDEOS.find((v) => v.id === id)!
 
 // ── chapterAt ────────────────────────────────────────────────────────────────────
@@ -63,6 +63,29 @@ const byId = (id: string) => FEATURE_VIDEOS.find((v) => v.id === id)!
   assert(tabAfterKey(1, "Home", 2) === 0, "tabs: Home goes to the first")
   assert(tabAfterKey(0, "End", 2) === 1, "tabs: End goes to the last")
   assert(tabAfterKey(0, "Enter", 2) === null, "tabs: other keys do nothing")
+}
+
+// ── stepActions ──────────────────────────────────────────────────────────────────
+{
+  const two = [{ id: "pack" }, { id: "comfyui" }] as const
+  const first = stepActions(two, 0)
+  assert(first.kind === "next" && first.next === "comfyui", "steps: the first of two offers Next to the second")
+  assert(!("video" in first), "steps: the first of two has no feature button, so it can't close before the second")
+  const last = stepActions(two, 1)
+  assert(last.kind === "try" && last.video === "comfyui", "steps: the last opens its own feature")
+  assert(last.kind === "try" && last.others.length === 1 && last.others[0] === "pack", "steps: the last also offers the earlier feature")
+
+  const three = [{ id: "pack" }, { id: "comfyui" }, { id: "pack" }] as const
+  const middle = stepActions(three, 1)
+  assert(middle.kind === "next" && middle.next === "pack", "steps: a middle step offers Next, not its feature")
+  const end = stepActions(three, 2)
+  assert(end.kind === "try" && end.others.join() === "pack,comfyui", "steps: the last offers every earlier feature, in tab order")
+
+  const one = stepActions([{ id: "comfyui" }], 0)
+  assert(one.kind === "try" && one.video === "comfyui" && one.others.length === 0, "steps: a single video opens its feature, with nothing else")
+
+  const real = stepActions(FEATURE_VIDEOS, 0)
+  assert(real.kind === "next" && real.next === "comfyui", "steps: the dialog opens on Pack Mode with Next to Send to ComfyUI")
 }
 
 // ── The release's videos ─────────────────────────────────────────────────────────
