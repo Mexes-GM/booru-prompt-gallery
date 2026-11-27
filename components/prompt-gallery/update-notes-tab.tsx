@@ -47,6 +47,14 @@ const NOTES: UpdateNote[] = [
   { kind: 'fixed', title: 'Packs stuck loading', body: "When the source couldn't load its posts, the Pack Builder kept showing Collecting. It now says the posts didn't load and offers Try again." },
   { kind: 'fixed', title: 'Freezes at the highest variety', body: "Generating a Classic pack with Variety set to Chaotic could freeze the page. It now finishes without freezing the page." },
   { kind: 'improved', title: 'Clearer messages', body: "Error messages and warnings now say what went wrong and what to try next, and labels across the site are easier to read." },
+  { kind: 'new', title: 'Send to ComfyUI', body: "Turn on Send to ComfyUI in Customize prompt, and the Copy buttons on the cards send the prompt to ComfyUI on your computer, using a workflow you publish from ComfyUI. The card shows the queue, the steps and a live preview while the image generates. It needs a free node for ComfyUI, and the setup guide shows how to add it." },
+  { kind: 'new', title: 'Compare two prompts', body: "The Import Cleaner has a new Compare view. Paste two prompts to see the tags they share and the tags only one of them has, and copy any of the three lists." },
+  { kind: 'new', title: 'Shared tags in Merge', body: "Merge can keep only the tags that several of the selected posts have. Set \"Tags in at least N of M posts\" and the rest are left out of the copied prompt." },
+  { kind: 'improved', title: 'Floofgens replaces e6ai', body: "e6ai has closed and its team now runs Floofgens, with the same posts. The e6ai source is now Floofgens, and your e6ai favorites and history move over with it." },
+  { kind: 'fixed', title: 'e621 searches', body: "e621 searches came back empty after a change on e621's side. They load again." },
+  { kind: 'fixed', title: 'Deep Gelbooru searches', body: "Scrolling far into a Gelbooru search ended in a \"provider is unavailable\" error. Results now end normally where Gelbooru stops serving them." },
+  { kind: 'fixed', title: 'AI prompt writer keys', body: "OpenRouter keys, newer OpenAI and Anthropic keys, and OpenRouter's free models were rejected. They work now." },
+  { kind: 'fixed', title: 'Smaller fixes', body: "Copy buttons work in more browsers, dialogs no longer open twice, and sign-in says when it can't reach the server." },
 ]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)
