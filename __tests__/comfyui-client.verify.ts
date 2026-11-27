@@ -253,6 +253,11 @@ async function main() {
     same(r.d, { state: "ok", comfyVersion: "0.44.0", bridgeVersion: "1.2.0" }, "denied permission but the request works: ok")
     r = await diag({ "/booru_bridge/info": () => new Response("nope", { status: 404 }) }, { permissions: perm("denied") })
     same(r.d, { state: "bridge-missing" }, "denied permission but an HTTP answer: bridge missing")
+    // On a page served from loopback the permission does not apply, so a down server is "unreachable".
+    r = await diag({}, { permissions: perm("denied"), pageHost: "localhost" })
+    same(r.d, { state: "unreachable" }, "loopback page ignores a denied permission")
+    r = await diag({}, { permissions: perm("prompt"), pageHost: "127.0.0.1" })
+    same(r.d, { state: "unreachable" }, "loopback page never asks for the permission")
 
     r = await diag(okRoutes, { permissions: { query: async () => { throw new TypeError("unsupported") } } })
     assert(r.d.state === "ok", "unsupported Permissions API does not block the check")

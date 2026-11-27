@@ -203,6 +203,8 @@ export interface DiagnoseOptions {
   timeoutMs?: number
   permissions?: { query(descriptor: { name: string }): Promise<{ state: string }> }
   userAgent?: string
+  /** Host of the page running the check (defaults to location.hostname). */
+  pageHost?: string
   minBridgeVersion: string
 }
 
@@ -229,12 +231,20 @@ export async function diagnose(baseUrl: string, options: DiagnoseOptions): Promi
   const url = normalizeComfyUrl(baseUrl)
   if (!url) return { state: "invalid-url" }
 
+  // A page served from loopback (local development) is in the same address
+  // space as ComfyUI: the local-network permission does not apply to it, even
+  // though Chromium reports it as "denied" there.
+  const pageHost = options.pageHost ?? (typeof location !== "undefined" ? location.hostname : "")
+  const loopbackPage = /^(localhost|127\.0\.0\.1|\[::1\]|::1)$/i.test(pageHost)
+
   let permission: string | null = null
-  try {
-    const perms = (options.permissions ?? (typeof navigator !== "undefined" ? navigator.permissions : undefined)) as DiagnoseOptions["permissions"]
-    if (perms) permission = (await perms.query({ name: "local-network-access" })).state
-  } catch {
-    permission = null // not supported in this browser: carry on
+  if (!loopbackPage) {
+    try {
+      const perms = (options.permissions ?? (typeof navigator !== "undefined" ? navigator.permissions : undefined)) as DiagnoseOptions["permissions"]
+      if (perms) permission = (await perms.query({ name: "local-network-access" })).state
+    } catch {
+      permission = null // not supported in this browser: carry on
+    }
   }
   const promptFlag = permission === "prompt" ? ({ localNetworkPrompt: true } as const) : {}
 
