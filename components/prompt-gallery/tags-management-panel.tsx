@@ -770,7 +770,7 @@ export function TagsManagementPanel({
           isInputValid={isTagCountValid}
           maxInput={1000}
           ariaLabel={isCompact ? "Minimum tags" : "Minimum tag count"}
-          disabledReason={isEmbedded ? "This source can't filter by tag count" : "not supported by this booru"}
+          disabledReason={isEmbedded ? "This source can't filter by tag count" : "This source can't filter by tag count"}
         />
         <ScoreTierControl
           variant={isCompact ? "compact" : undefined}
@@ -801,7 +801,7 @@ export function TagsManagementPanel({
           isInputValid={!!characterCountFilter && /^\d+$/.test(characterCountFilter)}
           maxInput={1000000}
           ariaLabel={isCompact ? "Minimum character posts" : "Minimum character post count"}
-          disabledReason={isEmbedded ? "Turn on Include character names to use it" : "turn on Character Tags"}
+          disabledReason={isEmbedded ? "Turn on Include character names to use it" : "Turn on Character Tags to use it"}
         />
       </>
   )

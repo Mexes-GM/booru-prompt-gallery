@@ -1478,7 +1478,7 @@ export function PromptGallery() {
           ? "Couldn't reach the image server. An ad blocker or extension may be blocking it. Opening the image in a new tab instead."
           : "Try again in a moment.",
         errorSource: "download_image",
-        context: { provider: post._provider || search.booruProvider, postId: post.id, networkFailure: isNetworkFailure },
+        context: { provider: post._provider || search.booruProvider, postId: post.id, networkFailure: isNetworkFailure, message: error instanceof Error ? error.message : String(error) },
       })
 
       if (isNetworkFailure) {

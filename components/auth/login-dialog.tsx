@@ -61,6 +61,7 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
         // internal detail, so it gets a plain next step instead.
         description: isExpectedRateLimit ? msg : "Check the email address and try again.",
         errorSource: "magic_link_login",
+        context: { message: msg },
       })
       setIsLoading(false)
     }
@@ -77,12 +78,16 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
     setIsVerifying(false)
     if (error) {
       const isBadCode = /expired|invalid/i.test(error.message)
+      const isRateLimit = /for security purposes|only request this after|rate limit|too many/i.test(error.message)
       toastError({
         title: isBadCode ? "Code didn't work" : "Couldn't sign in",
         description: isBadCode
           ? "The code is wrong or has expired. Request a new one."
-          : "Try again, or request a new code.",
+          : isRateLimit
+            ? error.message
+            : "Try again, or request a new code.",
         errorSource: "otp_verify",
+        context: { message: error.message },
       })
       return
     }

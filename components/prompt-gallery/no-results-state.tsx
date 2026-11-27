@@ -47,7 +47,7 @@ export function NoResultsState({
       title: isSafeFilterActive ? 'Safe mode is on' : 'Content rating',
       description: isSafeFilterActive
         ? 'Adult content is hidden, which can leave some searches empty.'
-        : 'Safe mode hides adult content. If it is on, try a different content rating.',
+        : "Your content rating might be hiding the posts you're looking for.",
       icon: Shield,
       colorClass: 'text-success-text',
       bgClass: 'bg-success-soft border-success-border',
