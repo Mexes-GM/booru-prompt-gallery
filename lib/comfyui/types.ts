@@ -113,3 +113,26 @@ export class ComfyError extends Error {
     this.nodeErrors = extra.nodeErrors
   }
 }
+
+export type SavedComfyWorkflowSource = "png" | "api-json" | "bridge"
+
+/** A workflow the user saved for "Send to ComfyUI", with the roles chosen for it. */
+export interface SavedComfyWorkflow {
+  id: string
+  name: string
+  source: SavedComfyWorkflowSource
+  /** Id of the workflow inside the bridge node, when it was imported from there. */
+  bridgeId?: string
+  api: ApiWorkflow
+  /** The editor (UI) format, when known. */
+  ui: object | null
+  roles: Roles
+  savedAt: number
+}
+
+/** Behaviour switches for sending. */
+export interface ComfyOptions {
+  randomSeed: boolean
+  matchPostResolution: boolean
+  livePreview: boolean
+}
