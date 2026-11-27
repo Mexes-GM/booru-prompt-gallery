@@ -8,9 +8,10 @@
  * request, works the same on every site, and every character it gives can be drawn from their
  * profile without searching for their look (lib/pack/source-plan.ts MAX_LOOK_SEARCHES).
  *
- * Content rule: the index leaves out every character the data marks as young (characterAllowed),
- * and the picker checks again when it reads the index. It also holds only known characters of a
- * series (isKnownCharacter): no original characters, no player's stand-ins.
+ * Content rule: the index file leaves out every character the data marks as young (characterAllowed,
+ * with the trait data, when the file is built). Reading it checks only each name and series against
+ * the blocked themes. It also holds only known characters of a series (isKnownCharacter): no
+ * original characters, no player's stand-ins.
  *
  * Pure: no React, no requests.
  */
@@ -121,7 +122,7 @@ export function isKnownCharacter(tag: string, series: string | null | undefined)
 
 const ROLE_OF: Record<string, CastRole> = { g: 'girl', b: 'boy' }
 
-/** The index from its file, or null for anything else. Characters the content rule leaves out are dropped here too. */
+/** The index from its file, or null for anything else. Characters whose name or series is a blocked theme are dropped here too; the rest of the content rule was applied when the file was built. */
 export function readCharacterIndex(raw: unknown): CharacterIndex | null {
   if (!raw || typeof raw !== 'object') return null
   const v = raw as Partial<StoredCharacterIndex>
