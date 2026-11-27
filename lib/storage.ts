@@ -877,6 +877,11 @@ export interface PackPreferences {
   styleDefaults?: string[]
   /** SFW packs also draw from sensitive-rated posts; default false. */
   includeSensitive: boolean
+  /**
+   * The format the pack builder shows and copies its prompts in, chosen there. Absent until the
+   * user picks one: packs then start in the gallery's format. Never changes the gallery's.
+   */
+  promptFormat?: PromptFormat
 }
 
 function isPackPreferences(value: unknown): value is PackPreferences {

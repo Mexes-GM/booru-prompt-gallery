@@ -7,6 +7,7 @@
 import type { PackModeConfig, PackModeConfigByKind, PackModeConfigV2, PackModeKind } from '../storage'
 import type { PackPreferences } from '../storage'
 import { splitCommaSeparatedTags } from '../utils/tag-utils'
+import { isPromptFormat, type PromptFormat } from '../prompt/prompt-format'
 import { normalizeTagForPack } from './pack-generator'
 import { PACK_ARCHETYPES, type PackArchetypeId } from '../tag-taxonomy'
 import { DEFAULT_VARIETY_LEVEL } from './variety-presets'
@@ -151,12 +152,20 @@ export function sanitizePackPreferences(prefs: PackPreferences): PackPreferences
       if (typed && !styleDefaults.some((t) => normalizeTagForPack(t) === normalizeTagForPack(typed))) styleDefaults.push(typed)
     }
   }
+  // The builder's own format: kept only when it is one the app knows.
+  const rawFormat: unknown = (prefs as { promptFormat?: unknown }).promptFormat
   return {
     promptCount: Math.min(100, Math.max(1, count)),
     neverDefaults,
     includeSensitive: prefs.includeSensitive === true,
     ...(styleDefaults.length > 0 ? { styleDefaults } : {}),
+    ...(isPromptFormat(rawFormat) ? { promptFormat: rawFormat } : {}),
   }
+}
+
+/** The format the pack builder uses: its own choice once made, else the gallery's current one. */
+export function packPromptFormat(prefs: Pick<PackPreferences, 'promptFormat'>, galleryFormat: PromptFormat): PromptFormat {
+  return prefs.promptFormat ?? galleryFormat
 }
 
 /**

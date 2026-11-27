@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { fetchPostsPage } from "@/lib/api-client"
 import type { BooruPost, BooruProvider } from "@/lib/booru/types"
-import { typicalLook, typicalSubject } from "@/lib/pack/character-identity"
+import { postsAloneShare, typicalLook, typicalSubject } from "@/lib/pack/character-identity"
 import { normalizeTagForPack } from "@/lib/pack/pack-generator"
 import { loadPackVocabulary, tagBaselineOf, type TagBaseline } from "@/lib/pack/pack-vocabulary"
 import type { AppearanceSearch } from "@/lib/pack/source-plan"
@@ -62,6 +62,8 @@ export interface CharacterLook {
   look: string[] | null
   /** Subject tags their solo posts agree on ("1girl"), when ready. */
   subject: string[]
+  /** Of the posts tagged "solo" naming only them, the share read as them alone (postsAloneShare), when ready. */
+  aloneShare?: number | null
 }
 
 export interface UseCharacterLooksArgs {
@@ -123,12 +125,17 @@ export function useCharacterLooks({ searches, provider, overrides, enrichTagSlot
       const entry = entries[search.id]
       if (entry?.failed) { out[search.character] = { status: 'none', look: null, subject: [] }; continue }
       if (!entry?.posts || !entry.enriched || !baseline.ready) { out[search.character] = { status: 'loading', look: null, subject: [] }; continue }
-      const look = typicalLook(entry.posts, search.character, overrides, baseline.value)
+      const look = typicalLook(entry.posts, search.character, overrides, baseline.value, provider)
       out[search.character] = look?.length
-        ? { status: 'ready', look, subject: typicalSubject(entry.posts, search.character, overrides) ?? [] }
+        ? {
+            status: 'ready',
+            look,
+            subject: typicalSubject(entry.posts, search.character, overrides, provider) ?? [],
+            aloneShare: postsAloneShare(entry.posts, search.character, provider),
+          }
         : { status: 'none', look: null, subject: [] }
     }
     return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchKey, entries, overrides, baseline])
+  }, [searchKey, entries, overrides, baseline, provider])
 }

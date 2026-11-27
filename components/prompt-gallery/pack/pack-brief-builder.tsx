@@ -5,14 +5,15 @@
  * scenes that fit on a contact sheet, a line on how well they fit, Generate, and the
  * prompts. It owns the pack's whole state (usePackBrief), its source (usePackSources),
  * the characters' looks and the engine (usePackBriefScenes); the gallery only gives
- * it the environment (taxonomy, booru, prompt settings, copy, exit) and the characters
- * it starts with.
+ * it the environment (taxonomy, booru, search, exit) and the characters it starts with; it
+ * reads and edits the app's prompt settings itself (usePackPromptSettings, "Customize prompt").
  *
- * Anchored at the bottom over the gallery, with its own scroll. Before generating it
- * shows the brief, the sheet, the fit line and Generate; after, the prompts, with the
- * brief folded into one line that opens it again.
+ * A full screen of its own: while it is open the gallery is hidden behind it and does no work
+ * (PromptGallery), and focus stays inside until it closes. Before generating it shows the brief,
+ * the sheet, the fit line and Generate; after, the prompts, with the brief folded into one line
+ * that opens it again.
  */
-import { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type RefObject } from "react"
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react"
 import { AlertTriangle, ChevronDown, Info, Package, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -32,6 +33,14 @@ import { useTagSuggestions } from "@/hooks/use-tag-suggestions"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useStableCallback } from "@/hooks/use-stable-callback"
 import { useNaturalPrompt, usePromptFormat } from "@/hooks/use-natural-prompt"
+import { useTagSlotEnrichment } from "@/hooks/use-tag-slot-enrichment"
+import { usePackPromptSettings } from "@/hooks/use-pack-prompt-settings"
+import { PackPromptOptions } from "./prompt-options"
+import { packPromptFormat } from "@/lib/pack/pack-config-migration"
+import { storedPackRating, withPackRating } from "@/lib/pack/pack-rating"
+import { track } from "@/lib/analytics"
+import { recordPromptCopy } from "@/lib/support-prompt"
+import { toastError } from "@/lib/toast-error"
 import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
 import type { BooruPost, BooruProvider } from "@/lib/booru/types"
 import {
@@ -89,10 +98,9 @@ import {
   type ConditionSupply,
   type FitNote,
 } from "@/lib/pack/brief-pack"
-import type { BulkSendCleanOptions } from "@/lib/pack/bulk-send"
 import type { PackPrompt } from "@/lib/pack/pack-generator"
 import type { SourcePlan } from "@/lib/pack/source-plan"
-import type { OutfitDetail, OutfitStyle } from "@/lib/outfit-swap"
+import type { OutfitStyle } from "@/lib/outfit-swap"
 import type { NaturalPromptSource } from "@/lib/prompt/natural-format"
 import { convertPromptOnce, preloadNaturalPrompt } from "@/lib/prompt/natural-prompt-loader"
 import { PROMPT_FORMATS, PROMPT_FORMAT_INFO, type PromptFormat } from "@/lib/prompt/prompt-format"
@@ -159,25 +167,17 @@ export interface PackBriefBuilderProps {
   open: boolean
   /** Opens the entry dialog for another pack; this one stays if the user cancels. */
   onNewPack: () => void
-  /** Tag slots in use, growing as tags are looked up. */
-  overrides: Record<string, string>
-  /** Looks up the slots of tags the overrides don't cover yet. */
-  enrichTagSlots: (tags: string[]) => Promise<boolean>
+  /** The app's tag slots. The builder looks up the ones they don't cover itself, and keeps them. */
+  tagOverrides: Record<string, string>
   provider: BooruProvider
-  /** The pack rating preference, shared with the old builder. */
-  rating: PackRatingMode
-  onRatingChange: (rating: PackRatingMode) => void
+  /**
+   * The rating a pack starts with when none is saved. The builder keeps its own and saves it in the
+   * preference it shares with the classic builder; `onRatingChange` only hears about it.
+   */
+  initialRating: PackRatingMode
+  onRatingChange?: (rating: PackRatingMode) => void
   /** The gallery's search, for a brief without a named character. */
   gallerySearch: string
-  cleanOptions: Pick<
-    BulkSendCleanOptions,
-    "excludeInput" | "addInput" | "findInput" | "replaceInput" | "includeCharacters" | "optimizeTags" | "smartTagExclusion" | "experimentalPromptRules"
-  >
-  globalWeights: Record<string, number>
-  isGlobalWeightsEnabled: boolean
-  outfitOptions: { styles: readonly OutfitStyle[]; detail: OutfitDetail }
-  /** Copies text in a format; resolves true when it worked. */
-  onCopy: (text: string, format: PromptFormat) => Promise<boolean>
   onExit: () => void
   /** Opens the pack's card or character in the classic builder. */
   onOpenClassic?: () => void
@@ -216,16 +216,21 @@ function begin(
 }
 
 /**
- * Shell: the panel and its header. Closed, it stays mounted (the pack and its posts wait
- * here) but inert: not shown, not focusable, and the environment it works from is held as
- * it was when it closed, so nothing is fetched, timed or worked out until it opens again.
+ * Shell: the screen and its header, a modal dialog over the whole app. Closed, it stays mounted
+ * (the pack and its posts wait here) but inert: not shown, not focusable, and the environment it
+ * works from is held as it was when it closed, so nothing is fetched, timed or worked out until
+ * it opens again.
  */
-export function PackBriefBuilder(props: PackBriefBuilderProps) {
-  const { start, open, overrides, rating, onRatingChange, onExit, onNewPack, onOpenClassic } = props
+export const PackBriefBuilder = memo(function PackBriefBuilder(props: PackBriefBuilderProps) {
+  const { start, open, tagOverrides, onExit, onNewPack, onOpenClassic } = props
+  // The slots of tags the app's don't cover, looked up for this pack and kept here: the lookups
+  // that every page of posts brings re-render the pack, never the gallery behind it.
+  const slots = useTagSlotEnrichment(tagOverrides)
+  const overrides = slots.overrides
   const [begun] = useState(() => ({
-    ...begin(start, overrides),
+    ...begin(start, tagOverrides),
     // The same start with the permanence data: the brief above may be made before it loads.
-    remake: (permanence: (tag: string) => Permanence) => begin(start, overrides, permanence).brief,
+    remake: (permanence: (tag: string) => Permanence) => begin(start, tagOverrides, permanence).brief,
   }))
   const pack = usePackBrief(overrides, begun.brief, { seeded: start.kind === "restored", remake: begun.remake })
   // The environment while open; held while closed.
@@ -236,6 +241,27 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
     ? { provider: start.saved.provider, gallerySearch: start.saved.gallerySearch }
     : { provider: props.provider, gallerySearch: props.gallerySearch })
   const onProviderChange = useCallback((provider: BooruProvider) => setStartSource((s) => ({ ...s, provider })), [])
+  // The rating is the pack's own, like its site: saved in the preference the classic builder
+  // reads, never set in the gallery while the pack is open.
+  const [rating, setRating] = useState<PackRatingMode>(() => {
+    try {
+      return storedPackRating(userPreferences.getPackSourceAnswers(), props.initialRating)
+    } catch {
+      return props.initialRating
+    }
+  })
+  const { onRatingChange } = props
+  const changeRating = useCallback((next: PackRatingMode) => {
+    setRating(next)
+    try {
+      userPreferences.setPackSourceAnswers(withPackRating(userPreferences.getPackSourceAnswers(), next, {
+        ratingMode: next, tagsSource: "current", searchTags: startSource.gallerySearch, booruProvider: startSource.provider,
+      }))
+    } catch {
+      // Storage unavailable: the choice lasts this pack.
+    }
+    onRatingChange?.(next)
+  }, [onRatingChange, startSource])
   // While closed, the rest of the environment is held as it was when it closed.
   const [held, setHeld] = useState<PackBriefBuilderProps | null>(null)
   const [wasOpen, setWasOpen] = useState(open)
@@ -243,14 +269,19 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
     setWasOpen(open)
     setHeld(open ? null : props)
   }
-  const env = { ...(open || !held ? props : held), ...startSource, onProviderChange }
+  const env = { ...(open || !held ? props : held), ...startSource, onProviderChange, overrides, enrichTagSlots: slots.enrich, rating }
 
-  // Focus goes into the panel when it opens and back where it was when it closes.
+  // Focus goes into the screen when it opens and back where it was when it closes. The element
+  // that opened it is read before the gallery is hidden (a layout effect runs before the browser
+  // moves focus off hidden elements).
   const headingRef = useRef<HTMLHeadingElement>(null)
+  const screenRef = useRef<HTMLDivElement>(null)
   const returnRef = useRef<Element | null>(null)
+  useLayoutEffect(() => {
+    if (open) returnRef.current = document.activeElement
+  }, [open])
   useEffect(() => {
     if (open) {
-      returnRef.current = document.activeElement
       headingRef.current?.focus()
       return
     }
@@ -258,30 +289,45 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
     if (back instanceof HTMLElement && back.isConnected && back !== document.body) back.focus()
     else document.querySelector<HTMLElement>('[role="radiogroup"][aria-label="Mode"] [data-mode="pack"]')?.focus()
   }, [open])
+  // Tab and Shift+Tab go round inside the screen: the guards at each end send focus to the other end.
+  const focusEdge = useCallback((edge: "first" | "last") => {
+    const items = tabbablesIn(screenRef.current)
+    const item = edge === "first" ? items[0] : items[items.length - 1]
+    ;(item ?? headingRef.current)?.focus()
+  }, [])
+  const titleId = useId()
 
   return (
     <TooltipProvider delayDuration={300}>
-      <section
-        aria-label={BUILDER_TEXT.title}
+      <div
+        ref={screenRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         inert={!open}
         onKeyDown={(e) => {
-          // Lists, menus, a marked chip and the scene picker close first (they stop the key or own it).
+          // Lists, menus, a marked chip, the scene picker and dialogs over the pack close first
+          // (they stop the key or own it).
           if (e.key !== "Escape" || e.defaultPrevented || e.isPropagationStopped()) return
           const target = e.target instanceof Element ? e.target : null
-          if (target?.closest("[role='menu'], [role='listbox'], [role='dialog'], [data-radix-popper-content-wrapper]")) return
+          const owner = target?.closest("[role='menu'], [role='listbox'], [role='dialog'], [data-radix-popper-content-wrapper]")
+          if (owner && owner !== e.currentTarget) return
           onExit()
         }}
         className={cn(
-          "fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[85dvh] w-full max-w-3xl flex-col overflow-clip",
-          "rounded-t-2xl border border-border bg-background shadow-2xl sm:bottom-4 sm:w-[calc(100%-2rem)] sm:rounded-2xl",
-          "animate-in fade-in-0 slide-in-from-bottom-4 duration-200 ease-out-strong motion-reduce:animate-none",
+          // The whole app's area: nothing of the gallery shows or can be reached behind it.
+          "fixed inset-0 z-50 flex flex-col overflow-clip bg-background",
+          "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]",
+          "animate-in fade-in-0 duration-200 ease-out-strong motion-reduce:animate-none",
           // Last, so it wins over "flex": closed is not shown.
           !open && "hidden",
         )}
       >
-        <header className="flex flex-shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
+        <span tabIndex={open ? 0 : -1} aria-hidden="true" data-focus-guard="" className="sr-only" onFocus={() => focusEdge("last")} />
+        <header className="flex-shrink-0 border-b border-border/60">
+          <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-3 py-2">
           <Package className="size-5 shrink-0 text-mode-pack-text" aria-hidden />
-          <h2 ref={headingRef} tabIndex={-1} className="text-base font-semibold leading-tight text-foreground focus-visible:outline-none">
+          <h2 id={titleId} ref={headingRef} tabIndex={-1} className="text-base font-semibold leading-tight text-foreground focus-visible:outline-none">
             {BUILDER_TEXT.title}
           </h2>
           <div className="ml-auto flex items-center gap-1">
@@ -310,7 +356,7 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
               </Button>
             )}
             <ProviderMenu value={startSource.provider} rating={rating} onChange={onProviderChange} />
-            <RatingMenu value={rating} onChange={onRatingChange} />
+            <RatingMenu value={rating} onChange={changeRating} />
             <Button
               type="button"
               variant="ghost"
@@ -323,12 +369,26 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
               <X className="size-4" aria-hidden />
             </Button>
           </div>
+          </div>
         </header>
-        <div data-pack-scroll="" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-2">
-          <BriefWorkspace {...env} open={open} pack={pack} startNote={begun.note} />
+        <div data-pack-scroll="" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className="mx-auto w-full max-w-3xl px-3 pt-3">
+            <BriefWorkspace {...env} open={open} pack={pack} startNote={begun.note} />
+          </div>
         </div>
-      </section>
+        <span tabIndex={open ? 0 : -1} aria-hidden="true" data-focus-guard="" className="sr-only" onFocus={() => focusEdge("first")} />
+      </div>
     </TooltipProvider>
+  )
+})
+
+const TABBABLE = "a[href], button:not([disabled]), input:not([disabled]):not([type='hidden']), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"
+
+/** What Tab can reach inside `root`, in order: shown, not inert, and not the focus guards. */
+function tabbablesIn(root: HTMLElement | null): HTMLElement[] {
+  if (!root) return []
+  return Array.from(root.querySelectorAll<HTMLElement>(TABBABLE)).filter(
+    (el) => !el.hasAttribute("data-focus-guard") && !el.closest("[inert]") && el.getClientRects().length > 0
   )
 }
 
@@ -486,6 +546,15 @@ function suggestedKind(picked?: TagSuggestion): SuggestedKind | undefined {
   return picked.kind ? undefined : "general"
 }
 
+/** What the shell works out for the workspace: the pack's own site, rating and tag slots. */
+interface WorkspaceEnv {
+  onProviderChange: (provider: BooruProvider) => void
+  /** The app's slots plus the ones looked up for this pack. */
+  overrides: Record<string, string>
+  enrichTagSlots: (tags: string[]) => Promise<boolean>
+  rating: PackRatingMode
+}
+
 function BriefWorkspace({
   pack,
   overrides,
@@ -493,16 +562,11 @@ function BriefWorkspace({
   provider,
   rating,
   gallerySearch,
-  cleanOptions,
-  globalWeights,
-  isGlobalWeightsEnabled,
-  outfitOptions,
-  onCopy,
+  onProviderChange,
   open,
   start,
   startNote,
-  onProviderChange,
-}: PackBriefBuilderProps & { pack: UsePackBriefResult; startNote: StartNote; onProviderChange: (provider: BooruProvider) => void }) {
+}: PackBriefBuilderProps & WorkspaceEnv & { pack: UsePackBriefResult; startNote: StartNote }) {
   const { brief, preferences } = pack
   const count = preferences.promptCount
   const restored = start.kind === "restored" ? start.saved : null
@@ -530,6 +594,16 @@ function BriefWorkspace({
     [originOf, donorKey]
   )
 
+  // The pack's own prompt format: the gallery's until one is picked here, and picking one here
+  // never changes the gallery's cards (it is a preference of the builder).
+  const { format: galleryFormat, fullDetail } = usePromptFormat()
+  const promptFormat = packPromptFormat(preferences, galleryFormat)
+  const { setPromptFormat: setFormat } = pack
+  const copy = useCallback((text: string, format: PromptFormat) => copyPackText(text, format, provider), [provider])
+  // The app's prompt settings (Tags to add and exclude, Find & Replace, weights, outfits…), the
+  // same ones the gallery uses: read and edited here, never passed in.
+  const { settings: promptSettings, cleanOptions, globalWeights, isGlobalWeightsEnabled, outfitOptions } = usePackPromptSettings()
+
   const engine = usePackBriefScenes({
     brief,
     posts,
@@ -550,6 +624,7 @@ function BriefWorkspace({
     globalWeights,
     isGlobalWeightsEnabled,
     outfitOptions,
+    promptFormat,
   })
   const { plan, identity, candidates, candidatesPending, result, isGenerating, othersTag } = engine
   // The start's tags placed before the permanence data loaded go where it says, once it has.
@@ -877,7 +952,6 @@ function BriefWorkspace({
   // ── Corrections from the results ────────────────────────────────────────────────
   // The tag menu changes the brief and the pack is remade at once with the same seed and
   // scenes; Undo puts brief, prompts, locks and format back as they were.
-  const { format: promptFormat, setFormat } = usePromptFormat()
   const correctionIdRef = useRef(0)
   const { addLook, addExactly } = pack
   const correct = useCallback((kind: "always" | "never", raw: string) => {
@@ -1268,6 +1342,7 @@ function BriefWorkspace({
           onQueryChange={suggestions.onQueryChange}
         />
       )}
+      {showBrief && <PackPromptOptions settings={promptSettings} safeOnly={rating === "sfw"} />}
 
       {/* One live region for the fit line and the run: the lines themselves stay quiet. */}
       <p className="sr-only" role="status" aria-live="polite">
@@ -1330,7 +1405,10 @@ function BriefWorkspace({
           busyReason={engine.sourceChanged ? BUILDER_TEXT.busySource : engine.poolPending ? BUILDER_TEXT.busyReloading : BUILDER_TEXT.busyRunning}
           naturalSourceOf={engine.naturalSourceOf}
           overrides={overrides}
-          onCopy={onCopy}
+          format={promptFormat}
+          fullDetail={fullDetail}
+          onFormatChange={setFormat}
+          onCopy={copy}
           onReroll={onReroll}
           onAlways={onAlways}
           onNever={onNever}
@@ -1389,6 +1467,32 @@ function startNoteText(note: StartNote, poolPending: boolean): string | null {
 
 // ── Results ──────────────────────────────────────────────────────────────────────
 
+/**
+ * Copies a pack's text without the gallery: no card is marked copied and no gallery state changes.
+ * The rows and the toolbar say it was copied; a failure says so here.
+ */
+async function copyPackText(text: string, format: PromptFormat, provider: BooruProvider): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    toastError({
+      title: "Error",
+      description: "Could not copy prompt",
+      errorSource: "copy_to_clipboard",
+      context: { provider, postId: 0, isPrompt: true },
+    })
+    return false
+  }
+  track("prompt_copied", {
+    copy_type: "ai_text",
+    booru_source: provider,
+    has_translated_tags: text.includes("Masterpiece"),
+    prompt_format: format,
+  })
+  recordPromptCopy()
+  return true
+}
+
 const warnTagsCopied = () => toast({ description: BUILDER_TEXT.convertFailed, variant: "destructive", duration: 3000 })
 
 function Results({
@@ -1402,6 +1506,9 @@ function Results({
   onToggleLock,
   naturalSourceOf,
   overrides,
+  format,
+  fullDetail,
+  onFormatChange: setFormat,
   onCopy,
   onReroll,
   onAlways,
@@ -1421,12 +1528,15 @@ function Results({
   onToggleLock: (index: number) => void
   naturalSourceOf: (prompt: PackPrompt) => NaturalPromptSource
   overrides: Record<string, string>
+  /** The pack's own format (never the gallery's) and its "every detail" length, read from the app. */
+  format: PromptFormat
+  fullDetail: boolean
+  onFormatChange: (format: PromptFormat) => void
   onCopy: (text: string, format: PromptFormat) => Promise<boolean>
   onReroll: (index: number) => boolean
   onAlways: (tag: string) => void
   onNever: (tag: string) => void
 }) {
-  const { format, fullDetail, setFormat } = usePromptFormat()
   const lockedSet = useMemo(() => new Set(locked), [locked])
   // Text on screen per row, so a copy matches what is shown.
   const shownRef = useRef(new Map<number, string>())

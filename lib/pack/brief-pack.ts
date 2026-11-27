@@ -50,8 +50,11 @@ export interface ResolvedLook {
 }
 
 export interface LookInputs {
-  /** Read from the character's own solo posts (useCharacterLooks). */
-  solo?: { status: 'loading' | 'ready' | 'none'; look: string[] | null; subject: string[] } | null
+  /**
+   * Read from the character's own solo posts (useCharacterLooks). `aloneShare`: of the
+   * posts tagged "solo" that name only them, the share read as them alone (postsAloneShare).
+   */
+  solo?: { status: 'loading' | 'ready' | 'none'; look: string[] | null; subject: string[]; aloneShare?: number | null } | null
   /** typicalLook over the pack's own posts, when the pool shows only the character alone (SourcePlan.baseLookFromPool). */
   pool?: { look: string[]; subject: string[] } | null
   /** Their static trait profile (profileIdentity); empty when there is none. */
@@ -61,12 +64,24 @@ export interface LookInputs {
 }
 
 /**
- * The look a character is drawn with, as the old builder chose it: their solo posts,
- * else the pack's own posts of them, else their trait profile (in a cast, only once
- * their solo posts turned out too few), else nothing but the name.
+ * Least share of the posts their site tags "solo" (and that name only the character)
+ * that the solo look must be read from (postsAloneShare). Those posts are the
+ * character alone by the site's own word; when the reading of who is in each picture
+ * sets most of them aside, it is misreading the site's people tags, and the few posts
+ * left say little about the character. Half: the look then speaks for most of the
+ * posts that show them alone.
+ */
+export const MIN_SOLO_LOOK_SHARE = 0.5
+
+/**
+ * The look a character is drawn with, as the old builder chose it: their solo posts
+ * (when the look speaks for most of them, MIN_SOLO_LOOK_SHARE), else the pack's own
+ * posts of them, else their trait profile (in a cast, only once their solo posts
+ * turned out too few), else nothing but the name.
  */
 export function resolveLook({ solo, pool, profile = [], inCast = false }: LookInputs): ResolvedLook {
-  if (solo?.status === 'ready' && solo.look?.length) return { look: [...solo.look], subject: [...solo.subject], source: 'solo' }
+  const representative = solo?.aloneShare == null || solo.aloneShare >= MIN_SOLO_LOOK_SHARE
+  if (solo?.status === 'ready' && solo.look?.length && representative) return { look: [...solo.look], subject: [...solo.subject], source: 'solo' }
   if (pool?.look.length) return { look: [...pool.look], subject: [...pool.subject], source: 'pool' }
   const waiting = solo?.status === 'loading'
   if (profile.length > 0 && !(inCast && waiting)) return { look: [...profile], subject: [], source: 'profile' }

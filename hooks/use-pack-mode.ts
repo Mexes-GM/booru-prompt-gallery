@@ -66,7 +66,7 @@ import {
   categoryOfSlot,
   getTagSlotFromOverrides,
 } from '@/lib/tag-taxonomy'
-import { fetchTagOverridesForNames } from '@/lib/supabase/client-queries'
+import { useTagSlotEnrichment } from '@/hooks/use-tag-slot-enrichment'
 import { useOutfitDescriptions, useOutfitLibrary } from '@/hooks/use-outfit-settings'
 import { usePromptFormat } from '@/hooks/use-natural-prompt'
 import { ADULT_OUTFIT_STYLES, outfitPackDraw, type Outfit, type OutfitDetail, type OutfitStyle } from '@/lib/outfit-swap'
@@ -586,47 +586,12 @@ export function usePackMode(
   }, [])
 
   // Per-tag slots fetched on demand for tags in the current pool/base card
-  // that the static overrides snapshot doesn't cover. The ref mirrors the
-  // state so async reseeds can read the latest value without a re-render.
-  // Global tagOverrides win on conflict (curated source).
-  const [poolOverrides, setPoolOverrides] = useState<Record<string, string>>({})
-  const poolOverridesRef = useRef<Record<string, string>>({})
-  const requestedSlotTagsRef = useRef<Set<string>>(new Set())
-  const effectiveOverrides = useMemo(
-    () => (Object.keys(poolOverrides).length === 0 ? tagOverrides : { ...poolOverrides, ...tagOverrides }),
-    [poolOverrides, tagOverrides]
-  )
-  const currentOverrides = useCallback(
-    () => ({ ...poolOverridesRef.current, ...tagOverrides }),
-    [tagOverrides]
-  )
-
-  /** Fetches slots for tags not yet covered or requested. Resolves true if anything new arrived. */
-  const enrichOverrides = useCallback(async (tags: string[]): Promise<boolean> => {
-    const missing = tags.filter(
-      (t) => !requestedSlotTagsRef.current.has(t) && !tagOverrides[t] && !poolOverridesRef.current[t]
-    )
-    if (missing.length === 0) return false
-    missing.forEach((t) => requestedSlotTagsRef.current.add(t))
-    try {
-      // Tags whose lookup failed are asked for again on the next pass instead of
-      // staying without a slot for the rest of the session.
-      const fetched = await fetchTagOverridesForNames(missing, (failed) => {
-        failed.forEach((name) => {
-          requestedSlotTagsRef.current.delete(name)
-          requestedSlotTagsRef.current.delete(name.replace(/_/g, ' '))
-        })
-      })
-      if (Object.keys(fetched).length === 0) return false
-      poolOverridesRef.current = { ...poolOverridesRef.current, ...fetched }
-      setPoolOverrides(poolOverridesRef.current)
-      return true
-    } catch {
-      // Best-effort: heuristics + snapshot still classify these tags.
-      missing.forEach((t) => requestedSlotTagsRef.current.delete(t))
-      return false
-    }
-  }, [tagOverrides])
+  // that the static overrides snapshot doesn't cover, owned by this builder
+  // (the new builder keeps its own). Global tagOverrides win on conflict.
+  const slotEnrichment = useTagSlotEnrichment(tagOverrides)
+  const effectiveOverrides = slotEnrichment.overrides
+  const currentOverrides = slotEnrichment.current
+  const enrichOverrides = slotEnrichment.enrich
 
   // Axis pools sampled from the currently loaded search results — NEVER
   // persisted (see PackModeConfigV2's docstring in lib/storage.ts: they'd be
@@ -1156,9 +1121,9 @@ export function usePackMode(
         .then(async (posts) => {
           const [, vocabulary] = await Promise.all([enrichOverrides(collectPostTags(posts)), loadPackVocabulary()])
           const overrides = currentOverrides()
-          const look = typicalLook(posts, character, overrides, tagBaselineOf(vocabulary))
+          const look = typicalLook(posts, character, overrides, tagBaselineOf(vocabulary), booruProvider)
           if (look?.length) {
-            const subject = typicalSubject(posts, character, overrides) ?? []
+            const subject = typicalSubject(posts, character, overrides, booruProvider) ?? []
             setTypicalLooks((prev) => ({ ...prev, [character]: { look, subject } }))
           }
           setSoloLookStatus((prev) => (look?.length ? omit(prev, character) : { ...prev, [character]: 'none' }))
@@ -1724,13 +1689,13 @@ export function usePackMode(
         const baseline = tagBaselineOf(vocabulary)
         const looks: Record<string, { look: string[]; subject: string[] }> = {}
         lookOwners.forEach((c) => {
-          const look = typicalLook(posts, c, currentOverrides(), baseline)
-          if (look?.length) looks[c] = { look, subject: typicalSubject(posts, c, currentOverrides()) ?? [] }
+          const look = typicalLook(posts, c, currentOverrides(), baseline, booruProvider)
+          if (look?.length) looks[c] = { look, subject: typicalSubject(posts, c, currentOverrides(), booruProvider) ?? [] }
         })
         if (Object.keys(looks).length > 0) setTypicalLooks((prev) => ({ ...prev, ...looks }))
       })
     },
-    [resample, axisTagModes, baseCard, basePromptTags, baseFromCharacter, currentOverrides, characterTags]
+    [resample, axisTagModes, baseCard, basePromptTags, baseFromCharacter, currentOverrides, characterTags, booruProvider]
   )
 
   const setClothingFromLibrary = useCallback((on: boolean) => {

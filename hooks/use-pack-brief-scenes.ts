@@ -72,6 +72,7 @@ import {
 import { clampMaxLongSide } from "@/lib/extension/generation-resolution"
 import { ADULT_OUTFIT_STYLES, OUTFIT_STYLES, outfitPackDraw, outfitTags as libraryOutfitTags, type Outfit, type OutfitDetail, type OutfitStyle } from "@/lib/outfit-swap"
 import type { NaturalPromptSource } from "@/lib/prompt/natural-format"
+import type { PromptFormat } from "@/lib/prompt/prompt-format"
 import { getCharacterTraits, getNoCharacterTraits, loadCharacterTraits, loadTraitAliases, subscribeCharacterTraits } from "@/lib/prompt/natural-prompt-loader"
 import { userPreferences } from "@/lib/storage"
 import { fetchGelbooruTagCategories } from "@/lib/supabase/client-queries"
@@ -79,7 +80,6 @@ import { yieldToPage, nextPaint } from "@/lib/utils/yield-to-page"
 import { useCharacterLooks } from "./use-character-looks"
 import { useDebounce } from "./use-debounce"
 import { useOutfitDescriptions, useOutfitLibrary } from "./use-outfit-settings"
-import { usePromptFormat } from "./use-natural-prompt"
 import type { PackRatingMode } from "./use-pack-seed-search"
 import { useTagRelations } from "./use-tag-relations"
 
@@ -116,6 +116,8 @@ export interface UsePackBriefScenesArgs {
   globalWeights: Record<string, number>
   isGlobalWeightsEnabled: boolean
   outfitOptions: { styles: readonly OutfitStyle[]; detail: OutfitDetail }
+  /** The format the builder shows its prompts in (its own, not the gallery's). */
+  promptFormat: PromptFormat
   /** Posts only the donor searches brought (they lend clothes or a place, never a scene of their own). */
   donorPosts?: readonly number[]
   /**
@@ -406,10 +408,10 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   const soloShare = useMemo(() => poolSoloShare(posts), [posts])
   const poolLook = useMemo(() => {
     if (!poolIsOwn || !base || posts.length === 0) return null
-    const look = typicalLook(posts, base, overrides, baseline)
+    const look = typicalLook(posts, base, overrides, baseline, provider)
     if (!look?.length) return null
-    return { look, subject: subjectForPool(typicalSubject(posts, base, overrides) ?? [], soloShare) }
-  }, [poolIsOwn, base, posts, overrides, baseline, soloShare])
+    return { look, subject: subjectForPool(typicalSubject(posts, base, overrides, provider) ?? [], soloShare) }
+  }, [poolIsOwn, base, posts, overrides, baseline, soloShare, provider])
   const looks = useMemo(() => {
     const out: Record<string, ResolvedLook> = {}
     named.forEach((c, i) => {
@@ -1024,7 +1026,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   }, [op, sourceKey, brief, argsFor])
 
   // ── Natural-language formats ──────────────────────────────────────────────────
-  const { format: promptFormat } = usePromptFormat()
+  const { promptFormat } = args
   const outfitDescriptions = useOutfitDescriptions(useLibrary && promptFormat !== "tags" && outfitLibrary.length > 0)
   const outfitsById = useMemo(() => new Map<number, Outfit>(outfitLibrary.map((o) => [o.id, o])), [outfitLibrary])
   const naturalSourceOf = useCallback(
