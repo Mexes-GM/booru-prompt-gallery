@@ -280,6 +280,19 @@ function choiceLabel(api: ApiWorkflow, ref: InputRef): string {
   return `${nodeTitle(api, ref.nodeId)} · ${ref.input}`
 }
 
+/**
+ * Scrolls the nearest scrolling ancestor so `el` sits at its top. Not
+ * scrollIntoView: that also scrolls the dialog's overflow-hidden frame,
+ * which leaves an empty band the user can't scroll back.
+ */
+function scrollToTop(el: HTMLElement) {
+  let scroller = el.parentElement
+  while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement
+  if (!scroller) return
+  const offset = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top
+  scroller.scrollTop += offset
+}
+
 function RoleSelect({
   role,
   value,
@@ -306,7 +319,8 @@ function RoleSelect({
     const frame = requestAnimationFrame(() => {
       const trigger = triggerRef.current
       if (!trigger) return
-      trigger.closest("section")?.scrollIntoView({ block: "start" })
+      const section = trigger.closest("section")
+      if (section) scrollToTop(section)
       trigger.focus({ preventScroll: true })
     })
     return () => cancelAnimationFrame(frame)
@@ -377,7 +391,13 @@ function RoleList({ onFocusNode, focusPromptRequest }: { onFocusNode: (nodeId: s
           detail: previewValue(api[c.ref.nodeId].inputs[c.ref.input], 60),
           suggested: c.suggested,
         }))}
-        description={prompts.length === 0 ? "This workflow has no text input, so it runs without the card's prompt." : undefined}
+        description={
+          prompts.length === 0
+            ? "This workflow has no text input, so it runs without the card's prompt."
+            : focusPromptRequest !== undefined
+              ? "Choose where Send writes the card's prompt."
+              : undefined
+        }
       />
       <RoleSelect
         role="seed"
