@@ -803,14 +803,15 @@ export function withPromptPeople(brief: PackBrief, peopleTags: readonly string[]
 /**
  * A gallery card's brief: its characters from the post's own character field (a name the
  * taxonomy doesn't know yet is still a character), its look, and its outfit and pose
- * offered apart (briefFromCard).
+ * offered apart (briefFromCard). `permanence`: see lib/pack/brief.ts routePermanence.
  */
 export function briefFromCardPost(
   tags: readonly string[],
   characters: readonly string[],
-  overrides: Record<string, string>
+  overrides: Record<string, string>,
+  permanence?: (tag: string) => Permanence
 ): { brief: PackBrief; offered: { outfit: string[]; pose: string[] } } {
-  const { brief, offered } = briefFromCard(tags, overrides)
+  const { brief, offered } = briefFromCard(tags, overrides, permanence)
   return { brief: characters.reduce((b, name) => addCharacter(b, name), brief), offered }
 }
 
@@ -826,18 +827,20 @@ export function usableSearchTags(search: string): string[] {
  * The brief a gallery search starts: its tags go where a pasted prompt's would, a
  * "-tag" goes to Never, the character the results are about is in Who, and search
  * filters ("rating:general", "order:score") stay out and come back in `skipped`.
+ * `permanence`: see lib/pack/brief.ts routePermanence.
  */
 export function briefFromSearch(
   search: string,
   overrides: Record<string, string>,
-  character: string | null
+  character: string | null,
+  permanence?: (tag: string) => Permanence
 ): { brief: PackBrief; skipped: string[] } {
   const tokens = search.split(',').map((t) => t.trim()).filter(Boolean)
   const skipped = tokens.filter((t) => t.includes(':') && !t.startsWith('-'))
   const excluded = tokens.filter((t) => t.startsWith('-')).map((t) => t.slice(1).trim())
   const kept = tokens.filter((t) => !t.includes(':') && !t.startsWith('-'))
   skipped.push(...excluded.filter((t) => t.includes(':')).map((t) => `-${t}`))
-  const parsed = briefFromPrompt(kept.join(', '), overrides)
+  const parsed = briefFromPrompt(kept.join(', '), overrides, permanence)
   let brief = withPromptPeople(parsed.brief, parsed.peopleTags)
   if (character) brief = addCharacter(brief, character)
   for (const tag of excluded) if (!tag.includes(':')) brief = addNever(brief, tag)

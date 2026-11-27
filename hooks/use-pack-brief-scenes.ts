@@ -49,7 +49,7 @@ import { loadPackVocabulary, loadedTagBaseline, tagBaselineOf } from "@/lib/pack
 import { resolutionForAspect } from "@/lib/pack/prompt-resolution"
 import { planSources, type AppearanceSearch, type SourcePlan } from "@/lib/pack/source-plan"
 import { holdsCast, roleFromProfile, roleFromSubject, type CastRole } from "@/lib/pack/scene/cast"
-import { createPermanence, type PermanenceData } from "@/lib/pack/scene/permanence"
+import { createPermanence, type Permanence, type PermanenceData } from "@/lib/pack/scene/permanence"
 import type { TagKind } from "@/lib/pack/scene/scene"
 import { buildScenePool, compositionOfIdentity, compositionsOf, createScenePoolCache, type PackPeople, type ScenePool } from "@/lib/pack/scene/scene-pool"
 import {
@@ -203,6 +203,8 @@ export interface UsePackBriefScenesResult {
   officialOutfits: string[]
   /** The permanence data has loaded. */
   ready: boolean
+  /** The permanence lookup once its data has loaded, else null. */
+  permanence: ((tag: string) => Permanence) | null
   loadFailed: boolean
   retryLoad: () => void
   /** The pool of the composition in use; null until it can be built. */
@@ -1048,6 +1050,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     allowedStyles,
     officialOutfits,
     ready: !!permanence,
+    permanence,
     loadFailed: loadFailed && !permanence,
     retryLoad,
     pool,

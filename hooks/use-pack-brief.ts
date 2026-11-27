@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   addCharacter, addLook, addNever, addOther, addTag, addTagExactly, setRequestExact, toggleComposition, addOutfitStyle, removeOutfitStyle, briefFromCard, chooseChanges, leaveOutVariant, restoreVariant, setBaseScene, briefFromPrompt, emptyBrief, leaveOutScene, removeCharacter, removeLook, removeNever,
-  removeTag, restoreLook, restoreScene, setCharacterRole, setPeople, toSceneRequests,
+  removeTag, restoreLook, restoreScene, setCharacterRole, setPeople, settleStart, toSceneRequests,
   type ChangesAxis, type PackBrief, type RequestRole, type SceneRequests,
 } from '@/lib/pack/brief'
 import {
@@ -12,6 +12,7 @@ import {
 import { migratePackPreferences, sanitizePackPreferences } from '@/lib/pack/pack-config-migration'
 import { normalizeTagForPack } from '@/lib/pack/pack-generator'
 import type { CastRole } from '@/lib/pack/scene/cast'
+import type { Permanence } from '@/lib/pack/scene/permanence'
 import type { PackPeople } from '@/lib/pack/scene/scene-pool'
 import { userPreferences, type PackPreferences } from '@/lib/storage'
 
@@ -91,6 +92,12 @@ export interface UsePackBriefResult {
     offered: { outfit: string[]; pose: string[] }
     peopleTags: string[]
   }
+  /**
+   * The permanence data, once loaded (and whenever it changes). A start made before it arrived is
+   * placed again with it, once: the tags the user hasn't moved go where the data says
+   * (settleStart), with no Undo entry. Later starts read it.
+   */
+  placeWith: (permanence: (tag: string) => Permanence) => void
 
   preferences: PackPreferences
   setPromptCount: (count: number) => void
@@ -105,6 +112,9 @@ export interface UsePackBriefResult {
   setRowDefaults: (row: DefaultRow, tags: readonly string[]) => string[]
   removeRowDefault: (row: DefaultRow, tag: string) => string[]
 }
+
+/** A start made before the permanence data loaded: the brief it made, and how the same start makes it with the data. */
+type Unsettled = { brief: PackBrief; remake: (permanence: (tag: string) => Permanence) => PackBrief }
 
 function readPreferences(): PackPreferences {
   if (typeof window === 'undefined') return migratePackPreferences(null, null)
@@ -122,8 +132,14 @@ function readPreferences(): PackPreferences {
  * brief-history.ts and pack-config-migration.ts; this hook is the React and storage glue.
  * `overrides` is read at the moment of each action, so its growth doesn't change the
  * identity of the actions.
+ * `options.remake` makes `initial` again with the permanence data (the same start): `initial`
+ * may have been made before the data loaded, and placeWith places it again with it.
  */
-export function usePackBrief(overrides: Record<string, string>, initial?: PackBrief, options?: { seeded?: boolean }): UsePackBriefResult {
+export function usePackBrief(
+  overrides: Record<string, string>,
+  initial?: PackBrief,
+  options?: { seeded?: boolean; remake?: (permanence: (tag: string) => Permanence) => PackBrief }
+): UsePackBriefResult {
   const [preferences, setPreferencesState] = useState<PackPreferences>(readPreferences)
   // A pack can start with its brief already made (an entry), so nothing is written while rendering.
   // A pack kept across a reload comes back as it was: its defaults were seeded when it started.
@@ -136,17 +152,42 @@ export function usePackBrief(overrides: Record<string, string>, initial?: PackBr
   const historyRef = useRef(history)
   const preferencesRef = useRef(preferences)
   useEffect(() => { overridesRef.current = overrides }, [overrides])
+  // The permanence data once placeWith has given it, and the start still to place with it:
+  // the brief the start made, and how the same start makes it with the data.
+  const permanenceRef = useRef<((tag: string) => Permanence) | null>(null)
+  const unsettledRef = useRef<Unsettled | null>(
+    initial && options?.remake && !options.seeded ? { brief: initial, remake: options.remake } : null
+  )
 
   const setHistoryNow = useCallback((next: BriefHistory) => {
     historyRef.current = next
     setHistory(next)
   }, [])
 
+  const placeWith = useCallback((permanence: (tag: string) => Permanence) => {
+    permanenceRef.current = permanence
+    const unsettled = unsettledRef.current
+    if (!unsettled) return
+    unsettledRef.current = null
+    const settled = unsettled.remake(permanence)
+    const current = historyRef.current
+    // The briefs Undo goes back to too, so it never brings the old placing back.
+    const place = (brief: PackBrief) => settleStart(unsettled.brief, settled, brief)
+    const present = place(current.present)
+    const past = current.past.map((c) => {
+      const brief = place(c.brief)
+      return brief === c.brief ? c : { ...c, brief }
+    })
+    if (present !== current.present || past.some((c, i) => c !== current.past[i])) setHistoryNow({ present, past })
+  }, [setHistoryNow])
+
   const change = useCallback((label: string, edit: (brief: PackBrief) => PackBrief) => {
     setHistoryNow(commit(historyRef.current, edit(historyRef.current.present), label))
   }, [setHistoryNow])
 
-  const start = useCallback((brief: PackBrief) => {
+  /** `remake`: how the start makes `brief` with the permanence data, for a start made before it loaded. */
+  const start = useCallback((brief: PackBrief, remake?: Unsettled['remake']) => {
+    unsettledRef.current = remake && !permanenceRef.current ? { brief, remake } : null
     // The defaults as saved now: the classic builder may have changed Never since.
     const fresh = readPreferences()
     preferencesRef.current = fresh
@@ -255,13 +296,15 @@ export function usePackBrief(overrides: Record<string, string>, initial?: PackBr
   const startWith = useCallback((brief: PackBrief) => start(brief), [start])
   const startFromCharacters = useCallback((names: string[]) => start(briefFromCharacters(names)), [start])
   const startFromPrompt = useCallback((text: string) => {
-    const { brief, peopleTags } = briefFromPrompt(text, overridesRef.current)
-    start(brief)
+    const overrides = overridesRef.current
+    const { brief, peopleTags } = briefFromPrompt(text, overrides, permanenceRef.current ?? undefined)
+    start(brief, (permanence) => briefFromPrompt(text, overrides, permanence).brief)
     return { peopleTags }
   }, [start])
   const startFromCard = useCallback((tags: readonly string[]) => {
-    const { brief, offered, peopleTags } = briefFromCard(tags, overridesRef.current)
-    start(brief)
+    const overrides = overridesRef.current
+    const { brief, offered, peopleTags } = briefFromCard(tags, overrides, permanenceRef.current ?? undefined)
+    start(brief, (permanence) => briefFromCard(tags, overrides, permanence).brief)
     return { offered, peopleTags }
   }, [start])
 
@@ -313,7 +356,7 @@ export function usePackBrief(overrides: Record<string, string>, initial?: PackBr
     setPeople: setPeopleAction, setChanges: setChangesAction,
     leaveOutScene: leaveOutSceneAction, restoreScene: restoreSceneAction,
     setBaseScene: setBaseSceneAction, leaveOutVariant: leaveOutVariantAction, restoreVariant: restoreVariantAction,
-    startEmpty, startWith, startFromCharacters, startFromPrompt, startFromCard,
+    startEmpty, startWith, startFromCharacters, startFromPrompt, startFromCard, placeWith,
     preferences, setPromptCount, setIncludeSensitive, addNeverDefault, removeNeverDefault,
     rowDefaults: getRowDefaults, setRowDefaults, removeRowDefault,
   }

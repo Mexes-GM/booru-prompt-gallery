@@ -51,6 +51,7 @@ import {
 } from "@/lib/pack/brief"
 import { DEFAULT_ROWS, briefFromCharacters, rowDefaults, rowMatchesDefaults, type DefaultRow } from "@/lib/pack/brief-history"
 import type { CastRole } from "@/lib/pack/scene/cast"
+import type { Permanence } from "@/lib/pack/scene/permanence"
 import type { PackPeople } from "@/lib/pack/scene/scene-pool"
 import { getTagSlotFromOverrides } from "@/lib/tag-taxonomy"
 import { normalizeTagForPack } from "@/lib/pack/pack-generator"
@@ -181,8 +182,15 @@ export interface PackBriefBuilderProps {
   onOpenClassic?: () => void
 }
 
-/** The brief a start makes, and what to say about it. Pure: nothing is written while rendering. */
-function begin(start: PackBriefStart, overrides: Record<string, string>): { brief: PackBrief; note: StartNote } {
+/**
+ * The brief a start makes, and what to say about it. Pure: nothing is written while rendering.
+ * `permanence`: the permanence data, to make it again once it has loaded (usePackBrief placeWith).
+ */
+function begin(
+  start: PackBriefStart,
+  overrides: Record<string, string>,
+  permanence?: (tag: string) => Permanence,
+): { brief: PackBrief; note: StartNote } {
   switch (start.kind) {
     case "restored":
       return { brief: start.saved.brief, note: { kind: "restored", dropped: !!start.saved.resultsDropped } }
@@ -192,15 +200,15 @@ function begin(start: PackBriefStart, overrides: Record<string, string>): { brie
       // The card's characters come from the post's own character field, known to the taxonomy or not.
       const characters = splitTags(start.post.tag_string_character ?? "")
       const tags = splitTags(`${start.post.tag_string ?? ""} ${start.post.tag_string_character ?? ""}`)
-      const { brief, offered } = briefFromCardPost(tags, characters, overrides)
+      const { brief, offered } = briefFromCardPost(tags, characters, overrides, permanence)
       return { brief, note: { kind: "card", named: characters.length > 0, outfit: offered.outfit, pose: offered.pose } }
     }
     case "prompt": {
-      const { brief, peopleTags } = briefFromPrompt(start.text, overrides)
+      const { brief, peopleTags } = briefFromPrompt(start.text, overrides, permanence)
       return { brief: withPromptPeople(brief, peopleTags), note: { kind: "prompt" } }
     }
     case "search": {
-      const { brief, skipped } = briefFromSearch(start.search, overrides, start.character)
+      const { brief, skipped } = briefFromSearch(start.search, overrides, start.character, permanence)
       return { brief, note: { kind: "search", skipped } }
     }
   }
@@ -213,8 +221,12 @@ function begin(start: PackBriefStart, overrides: Record<string, string>): { brie
  */
 export function PackBriefBuilder(props: PackBriefBuilderProps) {
   const { start, open, overrides, rating, onRatingChange, onExit, onNewPack, onOpenClassic } = props
-  const [begun] = useState(() => begin(start, overrides))
-  const pack = usePackBrief(overrides, begun.brief, { seeded: start.kind === "restored" })
+  const [begun] = useState(() => ({
+    ...begin(start, overrides),
+    // The same start with the permanence data: the brief above may be made before it loads.
+    remake: (permanence: (tag: string) => Permanence) => begin(start, overrides, permanence).brief,
+  }))
+  const pack = usePackBrief(overrides, begun.brief, { seeded: start.kind === "restored", remake: begun.remake })
   // The environment while open; held while closed.
   // The pack keeps the booru and gallery search it was started with, open or closed; only
   // "New pack" takes the gallery's current ones. Its own controls (site, rating) stay live:
@@ -532,6 +544,12 @@ function BriefWorkspace({
     outfitOptions,
   })
   const { plan, identity, candidates, candidatesPending, result, isGenerating, othersTag } = engine
+  // The start's tags placed before the permanence data loaded go where it says, once it has.
+  const { placeWith } = pack
+  const { permanence } = engine
+  useEffect(() => {
+    if (permanence) placeWith(permanence)
+  }, [permanence, placeWith])
   // The searches of the character's own posts: their posts' scenes go first. Read
   // from the plan of the previous render (the plan needs the posts to settle).
   const planOwnKey = plan.scenes.filter((s) => s.kind === "own").map((s) => s.id).join("||")

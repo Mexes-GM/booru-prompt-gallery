@@ -115,6 +115,8 @@ function isPeopleTag(normalized: string): boolean {
  * What the brief reads a tag's role with besides the taxonomy: the permanence data (what lasts
  * and what belongs to the picture) once the app has loaded it. Until then the slots' defaults
  * apply. The measured relations are read where the app keeps them (loadedTagRelations).
+ * A call can pass the permanence it reads instead (`permanence`): a start made before the data
+ * loaded is placed again with it once it has (settleStart), whenever the app sets it here.
  */
 let routePermanence: ((tag: string) => Permanence) | undefined
 export function setRoutePermanence(permanence: ((tag: string) => Permanence) | undefined): void {
@@ -124,13 +126,24 @@ export function setRoutePermanence(permanence: ((tag: string) => Permanence) | u
 // One context per set of data: tagRole caches its answers per context object.
 let lastContext: { overrides: Record<string, string>; permanence?: (tag: string) => Permanence; relations: TagRelations | null; ctx: TagRoleContext } | null = null
 const castContexts = new WeakMap<TagRoleContext, Map<string, TagRoleContext>>()
-function routeContext(overrides: Record<string, string>): TagRoleContext {
+function routeContext(overrides: Record<string, string>, permanence: ((tag: string) => Permanence) | undefined = routePermanence): TagRoleContext {
+  if (permanence && permanence !== routePermanence) return contextWith(overrides, permanence)
   const relations = loadedTagRelations()
   if (lastContext && lastContext.overrides === overrides && lastContext.permanence === routePermanence && lastContext.relations === relations) {
     return lastContext.ctx
   }
   const ctx: TagRoleContext = { overrides, permanence: routePermanence ?? lookStaysPermanence(overrides), relations }
   lastContext = { overrides, permanence: routePermanence, relations, ctx }
+  return ctx
+}
+// A context for a permanence passed by the caller: one per permanence, rebuilt when the data it reads changes.
+const explicitContexts = new WeakMap<(tag: string) => Permanence, TagRoleContext>()
+function contextWith(overrides: Record<string, string>, permanence: (tag: string) => Permanence): TagRoleContext {
+  const relations = loadedTagRelations()
+  const found = explicitContexts.get(permanence)
+  if (found && found.overrides === overrides && found.relations === relations) return found
+  const ctx: TagRoleContext = { overrides, permanence, relations }
+  explicitContexts.set(permanence, ctx)
   return ctx
 }
 
@@ -160,7 +173,8 @@ function castContext(base: TagRoleContext, cast: readonly CastRole[]): TagRoleCo
 }
 
 /** The role of a tag as the brief reads it (taxonomy, permanence, relations). */
-export const briefRole = (tag: string, overrides: Record<string, string>): TagRole => tagRole(tag, routeContext(overrides))
+export const briefRole = (tag: string, overrides: Record<string, string>, permanence?: (tag: string) => Permanence): TagRole =>
+  tagRole(tag, routeContext(overrides, permanence))
 
 /**
  * Decides where a tag goes from its role (lib/pack/tag-role.ts briefRouteOf), one rule for every
@@ -169,12 +183,12 @@ export const briefRole = (tag: string, overrides: Record<string, string>): TagRo
  * what is done with a garment to Doing ("shirt lift") or Also ("open jacket"); an action, one with
  * an object ("holding sword", "reading") included, to Doing; a place, and the time, weather and
  * light, to Where; who is in the picture to People; how the picture is made, artists and works,
- * and what nothing knows, to Style. People counts come first.
+ * and what nothing knows, to Style. People counts come first. `permanence`: see routePermanence.
  */
-export function routeTag(tag: string, overrides: Record<string, string>): BriefRoute {
+export function routeTag(tag: string, overrides: Record<string, string>, permanence?: (tag: string) => Permanence): BriefRoute {
   const normalized = normalizeTagForPack(tag)
   if (isPeopleTag(normalized)) return { kind: 'people' }
-  return routeOfRole(briefRole(normalized, overrides))
+  return routeOfRole(briefRole(normalized, overrides, permanence))
 }
 
 /** "holding sword", "carrying under arm": a hand verb with what it holds. */
@@ -199,7 +213,8 @@ function routeOfRole(role: TagRole): BriefRoute {
 }
 
 /** True for the time of day, the weather, the light and effects ("night", "rain"): shown in Where, asked of the engine as Also. */
-export const isAmbienceTag = (tag: string, overrides: Record<string, string>): boolean => briefRole(tag, overrides).kind === 'ambience'
+export const isAmbienceTag = (tag: string, overrides: Record<string, string>, permanence?: (tag: string) => Permanence): boolean =>
+  briefRole(tag, overrides, permanence).kind === 'ambience'
 
 /** A row of the brief a tag can be typed in. `style` is the row of `literal`. */
 export type TypedRow = 'who' | RequestRole | 'style'
@@ -242,8 +257,7 @@ export function isOthersTag(
   const cast = Array.from(new Set(castRoles.filter((r): r is CastRole => !!r)))
   if (cast.length !== 1) return false
   if (isPeopleTag(normalizeTagForPack(tag))) return false
-  const base: TagRoleContext = permanence === routePermanence ? routeContext(overrides) : othersContext(overrides, permanence)
-  const role = tagRole(tag, castContext(base, cast))
+  const role = tagRole(tag, castContext(routeContext(overrides, permanence), cast))
   if (role.owner === 'others') return role.kind !== 'composition'
   // The genitals of the other sex are another person's, a lasting trait too ("huge penis" next to a girl).
   if (role.kind !== 'aspect') return false
@@ -252,15 +266,6 @@ export function isOthersTag(
 }
 const MALE_GENITALS = /\b(penis(es)?|testicles|scrotum|foreskin)\b/
 const FEMALE_GENITALS = /\b(pussy|vulva|vagina|clitoris|labia)\b/
-const othersContexts = new WeakMap<(tag: string) => Permanence, TagRoleContext>()
-function othersContext(overrides: Record<string, string>, permanence: (tag: string) => Permanence): TagRoleContext {
-  const relations = loadedTagRelations()
-  const found = othersContexts.get(permanence)
-  if (found && found.overrides === overrides && found.relations === relations) return found
-  const ctx: TagRoleContext = { overrides, permanence, relations }
-  othersContexts.set(permanence, ctx)
-  return ctx
-}
 
 /** Adds a tag to the others' look (and takes it off Never and the characters' added look). */
 export function addOther(brief: PackBrief, tag: string): PackBrief {
@@ -301,13 +306,19 @@ export function emptyBrief(): PackBrief {
  * slot as a request. A known request keeps its own role (the role decides how the
  * engine treats it: a pose picks scenes, a place is imposed), and a character, a look
  * tag or a count goes where it goes. Counts are ignored here: the number of people
- * is decided elsewhere.
+ * is decided elsewhere. `permanence`: see routePermanence.
  */
-export function addTag(brief: PackBrief, tag: string, overrides: Record<string, string>, into?: RequestRole): PackBrief {
+export function addTag(
+  brief: PackBrief,
+  tag: string,
+  overrides: Record<string, string>,
+  into?: RequestRole,
+  permanence?: (tag: string) => Permanence
+): PackBrief {
   const typed = tag.trim()
   const name = normalizeTagForPack(typed)
   if (!name) return brief
-  const route = routeTag(name, overrides)
+  const route = routeTag(name, overrides, permanence)
   // A count sets People; a pairing ("hetero") or a focus is who is in the picture: neither is a tag of the brief.
   if (route.kind === 'people' || route.kind === 'composition') return brief
 
@@ -322,7 +333,7 @@ export function addTag(brief: PackBrief, tag: string, overrides: Record<string, 
   const role: RequestRole | null = route.kind === 'request' ? route.role : into ?? null
   if (role) {
     // The time, the weather or the light shows in Where with the places (see PackRequest.ambience).
-    const ambience = role === 'where' && isAmbienceTag(name, overrides)
+    const ambience = role === 'where' && isAmbienceTag(name, overrides, permanence)
     if (!next.requests.some((r) => same(r.tag, name))) next.requests.push(ambience ? { tag: name, role, ambience: true } : { tag: name, role })
   } else if (!has(next.literal, name)) {
     next.literal.push(typed)
@@ -513,19 +524,26 @@ export function restoreScene(brief: PackBrief, id: string): PackBrief {
   return next
 }
 
-/** Splits a pasted prompt into the brief; counts and "solo" come back apart, none is lost. */
-export function briefFromPrompt(text: string, overrides: Record<string, string>): { brief: PackBrief; peopleTags: string[] } {
+/**
+ * Splits a pasted prompt into the brief; counts and "solo" come back apart, none is lost.
+ * `permanence`: see routePermanence.
+ */
+export function briefFromPrompt(
+  text: string,
+  overrides: Record<string, string>,
+  permanence?: (tag: string) => Permanence
+): { brief: PackBrief; peopleTags: string[] } {
   let brief = emptyBrief()
   const peopleTags: string[] = []
   for (const tag of splitCommaSeparatedTags(text)) {
     const name = normalizeTagForPack(tag)
     if (!name) continue
     // Counts set People; a pairing or focus ("hetero") is who is in the picture too: kept apart, never lost.
-    const kind = routeTag(name, overrides).kind
+    const kind = routeTag(name, overrides, permanence).kind
     if (kind === 'people' || kind === 'composition') {
       if (!peopleTags.includes(name)) peopleTags.push(name)
     } else {
-      brief = addTag(brief, tag, overrides)
+      brief = addTag(brief, tag, overrides, undefined, permanence)
     }
   }
   return { brief, peopleTags }
@@ -534,10 +552,12 @@ export function briefFromPrompt(text: string, overrides: Record<string, string>)
 /**
  * The brief a gallery card starts. Characters and look go in; its clothes and poses
  * are only offered (the card's moment is not what the pack asks for); the rest is dropped.
+ * `permanence`: see routePermanence.
  */
 export function briefFromCard(
   tags: readonly string[],
-  overrides: Record<string, string>
+  overrides: Record<string, string>,
+  permanence?: (tag: string) => Permanence
 ): { brief: PackBrief; offered: { outfit: string[]; pose: string[] }; peopleTags: string[] } {
   let brief = emptyBrief()
   const offered = { outfit: [] as string[], pose: [] as string[] }
@@ -546,13 +566,55 @@ export function briefFromCard(
   for (const tag of tags) {
     const name = normalizeTagForPack(tag)
     if (!name) continue
-    const route = routeTag(name, overrides)
+    const route = routeTag(name, overrides, permanence)
     if (route.kind === 'people' || route.kind === 'composition') offer(peopleTags, name)
-    else if (route.kind === 'character' || route.kind === 'look') brief = addTag(brief, name, overrides)
+    else if (route.kind === 'character' || route.kind === 'look') brief = addTag(brief, name, overrides, undefined, permanence)
     else if (route.kind === 'request' && route.role === 'wearing') offer(offered.outfit, name)
     else if (route.kind === 'request' && route.role === 'doing') offer(offered.pose, name)
   }
   return { brief, offered, peopleTags }
+}
+
+/** Where a brief has a tag: a character's added look, a request of a role, the Style row, or nowhere. */
+function placeOf(brief: PackBrief, tag: string): string | null {
+  if (brief.who.some((c) => has(c.addedLook, tag))) return 'look'
+  const request = brief.requests.find((r) => same(r.tag, tag))
+  if (request) return `request:${request.role}${request.ambience ? ':ambience' : ''}`
+  return has(brief.literal, tag) ? 'literal' : null
+}
+
+/**
+ * A start made before the permanence data loaded (briefFromPrompt, briefFromCard), once it has:
+ * `start` is the brief the start made then, `settled` the one the same start makes with the data,
+ * `current` the brief now. Each tag the two place differently ("navel" a trait in Who, then in
+ * Also) goes where `settled` has it, unless the user has moved or removed it since (it is no
+ * longer where `start` put it). Characters, people and Never stay as they are.
+ */
+export function settleStart(start: PackBrief, settled: PackBrief, current: PackBrief): PackBrief {
+  const looks = (b: PackBrief) => b.who.flatMap((c) => c.addedLook)
+  const tags = [start, settled].flatMap((b) => [...looks(b), ...b.requests.map((r) => r.tag), ...b.literal])
+  let next = current
+  const seen = new Set<string>()
+  for (const tag of tags) {
+    const name = normalizeTagForPack(tag)
+    if (seen.has(name)) continue
+    seen.add(name)
+    const was = placeOf(start, name)
+    const now = placeOf(settled, name)
+    if (was === now || placeOf(next, name) !== was) continue
+    // Put elsewhere by the user (Never, Others) or a character: theirs.
+    if (has(next.never, name) || has(next.others, name) || next.who.some((c) => c.tag !== null && same(c.tag, name))) continue
+    next = removeTag(next, name)
+    if (now === 'look') {
+      const owner = settled.who.find((c) => has(c.addedLook, name))?.tag ?? null
+      next = addLook(next, findCharacter(next, owner) ? owner : next.who[0].tag, name)
+    } else if (now === 'literal') {
+      next.literal.push(settled.literal.find((t) => same(t, name))!)
+    } else if (now) {
+      next.requests.push({ ...settled.requests.find((r) => same(r.tag, name))! })
+    }
+  }
+  return next
 }
 
 export function toSceneRequests(brief: PackBrief): BriefSceneRequests {
