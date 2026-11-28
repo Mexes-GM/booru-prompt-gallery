@@ -24,6 +24,7 @@ import {
 import { assignTurns, generateTurnsAsync, turnShares } from "../lib/pack/cast-turns"
 import { normalizeTagForPack } from "../lib/pack/pack-generator"
 import { readSavedPack, savedPackToStore } from "../lib/pack/saved-pack"
+import { traitShard, traitShardFile } from "../lib/prompt/natural-traits"
 import { MAX_CAST, MAX_TURNS_CAST } from "../lib/pack/scene/cast"
 import { createPermanence } from "../lib/pack/scene/permanence"
 import { buildScenePool } from "../lib/pack/scene/scene-pool"
@@ -120,6 +121,26 @@ check("the shipped index: Genshin Impact girls include the adults tested with an
   for (const adult of ["raiden shogun", "yae miko", "beidou (genshin impact)", "ningguang (genshin impact)"]) assert.ok(girls.includes(adult), adult)
   for (const young of ["nahida (genshin impact)", "qiqi (genshin impact)", "klee (genshin impact)"]) assert.ok(!girls.includes(young), young)
   assert.ok(index.characters.every((c) => !/\b(loli|shota|child)\b/.test(c.tag)))
+})
+
+check("the shipped index: every character has a trait profile, each once, none of the young ones", () => {
+  const raw = JSON.parse(readFileSync(join(__dirname, "../public/character-index.json"), "utf8"))
+  const index = readCharacterIndex(raw)!
+  const shards = new Map<number, Record<string, unknown>>()
+  const profileOf = (tag: string) => {
+    const shard = traitShard(tag)
+    if (!shards.has(shard)) shards.set(shard, JSON.parse(readFileSync(join(__dirname, "../public/natural-traits", traitShardFile(shard)), "utf8")))
+    return shards.get(shard)![tag]
+  }
+  const missing = index.characters.filter((c) => !profileOf(c.tag)).map((c) => c.tag)
+  assert.deepEqual(missing, [], "a picked character's look comes from their profile, with no search")
+  assert.equal(new Set(index.characters.map((c) => c.tag)).size, index.characters.length, "nobody twice")
+  for (const tag of ["aglaea (honkai: star rail)", "carlotta (wuthering waves)", "the herta (honkai: star rail)"]) {
+    assert.equal(index.characters.find((c) => c.tag === tag)?.series, tag.slice(tag.indexOf("(") + 1, -1), tag)
+  }
+  for (const left of ["rumia", "noumi kudryavka", "trainer (umamusume)", "hasumi (swimsuit) (blue archive)"]) {
+    assert.ok(!index.characters.some((c) => c.tag === left), left)
+  }
 })
 
 // ── 3. The draw ───────────────────────────────────────────────────────────────

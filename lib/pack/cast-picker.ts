@@ -64,7 +64,7 @@ export interface StoredCharacterIndex {
 export interface CharacterFacts {
   tag: string
   series?: string | null
-  /** Tags the dataset says most of their posts carry (the Noob wiki's core tags). */
+  /** Tags the data says most of their posts carry (their core tags). */
   coreTags?: readonly string[]
   /** Their trait profile: tag -> share of their posts. */
   profile?: Readonly<Record<string, number>>
