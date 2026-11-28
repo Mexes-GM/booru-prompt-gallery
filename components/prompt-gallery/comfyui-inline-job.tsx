@@ -16,7 +16,8 @@ import { announcement, errorLine, queueLabel, stepLabel, stepProgress } from "@/
 import { getComfySession, type ComfyJob, type ComfyJobStatus } from "@/lib/comfyui/session"
 import type { ApiWorkflow } from "@/lib/comfyui/types"
 import { cn } from "@/lib/utils"
-import { ComfyImageViewer, VIEWER_TEXT } from "./comfyui-image-viewer"
+import { ComfyImageViewer } from "./comfyui-image-viewer"
+import { VIEWER_TEXT } from "./comfyui-image-viewer-text"
 import { COMFY_EASE, developProps, iconProps, swapProps, useComfyMotion } from "./comfyui-motion"
 
 export interface ComfyInlineJobProps {

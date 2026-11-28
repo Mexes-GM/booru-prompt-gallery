@@ -16,17 +16,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { AlertCircle, Download, ExternalLink, Loader2, RotateCw, X } from "lucide-react"
 import { comfyImageCache, imageFileName } from "@/lib/comfyui/image-view"
 import { cn } from "@/lib/utils"
-
-export const VIEWER_TEXT = {
-  title: "Generated image",
-  open: "View full size",
-  download: "Download",
-  newTab: "Open in new tab",
-  close: "Close",
-  retry: "Try again",
-  imageFailed: "Couldn't load the image. Check that ComfyUI is still running, then try again.",
-  fileFailed: "Couldn't get the file from ComfyUI.",
-} as const
+import { VIEWER_TEXT } from "./comfyui-image-viewer-text"
 
 type FileState = { key: string; status: "ready"; objectUrl: string } | { key: string; status: "error" }
 
@@ -114,6 +104,7 @@ function ViewerBody({ url, onClose }: { url: string; onClose: () => void }) {
 
   return (
     <div
+      role="presentation"
       className="flex min-h-0 flex-1 flex-col gap-3 p-3 sm:p-5 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))]"
       // React passes events up through the portal: the card or row under the viewer must not get them.
       onPointerDown={(e) => {

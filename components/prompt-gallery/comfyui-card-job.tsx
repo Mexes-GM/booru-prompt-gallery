@@ -20,7 +20,8 @@ import { announcement, errorLine, queueLabel, stepLabel, stepProgress } from "@/
 import { getComfySession, type ComfyJob } from "@/lib/comfyui/session"
 import type { ApiWorkflow } from "@/lib/comfyui/types"
 import { cn } from "@/lib/utils"
-import { ComfyImageViewer, VIEWER_TEXT } from "./comfyui-image-viewer"
+import { ComfyImageViewer } from "./comfyui-image-viewer"
+import { VIEWER_TEXT } from "./comfyui-image-viewer-text"
 import { COMFY_EASE, developProps, iconProps, swapProps, useComfyMotion, type ComfyMotion } from "./comfyui-motion"
 
 export interface ComfyCardJobProps {
@@ -383,6 +384,7 @@ function ComfyCardJobInner({ jobId, api, launching, originalSrc, referrerPolicy,
   return (
     <div
       ref={rootRef}
+      role="presentation"
       className={cn("absolute inset-0 overflow-hidden", isPresent ? "pointer-events-none" : "pointer-events-none [&_*]:pointer-events-none!")}
       onClick={stop}
       onKeyDown={stop}
