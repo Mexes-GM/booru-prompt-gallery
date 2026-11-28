@@ -67,7 +67,14 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
       console.error("[useSavedArtists] fetch error:", error)
       return []
     }
-    return data.map((r) => rowToArtist(r))
+    // Newest first: an artist saved on both e6ai and floofgens before the data moved keeps one entry.
+    const seen = new Set<string>()
+    return data.map((r) => rowToArtist(r)).filter((a) => {
+      const key = buildKey(a.provider, a.artistTag)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
   }, [userId, supabase])
 
   const loadFromLocal = useCallback((): SavedArtist[] => {

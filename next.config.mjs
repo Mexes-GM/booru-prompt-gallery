@@ -15,8 +15,9 @@ const SCRIPT_EVAL = process.env.NODE_ENV === 'development' ? "'unsafe-eval' " : 
 
 // Pack Mode's scene model runs on onnxruntime-web, which compiles WebAssembly.
 // 'wasm-unsafe-eval' allows compiling WebAssembly only, not eval() of JavaScript.
-// The page's CSP also covers the model's worker (a /_next/static script).
-const SCRIPT_WASM = "'wasm-unsafe-eval' "
+// The page's CSP also covers the model's worker (a /_next/static script). Only added
+// when the model is configured: without it nothing compiles WebAssembly.
+const SCRIPT_WASM = process.env.NEXT_PUBLIC_SCENE_MODEL_URL ? "'wasm-unsafe-eval' " : ''
 
 // The image/API proxies (the Cloudflare Worker and the CloudFront distributions)
 // get their exact origins, read from the same NEXT_PUBLIC_* vars the client
