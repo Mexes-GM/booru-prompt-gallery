@@ -2058,6 +2058,8 @@ const BriefResultRow = memo(function BriefResultRow({
       postSite={postProvider ? PROVIDER_LABELS[postProvider] : undefined}
       inventedScene={!!prompt.scene?.invented}
       size={promptSize(prompt)}
+      width={prompt.width}
+      height={prompt.height}
       pending={format !== "tags" && natural.status === "loading"}
       locked={locked}
       busy={busy}

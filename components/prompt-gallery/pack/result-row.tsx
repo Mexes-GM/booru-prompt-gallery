@@ -3,7 +3,8 @@
 /**
  * One generated prompt: the post its scene came from (as text, linked to the post
  * on its site; the pack loads no pictures), the prompt in mono, and copy,
- * re-roll and lock; in ComfyUI mode also Send, with the job under the prompt. In tag format each tag is a button whose menu puts it on the
+ * re-roll and lock; in ComfyUI mode also Send, with the job in a picture box beside the
+ * prompt (the actions move under the prompt then). In tag format each tag is a button whose menu puts it on the
  * card as Always or Never. A locked row keeps its prompt when the pack is generated
  * again, and says so.
  *
@@ -24,7 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import type { ApiWorkflow } from "@/lib/comfyui/types"
 import { cn } from "@/lib/utils"
-import { ComfyInlineJob, ComfyInlineJobPresence } from "../comfyui-inline-job"
+import { ComfySideJob, ComfySideJobPresence } from "../comfyui-side-job"
 import { SendGlyph } from "../comfyui-motion"
 import { CAST_MODE_TEXT, COPY_FAILED, SEND_TEXT, SIZE_TEXT } from "./pack-text"
 import { SCENE_TEXT } from "./scene-ref"
@@ -60,11 +61,14 @@ export interface ResultRowProps {
   onToggleLock?: (index: number) => void
   /** The suggested size ("832×1216"), shown beside the actions; none when the scene had no size. */
   size?: string | null
+  /** The same size as numbers, for the shape of the picture box before ComfyUI's image is in. */
+  width?: number | null
+  height?: number | null
   onAlways: (tag: string) => void
   onNever: (tag: string) => void
   /** One character per prompt: the name of the character this prompt is for. */
   character?: string
-  /** ComfyUI mode: the row gets Send, and shows its job under the prompt. Without it, no Send. */
+  /** ComfyUI mode: the row gets Send, and shows its job beside the prompt. Without it, no Send. */
   onSend?: (index: number) => void
   /** The job this row sent, while it is shown. */
   sendJob?: { jobId: string; api: ApiWorkflow } | null
@@ -158,6 +162,8 @@ export const ResultRow = memo(function ResultRow({
   onReroll,
   onToggleLock,
   size,
+  width,
+  height,
   onAlways,
   onNever,
   character,
@@ -234,6 +240,12 @@ export const ResultRow = memo(function ResultRow({
   const sendRef = useRef<HTMLButtonElement>(null)
   const focusSend = useCallback(() => sendRef.current?.focus(), [])
   const dismissSend = useCallback(() => onDismissSend?.(index), [onDismissSend, index])
+  // The picture box's column stays until the box has finished leaving.
+  const showJob = !!onSend && (sendJob !== null || sending)
+  const [boxShown, setBoxShown] = useState(showJob)
+  if (showJob && !boxShown) setBoxShown(true)
+  const hideBox = useCallback(() => setBoxShown(false), [])
+  const side = boxShown
 
   const copyPrompt = async () => {
     let ok = false
@@ -250,7 +262,11 @@ export const ResultRow = memo(function ResultRow({
       <div
         className={cn(
           // Narrow: number and text, then the row's actions in one line under the text.
-          "group grid grid-cols-[1.5rem_minmax(0,1fr)] items-start gap-x-2.5 gap-y-1.5 rounded-xl border p-3 @md:grid-cols-[1.5rem_minmax(0,1fr)_auto]",
+          // With a picture box: the box beside the text, and the actions under them until the row is wide.
+          "group grid items-start gap-x-2.5 gap-y-1.5 rounded-xl border p-3",
+          side
+            ? "grid-cols-[1.5rem_minmax(0,1fr)_auto] @2xl:grid-cols-[1.5rem_minmax(0,1fr)_auto_auto]"
+            : "grid-cols-[1.5rem_minmax(0,1fr)] @md:grid-cols-[1.5rem_minmax(0,1fr)_auto]",
           "transition-[border-color,background-color] duration-150 ease-out-strong",
           locked ? "border-mode-pack-border bg-mode-pack-soft" : "border-border/60 bg-card hover:border-border",
         )}
@@ -330,18 +346,6 @@ export const ResultRow = memo(function ResultRow({
               ))}
             </div>
           )}
-          {onSend && (
-            <ComfyInlineJobPresence show={sendJob !== null || sending}>
-              <ComfyInlineJob
-                jobId={sendJob?.jobId ?? null}
-                api={sendJob?.api ?? null}
-                launching={sending}
-                onDismiss={dismissSend}
-                returnFocus={focusSend}
-                className="mt-1.5"
-              />
-            </ComfyInlineJobPresence>
-          )}
           {copy === "failed" && (
             <p className="mt-1 flex items-start gap-1.5 text-xs text-destructive-text">
               <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
@@ -350,7 +354,13 @@ export const ResultRow = memo(function ResultRow({
           )}
         </div>
 
-        <div className="col-start-2 -mr-1 flex flex-row items-center justify-end gap-0.5 @md:col-start-3 @md:row-start-1 @md:mr-0">
+        <div
+          className={cn(
+            "col-start-2 -mr-1 flex flex-row flex-wrap items-center justify-end gap-0.5",
+            // Narrow, they run under the text and the box; from @lg, under the text only.
+            side ? "col-span-2 row-start-2 @lg:col-span-1 @2xl:col-start-3 @2xl:row-start-1 @2xl:mr-0" : "@md:col-start-3 @md:row-start-1 @md:mr-0",
+          )}
+        >
           {size && (
             <span className="mr-1 font-mono text-[11px] tabular-nums text-muted-foreground">
               <span className="sr-only">{SIZE_TEXT.rowLabel}: </span>
@@ -409,6 +419,25 @@ export const ResultRow = memo(function ResultRow({
             {locked ? <Lock className="size-4" aria-hidden /> : <LockOpen className="size-4" aria-hidden />}
           </button>}
         </div>
+
+        {onSend && side && (
+          <ComfySideJobPresence
+            show={showJob}
+            onExitComplete={hideBox}
+            className="col-start-3 row-start-1 @lg:row-span-2 @2xl:col-start-4"
+          >
+            <ComfySideJob
+              jobId={sendJob?.jobId ?? null}
+              api={sendJob?.api ?? null}
+              launching={sending}
+              onDismiss={dismissSend}
+              returnFocus={focusSend}
+              width={width}
+              height={height}
+              className="w-[4.5rem] @sm:w-24 @lg:w-28"
+            />
+          </ComfySideJobPresence>
+        )}
       </div>
       <span className="sr-only" role={announce ? "status" : undefined} aria-live={announce ? "polite" : undefined}>
         {copy === "copied" ? `Prompt ${n} copied` : copy === "failed" ? COPY_FAILED : ""}

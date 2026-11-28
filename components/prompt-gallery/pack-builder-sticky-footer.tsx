@@ -52,7 +52,7 @@ import { MAX_CAST, type CastRole } from '@/lib/pack/scene/cast'
 import { usePackComfySend, type PackSendRow } from '@/hooks/use-pack-comfy-send'
 import { packSendRequest } from '@/lib/pack/pack-comfy-send'
 import type { ComfySent } from './comfyui-send'
-import { ComfyInlineJob, ComfyInlineJobPresence } from './comfyui-inline-job'
+import { ComfySideJob, ComfySideJobPresence } from './comfyui-side-job'
 import { SendGlyph } from './comfyui-motion'
 import { SEND_TEXT, sendAllAnnouncement, sendAllLabel, sendAllNote } from './pack/pack-text'
 
@@ -233,7 +233,7 @@ const PromptRow = memo(({
 }: {
     prompt: PackPrompt
     index: number
-    /** ComfyUI mode: Send beside Copy, and the job under the prompt. */
+    /** ComfyUI mode: Send beside Copy, and the job in a picture box beside the prompt. */
     onSend?: (index: number) => void
     sendJob?: ComfySent | null
     sending?: boolean
@@ -328,19 +328,21 @@ const PromptRow = memo(({
                 })}
             </p>
             )}
+            </div>
             {onSend && (
-                <ComfyInlineJobPresence show={sendJob !== null || sending}>
-                    <ComfyInlineJob
+                <ComfySideJobPresence show={sendJob !== null || sending} className="shrink-0">
+                    <ComfySideJob
                         jobId={sendJob?.jobId ?? null}
                         api={sendJob?.api ?? null}
                         launching={sending}
                         onDismiss={dismissSend}
                         returnFocus={focusSend}
-                        className="mt-1.5"
+                        width={prompt.width}
+                        height={prompt.height}
+                        className="w-[4.5rem] sm:w-24"
                     />
-                </ComfyInlineJobPresence>
+                </ComfySideJobPresence>
             )}
-            </div>
             <div className="flex flex-col sm:flex-row pointer-coarse:flex-col gap-0.5">
                 {onSend && (
                     <Button
