@@ -3,7 +3,7 @@
 /**
  * One ComfyUI job in a single compact row, for footers: the send, the queue
  * spot, the steps, then a small thumbnail of the result that opens it full
- * size. The card's motion at footer size: the row comes out of the Send
+ * size in the app's viewer. The card's motion at footer size: the row comes out of the Send
  * button beside it, its line changes in place, the result develops in, and a
  * failed send goes back into the button.
  */
@@ -13,9 +13,10 @@ import { AlertCircle, X } from "lucide-react"
 import { useComfyJob } from "@/hooks/use-comfyui-job"
 import { getComfyUISettings } from "@/hooks/use-comfyui-settings"
 import { announcement, errorLine, queueLabel, stepLabel, stepProgress } from "@/lib/comfyui/job-copy"
-import { getComfySession, type ComfyJob } from "@/lib/comfyui/session"
+import { getComfySession, type ComfyJob, type ComfyJobStatus } from "@/lib/comfyui/session"
 import type { ApiWorkflow } from "@/lib/comfyui/types"
 import { cn } from "@/lib/utils"
+import { ComfyImageViewer, VIEWER_TEXT } from "./comfyui-image-viewer"
 import { COMFY_EASE, developProps, iconProps, swapProps, useComfyMotion } from "./comfyui-motion"
 
 export interface ComfyInlineJobProps {
@@ -33,9 +34,13 @@ export interface ComfyInlineJobProps {
 const ICON_BUTTON =
   "relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-ring pointer-coarse:after:absolute pointer-coarse:after:-inset-2.5"
 
-function ComfyInlineJobInner({ jobId, api, launching, onDismiss, returnFocus, className }: ComfyInlineJobProps) {
+/**
+ * What a footer or a row needs to draw one job: the last snapshot (kept while
+ * the job's view leaves), what a screen reader hears, and close and cancel,
+ * which hand focus back first. Closes by itself when the job goes away.
+ */
+export function useInlineJob({ jobId, launching, onDismiss, returnFocus }: Pick<ComfyInlineJobProps, "jobId" | "launching" | "onDismiss" | "returnFocus">) {
   const live = useComfyJob(jobId)
-  const m = useComfyMotion()
   const isPresent = useIsPresent()
 
   // The last snapshot, so the row can still draw it while it leaves.
@@ -75,14 +80,26 @@ function ComfyInlineJobInner({ jobId, api, launching, onDismiss, returnFocus, cl
     // eslint-disable-next-line react-hooks/exhaustive-deps -- close reads the latest props
   }, [liveStatus, jobId, launching, isPresent])
 
-  if (!job && !launching && isPresent) return null
-
   const cancel = () => {
     keepFocus()
     if (jobId) void getComfySession(getComfyUISettings().url).cancel(jobId).catch(() => {})
   }
+
+  const kind: ComfyJobStatus | "sending" = launching || !job ? "sending" : job.status
+  /** Nothing to draw: no job and no send on its way. */
+  const empty = !job && !launching && isPresent
+  return { job, kind, spoken, rootRef, close, cancel, isPresent, empty }
+}
+
+function ComfyInlineJobInner({ jobId, api, launching, onDismiss, returnFocus, className }: ComfyInlineJobProps) {
+  const { job, kind, spoken, rootRef, close, cancel, isPresent, empty } = useInlineJob({ jobId, launching, onDismiss, returnFocus })
+  const m = useComfyMotion()
+  const [viewing, setViewing] = useState(false)
+  const thumbRef = useRef<HTMLButtonElement>(null)
+
+  if (empty) return null
+
   const progress = job ? stepProgress(job) : null
-  const kind = launching || !job ? "sending" : job.status
   const swap = swapProps(m, "right")
   const icon = iconProps(m)
   const develop = developProps(m, 0.6)
@@ -114,19 +131,19 @@ function ComfyInlineJobInner({ jobId, api, launching, onDismiss, returnFocus, cl
         )}
 
         {kind === "done" && job?.imageUrl && (
-          <motion.a
+          <motion.button
             key="thumb"
-            href={job.imageUrl}
-            target="_blank"
-            rel="noreferrer"
-            aria-label="Open the generated image in a new tab"
-            title="Open full size"
+            ref={thumbRef}
+            type="button"
+            onClick={() => setViewing(true)}
+            aria-label={VIEWER_TEXT.open}
+            title={VIEWER_TEXT.open}
             className="block h-8 w-8 shrink-0 overflow-hidden rounded-md ring-1 ring-border transition-shadow hover:ring-foreground/40 focus-ring"
             {...develop}
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- a local ComfyUI image */}
             <img src={job.imageUrl} crossOrigin="anonymous" alt="" className="h-full w-full object-cover object-top" />
-          </motion.a>
+          </motion.button>
         )}
 
         {kind === "error" && (
@@ -186,6 +203,7 @@ function ComfyInlineJobInner({ jobId, api, launching, onDismiss, returnFocus, cl
       <span className="sr-only" role="status" aria-live="polite">
         {spoken}
       </span>
+      {job?.imageUrl && <ComfyImageViewer url={job.imageUrl} open={viewing} onOpenChange={setViewing} returnFocusRef={thumbRef} />}
     </div>
   )
 }
