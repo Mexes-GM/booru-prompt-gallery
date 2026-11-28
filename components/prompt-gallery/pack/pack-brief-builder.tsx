@@ -29,7 +29,7 @@ import { usePackBrief, type UsePackBriefResult } from "@/hooks/use-pack-brief"
 import { usePackBriefScenes } from "@/hooks/use-pack-brief-scenes"
 import { usePackSources, type UsePackSourcesResult } from "@/hooks/use-pack-sources"
 import { useTagSuggestions } from "@/hooks/use-tag-suggestions"
-import { useIsMobile } from "@/hooks/use-mobile"
+import { briefShown, summaryLineShown, useBuilderLayout } from "./builder-layout"
 import { useStableCallback } from "@/hooks/use-stable-callback"
 import { usePackComfySend, type PackSendRow } from "@/hooks/use-pack-comfy-send"
 import { packSendRequest } from "@/lib/pack/pack-comfy-send"
@@ -123,7 +123,7 @@ import { SearchDetails } from "./search-details"
 import { savedResultOf, type SavedPack } from "@/lib/pack/saved-pack"
 import { BUILDER_SWITCH_TEXT } from "./builder-switch"
 import type { EntryOption } from "./tag-entry"
-import { BriefSummary } from "./brief-summary"
+import { BriefSummary, PackPreview } from "./brief-summary"
 import type { Choice } from "./choice-group"
 import { scenePostHref } from "./scene-ref"
 import { FitLine } from "./fit-line"
@@ -1011,11 +1011,15 @@ function BriefWorkspace({
     [lineNotes, includeSensitive, loadOnePage, source?.scrollLimited]
   )
 
-  // ── Folding ─────────────────────────────────────────────────────────────────────
-  // A pack kept across a reload with its prompts comes back as a made pack does: prompts first.
+  // ── Layout and folding ──────────────────────────────────────────────────────────
+  // Wide windows: the brief and the prompts in two columns, always (nothing folds). Narrower
+  // ones: one column, where the brief folds or is a line (see builder-layout.ts).
+  const layout = useBuilderLayout()
+  const columns = layout === "columns"
+  // One column: a pack kept across a reload with its prompts comes back as a made pack does, prompts first.
   const [folded, setFolded] = useState(() => !!restored?.result?.prompts.length)
   const [openedFromSummary, setOpenedFromSummary] = useState(false)
-  // A pack just made folds the brief away, so the prompts come first.
+  // One column: a pack just made folds the brief away, so the prompts come first.
   const [wasGenerating, setWasGenerating] = useState(false)
   const [briefOpenNarrow, setBriefOpenNarrow] = useState(false)
   if (wasGenerating !== isGenerating) {
@@ -1032,15 +1036,16 @@ function BriefWorkspace({
   }, [])
   // On a phone the brief is a line that opens and closes in place: what the pack will be,
   // the fit line, Generate and the prompts come first. Focus stays on the line.
-  const narrow = useIsMobile()
+  const narrow = layout === "line"
   const toggleBriefNarrow = useCallback(() => setBriefOpenNarrow((v) => !v), [])
-  const showBrief = narrow ? briefOpenNarrow : !folded
+  const showBrief = briefShown(layout, { folded, lineOpen: briefOpenNarrow })
   // After a pack is made, focus goes to the prompts.
   const resultsRef = useRef<HTMLDivElement>(null)
   const wasGeneratingRef = useRef(false)
   useEffect(() => {
     if (wasGeneratingRef.current && !isGenerating) {
-      // The brief is folded by now: the top of the panel is the summary, the fit line and the results.
+      // The prompts' scroller back to its top: the right column in columns, where the brief stays
+      // as it was; in one column the brief is folded by now, so the top is the summary and the fit line.
       scrollerOf(resultsRef.current)?.scrollTo({ top: 0 })
       resultsRef.current?.focus({ preventScroll: true })
     }
@@ -1542,25 +1547,138 @@ function BriefWorkspace({
           ? BLOCKED.noScenes
           : undefined
 
-  // On a wide panel, the brief opened again over its prompts sits beside them, each scrolling on its
-  // own: what changes in the brief shows on the fit line and the prompts at once. Before the first
-  // prompts (the other column would hold only the fit line), folded after generating, and on a
-  // phone, tablet or narrow window: one column, the brief (or its line), the fit line, the prompts.
-  const split = showBrief && !narrow && !!result && result.prompts.length > 0
+  // On a wide window the brief and the prompts sit side by side from the start, each scrolling on
+  // its own: what changes in the brief shows on the fit line and the prompts at once. Generate is
+  // at the foot of the prompts' column. On a phone, tablet or narrow window: one column, the brief
+  // (or its line), the fit line, the prompts, and Generate at the panel's bottom edge.
+  const hasPrompts = !!result && result.prompts.length > 0
+  // Columns, before the first prompts: what the pack will make heads the prompts' column.
+  const preview = columns && !hasPrompts
+
+  const promptsColumn = (
+    <div
+      className={cn(
+        "space-y-4 px-4 pb-6 pt-4 sm:px-6",
+        columns ? "min-h-0 flex-1 overflow-y-auto overscroll-contain pt-5" : "mx-auto max-w-4xl",
+      )}
+    >
+      {loadError && (
+        <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-destructive-border bg-destructive-soft px-3.5 py-3 text-sm text-destructive-text">
+          <AlertTriangle className="size-4 shrink-0" aria-hidden />
+          <span className="min-w-0 flex-1 text-pretty">{BUILDER_TEXT.loadFailed}</span>
+          <Button type="button" variant="outline" size="sm" onClick={retryAll} className="h-8 bg-background px-3 text-xs pointer-coarse:h-11">
+            {BUILDER_TEXT.retry}
+          </Button>
+        </div>
+      )}
+
+      {preview && <PackPreview parts={summary} count={count} />}
+
+      {/* One live region for the fit line and the run: the lines themselves stay quiet. */}
+      <p className="sr-only" role="status" aria-live="polite">
+        {isGenerating ? BUILDER_TEXT.generatingSpoken : fitStates.map((st) => sentence(fitText(st).spoken)).join(" ")}
+      </p>
+      {fitStates.length > 0 && (
+        <div className="space-y-1.5">
+          {fitStates.map((state, i) => (
+            <FitLine
+              // Several notes of one kind (one per tag) need their own key.
+              key={`${state.kind}:${"tag" in state ? state.tag : i}`}
+              lead={i === 0}
+              announce={false}
+              state={state}
+              onIncludeSensitive={includeSensitive}
+              putBack={i === 0 ? putBack : undefined}
+              loaded={i === fitStates.length - 1 && !isGenerating ? loaded ?? undefined : undefined}
+              searches={i === fitStates.length - 1 && searchesToggle ? searchesToggle : undefined}
+            />
+          ))}
+        </div>
+      )}
+      {searchesToggle?.open && (
+        <SearchDetails
+          id={searchesId}
+          plan={plan}
+          progress={source?.searches ?? NO_PROGRESS}
+          character={firstName}
+          characterNames={characterNames}
+          site={PROVIDER_LABELS[provider]}
+          limit={getProviderTagLimit(provider)}
+        />
+      )}
+      {showExamples && (
+        <PackEmptyState heading={EXAMPLES_HEADING} examples={examples} onPick={pickExample} />
+      )}
+      {resultsTip && <PackTip text={TIP_TEXT.results} onDismiss={() => closeTip("results")} />}
+      {result && hasPrompts && (
+        <Results
+          containerRef={resultsRef}
+          prompts={result.prompts}
+          locked={result.locked}
+          missing={result.shortBy}
+          copyNote={copyNoteText({ missing: result.shortBy, stale })}
+          onToggleLock={onToggleLock}
+          busy={engine.busy || engine.sourceChanged || engine.poolPending}
+          busyReason={engine.sourceChanged ? BUILDER_TEXT.busySource : engine.poolPending ? BUILDER_TEXT.busyReloading : BUILDER_TEXT.busyRunning}
+          naturalSourceOf={engine.naturalSourceOf}
+          overrides={overrides}
+          format={promptFormat}
+          fullDetail={fullDetail}
+          onFormatChange={setFormat}
+          onCopy={copy}
+          onReroll={onReroll}
+          onAlways={onAlways}
+          onNever={onNever}
+          // Links go to the site the prompts came from; after a change of source, until Generate, none.
+          postProvider={engine.sourceChanged ? undefined : provider}
+        />
+      )}
+    </div>
+  )
+
+  // Generate stays in view whatever is scrolled: under the prompts in columns, at the panel's
+  // bottom edge (above the home indicator) in one column.
+  const footer = (
+    <footer className="flex-shrink-0 border-t border-border/60 bg-background px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-3">
+      {/* Notices with Undo sit with Generate: always in view, whatever the brief or the list shows. */}
+      <div className="mb-3 empty:hidden">
+        {correction?.status === "done" && correction.message ? (
+          <UndoNotice message={correction.message} onUndo={undoCorrection} onDismiss={() => setCorrection(null)} />
+        ) : correcting ? (
+          <p role="status" className="text-sm text-muted-foreground">{CORRECTION_TEXT.working}</p>
+        ) : showUndo && pack.lastChange ? (
+          <UndoNotice message={pack.lastChange} onUndo={onUndo} onDismiss={() => setUndoFor(null)} />
+        ) : defaultsUndo ? (
+          <UndoNotice message={defaultsUndo.message} onUndo={onUndoDefaults} onDismiss={() => setDefaultsUndo(null)} />
+        ) : providerUndo ? (
+          <UndoNotice message={BUILDER_TEXT.providerChanged(PROVIDER_LABELS[providerUndo.to])} onUndo={onUndoProvider} onDismiss={() => setProviderUndo(null)} />
+        ) : null}
+      </div>
+      <GenerateBar
+        count={count}
+        onCountChange={pack.setPromptCount}
+        onGenerate={onGenerate}
+        generating={isGenerating}
+        blockedReason={blockedReason}
+        locked={result?.locked.length ?? 0}
+      />
+    </footer>
+  )
+
   return (
     <>
       <div
         data-pack-scroll=""
         className={cn(
-          "min-h-0 flex-1 overflow-y-auto overscroll-contain",
-          split && "lg:grid lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] lg:overflow-hidden",
+          "min-h-0 flex-1",
+          columns ? "grid grid-cols-[minmax(0,26rem)_minmax(0,1fr)] overflow-hidden" : "overflow-y-auto overscroll-contain",
         )}
       >
         <div
           className={cn(
             "space-y-4 px-4 pt-4 sm:px-6",
-            split
-              ? "mx-auto max-w-4xl lg:mx-0 lg:max-w-none lg:overflow-y-auto lg:overscroll-contain lg:border-r lg:border-border/60 lg:bg-card/60 lg:pb-6 lg:pt-5"
+            columns
+              ? "overflow-y-auto overscroll-contain border-r border-border/60 bg-card/60 pb-6 pt-5"
               : "mx-auto max-w-4xl",
           )}
         >
@@ -1570,11 +1688,12 @@ function BriefWorkspace({
               {startText}
             </p>
           )}
-          {narrow ? (
-            <BriefSummary parts={summary} onExpand={toggleBriefNarrow} expanded={briefOpenNarrow} />
-          ) : folded ? (
-            <BriefSummary parts={summary} onExpand={expand} />
-          ) : null}
+          {summaryLineShown(layout, folded) &&
+            (narrow ? (
+              <BriefSummary parts={summary} onExpand={toggleBriefNarrow} expanded={briefOpenNarrow} />
+            ) : (
+              <BriefSummary parts={summary} onExpand={expand} />
+            ))}
           {showBrief && (
             <PackBriefPanel
               brief={brief}
@@ -1616,109 +1735,17 @@ function BriefWorkspace({
           {showBrief && <PackPromptOptions settings={promptSettings} />}
         </div>
 
-        <div
-          className={cn(
-            "space-y-4 px-4 pb-6 pt-4 sm:px-6",
-            split ? "mx-auto max-w-4xl lg:mx-0 lg:max-w-none lg:overflow-y-auto lg:overscroll-contain lg:pt-5" : "mx-auto max-w-4xl",
-          )}
-        >
-          {loadError && (
-            <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-destructive-border bg-destructive-soft px-3.5 py-3 text-sm text-destructive-text">
-              <AlertTriangle className="size-4 shrink-0" aria-hidden />
-              <span className="min-w-0 flex-1 text-pretty">{BUILDER_TEXT.loadFailed}</span>
-              <Button type="button" variant="outline" size="sm" onClick={retryAll} className="h-8 bg-background px-3 text-xs pointer-coarse:h-11">
-                {BUILDER_TEXT.retry}
-              </Button>
-            </div>
-          )}
-
-          {/* One live region for the fit line and the run: the lines themselves stay quiet. */}
-          <p className="sr-only" role="status" aria-live="polite">
-            {isGenerating ? BUILDER_TEXT.generatingSpoken : fitStates.map((st) => sentence(fitText(st).spoken)).join(" ")}
-          </p>
-          {fitStates.length > 0 && (
-            <div className="space-y-1.5">
-              {fitStates.map((state, i) => (
-                <FitLine
-                  // Several notes of one kind (one per tag) need their own key.
-                  key={`${state.kind}:${"tag" in state ? state.tag : i}`}
-                  lead={i === 0}
-                  announce={false}
-                  state={state}
-                  onIncludeSensitive={includeSensitive}
-                  putBack={i === 0 ? putBack : undefined}
-                  loaded={i === fitStates.length - 1 && !isGenerating ? loaded ?? undefined : undefined}
-                  searches={i === fitStates.length - 1 && searchesToggle ? searchesToggle : undefined}
-                />
-              ))}
-            </div>
-          )}
-          {searchesToggle?.open && (
-            <SearchDetails
-              id={searchesId}
-              plan={plan}
-              progress={source?.searches ?? NO_PROGRESS}
-              character={firstName}
-              characterNames={characterNames}
-              site={PROVIDER_LABELS[provider]}
-              limit={getProviderTagLimit(provider)}
-            />
-          )}
-          {showExamples && (
-            <PackEmptyState heading={EXAMPLES_HEADING} examples={examples} onPick={pickExample} />
-          )}
-          {resultsTip && <PackTip text={TIP_TEXT.results} onDismiss={() => closeTip("results")} />}
-          {result && result.prompts.length > 0 && (
-            <Results
-              containerRef={resultsRef}
-              prompts={result.prompts}
-              locked={result.locked}
-              missing={result.shortBy}
-              copyNote={copyNoteText({ missing: result.shortBy, stale })}
-              onToggleLock={onToggleLock}
-              busy={engine.busy || engine.sourceChanged || engine.poolPending}
-              busyReason={engine.sourceChanged ? BUILDER_TEXT.busySource : engine.poolPending ? BUILDER_TEXT.busyReloading : BUILDER_TEXT.busyRunning}
-              naturalSourceOf={engine.naturalSourceOf}
-              overrides={overrides}
-              format={promptFormat}
-              fullDetail={fullDetail}
-              onFormatChange={setFormat}
-              onCopy={copy}
-              onReroll={onReroll}
-              onAlways={onAlways}
-              onNever={onNever}
-              // Links go to the site the prompts came from; after a change of source, until Generate, none.
-              postProvider={engine.sourceChanged ? undefined : provider}
-            />
-          )}
-        </div>
+        {columns ? (
+          <div className="flex min-h-0 flex-col">
+            {promptsColumn}
+            {footer}
+          </div>
+        ) : (
+          promptsColumn
+        )}
       </div>
 
-      {/* Generate stays at the panel's bottom edge, above the home indicator, whatever is scrolled. */}
-      <footer className="flex-shrink-0 border-t border-border/60 bg-background px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-3">
-        {/* Notices with Undo sit with Generate: always in view, whatever the brief or the list shows. */}
-        <div className="mb-3 empty:hidden">
-          {correction?.status === "done" && correction.message ? (
-            <UndoNotice message={correction.message} onUndo={undoCorrection} onDismiss={() => setCorrection(null)} />
-          ) : correcting ? (
-            <p role="status" className="text-sm text-muted-foreground">{CORRECTION_TEXT.working}</p>
-          ) : showUndo && pack.lastChange ? (
-            <UndoNotice message={pack.lastChange} onUndo={onUndo} onDismiss={() => setUndoFor(null)} />
-          ) : defaultsUndo ? (
-            <UndoNotice message={defaultsUndo.message} onUndo={onUndoDefaults} onDismiss={() => setDefaultsUndo(null)} />
-          ) : providerUndo ? (
-            <UndoNotice message={BUILDER_TEXT.providerChanged(PROVIDER_LABELS[providerUndo.to])} onUndo={onUndoProvider} onDismiss={() => setProviderUndo(null)} />
-          ) : null}
-        </div>
-        <GenerateBar
-          count={count}
-          onCountChange={pack.setPromptCount}
-          onGenerate={onGenerate}
-          generating={isGenerating}
-          blockedReason={blockedReason}
-          locked={result?.locked.length ?? 0}
-        />
-      </footer>
+      {!columns && footer}
 
       {searching && (
         <BriefSource plan={plan} conditions={engine.conditionSupply} count={count} onResult={setSource} />

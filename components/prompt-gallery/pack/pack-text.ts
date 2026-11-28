@@ -138,6 +138,14 @@ export const EXAMPLE_TEXT: Readonly<Record<string, { title: string; detail: stri
 }
 export const EXAMPLES_HEADING = "Not sure where to start? Try one of these"
 
+/** Heading the prompts' column on a wide window, before the first prompts: what Generate will make. */
+export const PREVIEW_TEXT = {
+  label: "What this pack makes",
+  /** The brief asks for nothing in particular yet (the folded line's word for it). */
+  anything: "Anything",
+  hint: (count: number) => (count === 1 ? "Your prompt will show up here." : `Your ${count} prompts will show up here.`),
+} as const
+
 /** One-time tips, shown the first time each one is useful. */
 export const TIP_TEXT = {
   results: "Select a tag in a prompt to put it in every prompt (Always) or keep it out of all of them (Never).",

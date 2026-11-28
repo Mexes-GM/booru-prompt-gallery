@@ -15,7 +15,7 @@ export {
   type GenerateBarProps,
   type ResultsToolbarProps,
 } from "./generate-bar"
-export { BriefSummary, type BriefSummaryProps } from "./brief-summary"
+export { BriefSummary, PackPreview, type BriefSummaryProps, type PackPreviewProps } from "./brief-summary"
 export { UndoNotice, type UndoNoticeProps } from "./undo-notice"
 export { PackEmptyState, type PackEmptyStateProps, type ExampleBrief } from "./pack-empty-state"
 export {
