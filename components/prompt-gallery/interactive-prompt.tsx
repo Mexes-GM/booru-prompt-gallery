@@ -12,8 +12,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { parseTagString } from "@/lib/weight-utils"
-import { useToast } from "@/hooks/use-toast"
-import { toastError } from "@/lib/toast-error"
 
 interface TagData {
   id: string
@@ -227,7 +225,6 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
   const [badgePos, setBadgePos] = useState<{ top: number; left: number } | null>(null)
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const triggerRef = useRef<HTMLSpanElement | null>(null)
-  const { toast } = useToast()
   const finePointer = useSyncExternalStore(subscribeFinePointer, getFinePointer, getFinePointerServer)
 
   useEffect(() => {
@@ -256,7 +253,7 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
     } catch {
       toastCopyFailed("copy_tag_to_clipboard", { tag: tag.text })
     }
-  }, [tag.text, toast])
+  }, [tag.text])
 
   // Sync draft weight when tag changes externally
   useEffect(() => {
