@@ -58,8 +58,7 @@ function useImageFile(url: string, attempt: number) {
 const BAR_BUTTON =
   "relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-overlay/70 px-3 text-sm font-medium text-overlay-foreground " +
   "ring-1 ring-overlay-foreground/15 backdrop-blur-sm transition-[background-color,transform] duration-150 ease-out-strong " +
-  "hover:bg-overlay/90 active:scale-[0.97] motion-reduce:active:scale-100 focus-ring pointer-coarse:h-11 " +
-  "aria-disabled:pointer-events-none aria-disabled:opacity-50"
+  "hover:bg-overlay/90 active:scale-[0.97] motion-reduce:active:scale-100 focus-ring pointer-coarse:h-11"
 
 export interface ComfyImageViewerProps {
   /** ComfyUI's `/view` URL of the image. */
@@ -175,7 +174,7 @@ function ViewerBody({ url, onClose }: { url: string; onClose: () => void }) {
   )
 }
 
-/** Download or Open in new tab: a link to the blob once it is in, a waiting button before. */
+/** Download or Open in new tab: a link to the blob once it is in, a disabled button before. */
 function FileAction({
   href,
   download,
@@ -194,10 +193,10 @@ function FileAction({
   const label = newTab ? VIEWER_TEXT.newTab : VIEWER_TEXT.download
   if (!href) {
     return (
-      <span role="link" aria-disabled="true" aria-label={label} aria-busy={busy || undefined} className={BAR_BUTTON}>
+      <button type="button" disabled aria-label={label} aria-busy={busy || undefined} className={cn(BAR_BUTTON, "disabled:pointer-events-none disabled:opacity-50")}>
         {busy ? <Loader2 aria-hidden className="size-4 animate-spin motion-reduce:animate-none" /> : icon}
         {children}
-      </span>
+      </button>
     )
   }
   return (
