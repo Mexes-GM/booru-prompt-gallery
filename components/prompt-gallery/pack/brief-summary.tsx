@@ -8,6 +8,7 @@
 import { memo } from "react"
 import { ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { PREVIEW_TEXT } from "./pack-text"
 
 export interface BriefSummaryProps {
   /** The parts of the line, in order; see briefSummaryParts. */
@@ -40,5 +41,28 @@ export const BriefSummary = memo(function BriefSummary({ parts, onExpand, expand
         aria-hidden
       />
     </button>
+  )
+})
+
+export interface PackPreviewProps {
+  /** The parts of the line, in order; see briefSummaryParts. */
+  parts: readonly string[]
+  /** Prompts Generate will make. */
+  count: number
+  className?: string
+}
+
+/**
+ * The card in one line again, but only to read: on a wide window, before the first prompts, it
+ * heads the prompts' column (the card itself is open beside it) and says where they will show.
+ */
+export const PackPreview = memo(function PackPreview({ parts, count, className }: PackPreviewProps) {
+  return (
+    <section aria-label={PREVIEW_TEXT.label} className={cn("space-y-1 pb-1", className)}>
+      <p className={cn("text-base font-semibold leading-snug text-pretty", parts.length ? "text-foreground" : "text-muted-foreground")}>
+        {parts.length ? parts.join(" · ") : PREVIEW_TEXT.anything}
+      </p>
+      <p className="text-[13px] tabular-nums text-muted-foreground">{PREVIEW_TEXT.hint(count)}</p>
+    </section>
   )
 })
