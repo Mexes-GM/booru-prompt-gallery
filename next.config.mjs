@@ -18,15 +18,39 @@ const SCRIPT_EVAL = process.env.NODE_ENV === 'development' ? "'unsafe-eval' " : 
 // The page's CSP also covers the model's worker (a /_next/static script).
 const SCRIPT_WASM = "'wasm-unsafe-eval' "
 
+// The image/API proxies (the Cloudflare Worker and the CloudFront distributions)
+// get their exact origins, read from the same NEXT_PUBLIC_* vars the client
+// bundle reads, instead of *.workers.dev / *.cloudfront.net: anyone can serve
+// content from a subdomain of those. A var left empty adds nothing, and the
+// client then doesn't call that proxy either.
+/** @param {string | undefined} url */
+function originOf(url) {
+  if (!url) return ''
+  try {
+    return new URL(url).origin
+  } catch {
+    throw new Error(`next.config.mjs: proxy URL is not a valid absolute URL: ${url}`)
+  }
+}
+const PROXY_ORIGINS = [
+  ...new Set(
+    [
+      process.env.NEXT_PUBLIC_IMAGE_PROXY_URL,
+      process.env.NEXT_PUBLIC_CDN_PROXY_URL,
+      process.env.NEXT_PUBLIC_GELBOORU_CDN_URL,
+    ].map(originOf).filter(Boolean)
+  ),
+].join(' ')
+
 /** @param {string} [frameAncestors] */
 function contentSecurityPolicy(frameAncestors = '') {
   return `
  default-src 'self';
- script-src 'self' ${SCRIPT_EVAL}${SCRIPT_WASM}'unsafe-inline' https://vercel.live https://netlify-cdp.netlify.app https://challenges.cloudflare.com https://*.workers.dev;
+ script-src 'self' ${SCRIPT_EVAL}${SCRIPT_WASM}'unsafe-inline' https://vercel.live https://netlify-cdp.netlify.app https://challenges.cloudflare.com;
  style-src 'self' 'unsafe-inline';
- img-src 'self' blob: data: https://www.google.com https://*.google.com https://*.googleusercontent.com https://*.gstatic.com https://danbooru.donmai.us https://cdn.donmai.us https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://floofgens.net https://*.floofgens.net https://*.donmai.us https://*.buymeacoffee.com https://gelbooru.com https://*.gelbooru.com https://*.workers.dev https://*.cloudfront.net http://127.0.0.1:* http://localhost:*;
+ img-src 'self' blob: data: https://www.google.com https://*.google.com https://*.googleusercontent.com https://*.gstatic.com https://danbooru.donmai.us https://cdn.donmai.us https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://floofgens.net https://*.floofgens.net https://*.donmai.us https://*.buymeacoffee.com https://gelbooru.com https://*.gelbooru.com ${PROXY_ORIGINS} http://127.0.0.1:* http://localhost:*;
  font-src 'self';
- connect-src 'self' https://*.supabase.co wss://*.supabase.co https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://danbooru.donmai.us https://cdn.donmai.us https://*.donmai.us https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://floofgens.net https://*.floofgens.net https://gelbooru.com https://*.gelbooru.com https://vercel.live https://netlify-cdp.netlify.app https://*.workers.dev https://*.cloudfront.net https://challenges.cloudflare.com https://huggingface.co http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*;
+ connect-src 'self' https://*.supabase.co wss://*.supabase.co https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://danbooru.donmai.us https://cdn.donmai.us https://*.donmai.us https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://floofgens.net https://*.floofgens.net https://gelbooru.com https://*.gelbooru.com https://vercel.live https://netlify-cdp.netlify.app ${PROXY_ORIGINS} https://challenges.cloudflare.com https://huggingface.co http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*;
  frame-src 'self' https://vercel.live https://challenges.cloudflare.com;
  worker-src 'self' blob:;
  ${frameAncestors}
