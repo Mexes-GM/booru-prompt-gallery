@@ -11,7 +11,7 @@
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/variety-presets.verify.ts
  */
 import type { TagCategory } from "../lib/tag-classifier"
-import { varietyPreset } from "../lib/pack/variety-presets"
+import { presetCounts, presetModes, varietyPreset } from "../lib/pack/variety-presets"
 
 let passed = 0
 let failed = 0
@@ -86,6 +86,30 @@ const ALL_AXES: TagCategory[] = ["appearance", "clothing", "equipment", "pose", 
 
   const r4 = varietyPreset(4, ["appearance"], { appearance: 2 })
   assert(r4.axisMinCounts.appearance === 2, "level 4: individual min 3 clamped down to axisMaxPerPrompt=2")
+}
+
+// ── Re-applying the same preset is not an update ──
+// usePackMode re-applies the preset from an effect whose inputs (the per-prompt ceilings,
+// through the tags every prompt keeps) depend on the counts it sets: a fresh object on
+// every pass kept that effect running forever.
+{
+  const axes: TagCategory[] = ["pose", "clothing", "equipment"]
+  const preset = varietyPreset(5, axes, { pose: 4, clothing: 3, equipment: 2 })
+  const first = presetCounts({ equipment: 0 }, preset.axisMinCounts)
+  assert(first.equipment === 0 && first.pose === 4, "a category the user switched Off stays Off")
+  assert(presetCounts(first, preset.axisMinCounts) === first, "the same preset again returns the same object")
+  const modes = presetModes({}, preset.axisTagModes)
+  assert(presetModes(modes, preset.axisTagModes) === modes, "modes too")
+  // The loop itself, without React: apply, recompute what depends on the counts, apply again.
+  let counts: Partial<Record<TagCategory, number>> = {}
+  let updates = 0
+  for (let pass = 0; pass < 50; pass++) {
+    const ceilings = { pose: 4, clothing: Math.max(1, 3 - (counts.clothing ? 1 : 0)), equipment: 2 }
+    const next = presetCounts(counts, varietyPreset(5, axes, ceilings).axisMinCounts)
+    if (next !== counts) updates++
+    counts = next
+  }
+  assert(updates <= 3, `the preset settles after a few passes (updated ${updates} times in 50)`)
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)

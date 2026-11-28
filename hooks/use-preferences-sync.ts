@@ -18,15 +18,27 @@ let _cloudSyncInProgress = false
  *   full BooruPost snapshots, which bloats every sync payload.
  * - PACK_LEARNING_MODEL: documented in lib/storage.ts as strictly local to
  *   this browser, never synced or shared.
+ * - PACK_SAVED_CURRENT: the current pack, up to 400,000 characters, which alone
+ *   would push the blob past MAX_PREFERENCES_BYTES.
+ * - COMFYUI_WORKFLOWS / COMFYUI_ACTIVE_WORKFLOW: full workflow JSON, large and
+ *   tied to the ComfyUI installed on this machine.
+ * - COMFYUI_URL / COMFYUI_ENABLED / COMFYUI_SETUP_DONE: describe the ComfyUI
+ *   running on this machine, not the account.
  */
-const EXCLUDED_FROM_CLOUD_SYNC: ReadonlySet<string> = new Set([
+export const EXCLUDED_FROM_CLOUD_SYNC: ReadonlySet<string> = new Set([
   STORAGE_KEYS.SEARCH_TAGS,
   STORAGE_KEYS.SAVED_ARTISTS,
   STORAGE_KEYS.HISTORY,
   STORAGE_KEYS.PACK_LEARNING_MODEL,
+  STORAGE_KEYS.PACK_SAVED_CURRENT,
+  STORAGE_KEYS.COMFYUI_WORKFLOWS,
+  STORAGE_KEYS.COMFYUI_ACTIVE_WORKFLOW,
+  STORAGE_KEYS.COMFYUI_URL,
+  STORAGE_KEYS.COMFYUI_ENABLED,
+  STORAGE_KEYS.COMFYUI_SETUP_DONE,
 ])
 
-const SYNCED_KEYS: readonly string[] = Object.values(STORAGE_KEYS).filter(
+export const SYNCED_KEYS: readonly string[] = Object.values(STORAGE_KEYS).filter(
   (key) => !EXCLUDED_FROM_CLOUD_SYNC.has(key)
 )
 

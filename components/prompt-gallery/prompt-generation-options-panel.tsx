@@ -16,6 +16,7 @@ import type { MatchStrictness } from "@/lib/background-context"
 import { ADULT_OUTFIT_STYLES, OUTFIT_STYLES, type OutfitDetail, type OutfitMode, type OutfitStyle } from "@/lib/outfit-swap"
 import { Flame, Flower2, Heart, Leaf, PartyPopper, Snowflake, Sun, TriangleAlert, Waves, type LucideIcon } from "lucide-react"
 import { PromptFormatSetting } from "./prompt-format-setting"
+import { ComfyUISettingRow } from "./comfyui-setting-row"
 
 const OUTFIT_MODES: { value: OutfitMode; label: string }[] = [
   { value: "keep", label: "Keep original" },
@@ -62,6 +63,9 @@ export const MATCH_STRICTNESS_DESCRIPTIONS: Record<MatchStrictness, string> = {
   strict: "Tries even harder to keep the scenery close to the original post.",
 }
 
+/** What "Fill in missing tags" does; the source is credited on the About page. */
+const FILL_MISSING_TAGS_HINT = "Add the clothing, scenery and framing a Danbooru image shows but its tags miss, on cards and in packs. Can be wrong"
+
 /** Background modes in Customize prompt (the extension keeps its own labels). */
 const BACKGROUND_MODES: { value: BackgroundMode; label: string }[] = [
   { value: "keep", label: "Keep original" },
@@ -92,6 +96,9 @@ interface PromptGenerationOptionsPanelProps {
    *  prompt get silently appended to the final prompt. */
   autoAppendSearchTags?: boolean
   setAutoAppendSearchTags?: (val: boolean) => void
+  /** "Fill in missing tags" (added-tags dataset, Danbooru only). The switch shows only with its setter. */
+  fillMissingTags?: boolean
+  setFillMissingTags?: (val: boolean) => void
 
   removeLoRaTags: boolean
   setRemoveLoRaTags: (val: boolean) => void
@@ -137,8 +144,107 @@ interface PromptGenerationOptionsPanelProps {
   variant?: "compact" | "embedded"
 }
 
+/** Wording of the options the pack builder shows too, so both read the same. */
+export const PROMPT_OPTION_TEXT = {
+  includeCharacters: { label: "Include character names", hint: "Keep the post's character tags" },
+  experimentalRules: { label: "Experimental rules", hint: "Drop leg tags you add from close shots and the tags of multi-panel posts. Can be wrong" },
+  tagWeights: { label: "Tag weights", hint: "Apply the weights you set on tags to every card" },
+} as const
+
+/** The tag weights button's text, and its accessible name. */
+export function tagWeightsButtonText(count: number, paused: boolean): { text: string; label: string } {
+  return count > 0
+    ? { text: `${count} ${paused ? "paused" : "active"} · Edit`, label: `Edit tag weights (${count} ${paused ? "paused" : "active"})` }
+    : { text: "Add", label: "Add tag weights" }
+}
+
+/**
+ * The outfit library's styles and detail as tiles, in Random outfit's tray. `safeOnly` keeps the
+ * adult styles chosen but unused, and says so.
+ */
+function OutfitStylePicker({
+  idPrefix,
+  styles,
+  onToggleStyle,
+  detail,
+  onDetailChange,
+  count = null,
+  safeOnly = false,
+}: {
+  idPrefix: string
+  styles: readonly OutfitStyle[]
+  onToggleStyle: (style: OutfitStyle) => void
+  detail: OutfitDetail
+  onDetailChange: (detail: OutfitDetail) => void
+  /** Outfits the chosen styles can draw from; null until the library loads. */
+  count?: number | null
+  safeOnly?: boolean
+}) {
+  return (
+    <>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-baseline justify-between gap-2">
+          <span id={`${idPrefix}-outfit-styles-label`} className="text-xs font-medium text-muted-foreground">Styles</span>
+          {count !== null && count > 0 && (
+            <span className="text-[11px] tabular-nums text-muted-foreground">{count.toLocaleString("en")} outfits</span>
+          )}
+        </div>
+        <div role="group" aria-labelledby={`${idPrefix}-outfit-styles-label`} className="grid grid-cols-4 gap-1">
+          {OUTFIT_STYLES.map((style) => {
+            // Kept as chosen, just not used, so turning NSFW on brings them back.
+            const blocked = safeOnly && ADULT_OUTFIT_STYLES.includes(style)
+            const isOn = styles.includes(style) && !blocked
+            const { label, Icon } = OUTFIT_STYLE_META[style]
+            return (
+              <button
+                key={style}
+                type="button"
+                onClick={() => onToggleStyle(style)}
+                disabled={blocked}
+                aria-pressed={isOn}
+                aria-describedby={blocked ? `${idPrefix}-outfit-nsfw-note` : undefined}
+                className={cn(OUTFIT_TILE_CLASS, "flex min-w-0 flex-col items-center gap-1.5 px-1 py-2 disabled:cursor-not-allowed disabled:opacity-40", isOn ? OUTFIT_TILE_ON : OUTFIT_TILE_OFF)}
+              >
+                <Icon className={cn("h-4 w-4 transition-colors", isOn ? "text-primary-text" : "opacity-70")} aria-hidden="true" />
+                <span className="max-w-full truncate text-[11px] leading-none">{label}</span>
+              </button>
+            )
+          })}
+        </div>
+        {safeOnly && (
+          <p id={`${idPrefix}-outfit-nsfw-note`} className="flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
+            <TriangleAlert className="mt-px h-3 w-3 shrink-0" aria-hidden="true" />
+            Lingerie and Sexy are off while NSFW is off.
+          </p>
+        )}
+      </div>
+      <div className="flex flex-col gap-2">
+        <span id={`${idPrefix}-outfit-detail-label`} className="text-xs font-medium text-muted-foreground">Detail</span>
+        <div role="radiogroup" aria-labelledby={`${idPrefix}-outfit-detail-label`} className="grid grid-cols-2 gap-1">
+          {OUTFIT_DETAILS.map(({ value, label, hint }) => {
+            const isSelected = detail === value
+            return (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={isSelected}
+                onClick={() => onDetailChange(value)}
+                className={cn(OUTFIT_TILE_CLASS, "flex min-w-0 flex-col items-start gap-0.5 px-2.5 py-2 text-left", isSelected ? OUTFIT_TILE_ON : OUTFIT_TILE_OFF)}
+              >
+                <span className="font-medium">{label}</span>
+                <span className="text-[11px] leading-snug text-muted-foreground">{hint}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </>
+  )
+}
+
 /** A plain switch row: label and one-line hint on the left, switch on the right. */
-function SwitchRow({ id, label, hint, checked, onChange }: {
+export function SwitchRow({ id, label, hint, checked, onChange }: {
   id: string
   label: string
   hint: string
@@ -176,6 +282,8 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
   setExperimentalPromptRules: _setExperimentalPromptRules,
   autoAppendSearchTags = true,
   setAutoAppendSearchTags: _setAutoAppendSearchTags,
+  fillMissingTags = true,
+  setFillMissingTags: _setFillMissingTags,
   removeLoRaTags,
   setRemoveLoRaTags: _setRemoveLoRaTags,
   removeQualityTags,
@@ -227,6 +335,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
   const setPrependAnimaArtist = (val: boolean) => { trackSetting('prependAnimaArtist', val); _setPrependAnimaArtist(val); };
   const setExperimentalPromptRules = (val: boolean) => { trackSetting('experimentalPromptRules', val); _setExperimentalPromptRules?.(val); };
   const setAutoAppendSearchTags = (val: boolean) => { trackSetting('autoAppendSearchTags', val); _setAutoAppendSearchTags?.(val); };
+  const setFillMissingTags = (val: boolean) => { trackSetting('fillMissingTags', val); _setFillMissingTags?.(val); };
   const setRemoveLoRaTags = (val: boolean) => { trackSetting('removeLoRaTags', val); _setRemoveLoRaTags(val); };
   const setRemoveQualityTags = (val: boolean) => { trackSetting('removeQualityTags', val); _setRemoveQualityTags(val); };
   const toggleGlobalWeights = (enabled: boolean) => { trackSetting('globalWeights', enabled); _toggleGlobalWeights?.(enabled); };
@@ -389,63 +498,15 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
         >
           {/* The mode's own tray: picks sit on the panel surface when on. */}
           <div className="mb-1 flex flex-col gap-3 rounded-lg bg-muted/40 p-3">
-            <div className="flex flex-col gap-2">
-              <div className="flex items-baseline justify-between gap-2">
-                <span id={`${idPrefix}-outfit-styles-label`} className="text-xs font-medium text-muted-foreground">Styles</span>
-                {outfitCount !== null && outfitCount > 0 && (
-                  <span className="text-[11px] tabular-nums text-muted-foreground">{outfitCount.toLocaleString("en")} outfits</span>
-                )}
-              </div>
-              <div role="group" aria-labelledby={`${idPrefix}-outfit-styles-label`} className="grid grid-cols-4 gap-1">
-                {OUTFIT_STYLES.map((style) => {
-                  // Kept as chosen, just not used, so turning NSFW on brings them back.
-                  const blocked = outfitSafeOnly && ADULT_OUTFIT_STYLES.includes(style)
-                  const isOn = outfitStyles.includes(style) && !blocked
-                  const { label, Icon } = OUTFIT_STYLE_META[style]
-                  return (
-                    <button
-                      key={style}
-                      type="button"
-                      onClick={() => toggleOutfitStyle(style)}
-                      disabled={blocked}
-                      aria-pressed={isOn}
-                      aria-describedby={blocked ? `${idPrefix}-outfit-nsfw-note` : undefined}
-                      className={cn(OUTFIT_TILE_CLASS, "flex min-w-0 flex-col items-center gap-1.5 px-1 py-2 disabled:cursor-not-allowed disabled:opacity-40", isOn ? OUTFIT_TILE_ON : OUTFIT_TILE_OFF)}
-                    >
-                      <Icon className={cn("h-4 w-4 transition-colors", isOn ? "text-primary-text" : "opacity-70")} aria-hidden="true" />
-                      <span className="max-w-full truncate text-[11px] leading-none">{label}</span>
-                    </button>
-                  )
-                })}
-              </div>
-              {outfitSafeOnly && (
-                <p id={`${idPrefix}-outfit-nsfw-note`} className="flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
-                  <TriangleAlert className="mt-px h-3 w-3 shrink-0" aria-hidden="true" />
-                  Lingerie and Sexy are off while NSFW is off.
-                </p>
-              )}
-            </div>
-            <div className="flex flex-col gap-2">
-              <span id={`${idPrefix}-outfit-detail-label`} className="text-xs font-medium text-muted-foreground">Detail</span>
-              <div role="radiogroup" aria-labelledby={`${idPrefix}-outfit-detail-label`} className="grid grid-cols-2 gap-1">
-                {OUTFIT_DETAILS.map(({ value, label, hint }) => {
-                  const isSelected = outfitDetail === value
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      role="radio"
-                      aria-checked={isSelected}
-                      onClick={() => setOutfitDetail(value)}
-                      className={cn(OUTFIT_TILE_CLASS, "flex min-w-0 flex-col items-start gap-0.5 px-2.5 py-2 text-left", isSelected ? OUTFIT_TILE_ON : OUTFIT_TILE_OFF)}
-                    >
-                      <span className="font-medium">{label}</span>
-                      <span className="text-[11px] leading-snug text-muted-foreground">{hint}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
+            <OutfitStylePicker
+              idPrefix={idPrefix}
+              styles={outfitStyles}
+              onToggleStyle={toggleOutfitStyle}
+              detail={outfitDetail}
+              onDetailChange={setOutfitDetail}
+              count={outfitCount}
+              safeOnly={outfitSafeOnly}
+            />
             <p className="border-t border-border/40 pt-2.5 text-[11px] leading-snug text-muted-foreground">
               {outfitCount === 0 || outfitStyles.length === 0
                 ? "Pick at least one style to change outfits."
@@ -496,6 +557,14 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
                 </div>
                 <Switch id="prepend-anima-artist" checked={prependAnimaArtist} onCheckedChange={setPrependAnimaArtist} className={switchClass} aria-label="Prepend the post's artist as @artist" />
               </div>
+              {_setFillMissingTags && (
+                <div className={rowClass}>
+                  <InfoTooltip title="Fill in missing tags" description={FILL_MISSING_TAGS_HINT}>
+                    <Label htmlFor="fill-missing-tags" className={labelClass}>Fill in missing tags</Label>
+                  </InfoTooltip>
+                  <Switch id="fill-missing-tags" checked={fillMissingTags} onCheckedChange={setFillMissingTags} className={switchClass} aria-label="Fill in missing tags on Danbooru posts" />
+                </div>
+              )}
               {_setExperimentalPromptRules && (
                 <div className={rowClass}>
                   <div className="flex items-center gap-2">
@@ -622,7 +691,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
   const options: { id: string; label: string; hint: string; checked: boolean; onChange: (v: boolean) => void }[] =
     !isAibooru
       ? [
-          { id: "include-characters", label: "Include character names", hint: "Keep the post's character tags", checked: includeCharacters, onChange: setIncludeCharacters },
+          { id: "include-characters", ...PROMPT_OPTION_TEXT.includeCharacters, checked: includeCharacters, onChange: setIncludeCharacters },
           { id: "smart-tag", label: "Merge redundant tags", hint: "“hair, long hair, white hair” → “long white hair”", checked: optimizeTags, onChange: setOptimizeTags },
         ]
       : [
@@ -634,8 +703,11 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
   )
   if (!isAibooru) {
     options.push({ id: "prepend-anima-artist", label: "Start with @artist", hint: "Only for checkpoints that support Anima's @artist syntax", checked: prependAnimaArtist, onChange: setPrependAnimaArtist })
+    if (_setFillMissingTags) {
+      options.push({ id: "fill-missing-tags", label: "Fill in missing tags", hint: FILL_MISSING_TAGS_HINT, checked: fillMissingTags, onChange: setFillMissingTags })
+    }
     if (_setExperimentalPromptRules) {
-      options.push({ id: "experimental-prompt-rules", label: "Experimental rules", hint: "Drop leg tags you add from close shots and the tags of multi-panel posts. Can be wrong", checked: experimentalPromptRules, onChange: setExperimentalPromptRules })
+      options.push({ id: "experimental-prompt-rules", ...PROMPT_OPTION_TEXT.experimentalRules, checked: experimentalPromptRules, onChange: setExperimentalPromptRules })
     }
   }
 
@@ -658,8 +730,8 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
             on the button that opens them. */}
         <div className="flex min-h-[56px] items-center justify-between gap-3 py-2">
           <div className="flex min-w-0 flex-col gap-0.5">
-            <span className="text-sm text-foreground">Tag weights</span>
-            <span className="text-xs text-muted-foreground">Apply the weights you set on tags to every card</span>
+            <span className="text-sm text-foreground">{PROMPT_OPTION_TEXT.tagWeights.label}</span>
+            <span className="text-xs text-muted-foreground">{PROMPT_OPTION_TEXT.tagWeights.hint}</span>
           </div>
           <Button
             type="button"
@@ -667,15 +739,12 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
             size="sm"
             onClick={() => setIsGlobalWeightsModalOpen(true)}
             className="relative h-8 shrink-0 px-2.5 text-xs pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1.5"
-            aria-label={globalWeightCount > 0
-              ? `Edit tag weights (${globalWeightCount} ${isGlobalWeightsPaused ? "paused" : "active"})`
-              : "Add tag weights"}
+            aria-label={tagWeightsButtonText(globalWeightCount, isGlobalWeightsPaused).label}
           >
-            {globalWeightCount > 0
-              ? `${globalWeightCount} ${isGlobalWeightsPaused ? "paused" : "active"} · Edit`
-              : "Add"}
+            {tagWeightsButtonText(globalWeightCount, isGlobalWeightsPaused).text}
           </Button>
         </div>
+        <ComfyUISettingRow />
       </div>
 
       <div className="flex flex-col gap-2.5 border-t border-border/50 pt-3">

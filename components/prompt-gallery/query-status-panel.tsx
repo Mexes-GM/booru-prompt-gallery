@@ -140,7 +140,7 @@ export function QueryStatusPanel({
         return (
           <div className="flex flex-col gap-2 text-xs text-foreground/80 bg-muted/30 p-2 rounded-md border border-border/30">
             <div className="flex items-center justify-between gap-2">
-              <span className="font-medium">Active Query:</span>
+              <span className="font-medium">Active query:</span>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span className={cn(
@@ -231,7 +231,7 @@ export function QueryStatusPanel({
         <Alert variant="destructive" className="py-2">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription className="text-xs">
-            {PROVIDER_NAMES[booruProvider] ?? booruProvider} API limit: Only first {getProviderTagLimit(booruProvider)} user tag{getProviderTagLimit(booruProvider) === 1 ? '' : 's'} will be used.
+            {PROVIDER_NAMES[booruProvider] ?? booruProvider} only searches the first {getProviderTagLimit(booruProvider)} tag{getProviderTagLimit(booruProvider) === 1 ? '' : 's'} you type. The rest are ignored.
           </AlertDescription>
         </Alert>
       )}

@@ -39,6 +39,20 @@ export function isSceneTag(tag: string, tagOverrides?: Record<string, string>): 
   return false
 }
 
+/**
+ * A tag about the picture's surroundings, plain or not: location, props, sky,
+ * weather, light, and any background ("white background", "blurry background").
+ * A tag with a known slot outside scenery counts only when it names a background,
+ * so "sun hat" or "star earrings" never do.
+ */
+export function isEnvironmentTag(tag: string, tagOverrides?: Record<string, string>): boolean {
+  const t = tag.toLowerCase().replace(/_/g, " ").trim()
+  if (t.endsWith(" background") || isPlainBackgroundTag(t)) return true
+  const slot = getTagSlotFromOverrides(t, tagOverrides)?.slot
+  if (slot) return slot.startsWith("scenery:")
+  return isSceneTag(t, tagOverrides) || SKY_RE.test(t)
+}
+
 /** True when `candidate` would pair a plain backdrop with a scene (either way round). */
 export function conflictsWithBackground(
   candidate: string,

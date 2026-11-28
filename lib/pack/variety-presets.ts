@@ -84,3 +84,34 @@ export function varietyPreset(
 export function isValidVarietySetting(x: unknown): x is VarietySetting {
   return x === 'custom' || (typeof x === 'number' && Number.isInteger(x) && x >= 1 && x <= 5)
 }
+
+/** True when two per-category records hold the same entries. */
+export function sameCategoryRecord<T>(a: Partial<Record<TagCategory, T>>, b: Partial<Record<TagCategory, T>>): boolean {
+  const keys = Object.keys(a) as TagCategory[]
+  return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key])
+}
+
+/**
+ * A preset's per-category counts, except that a category the user switched Off (0)
+ * stays Off. Returns `current` itself when nothing changes, so re-applying the same
+ * preset doesn't count as an update (the preset is re-applied from an effect whose
+ * inputs depend on these counts: a new object every time would never settle).
+ */
+export function presetCounts(
+  current: Partial<Record<TagCategory, number>>,
+  preset: Partial<Record<TagCategory, number>>
+): Partial<Record<TagCategory, number>> {
+  const next = { ...preset }
+  ;(Object.keys(current) as TagCategory[]).forEach((cat) => {
+    if (current[cat] === 0) next[cat] = 0
+  })
+  return sameCategoryRecord(current, next) ? current : next
+}
+
+/** A preset's modes, or `current` itself when they're the same. */
+export function presetModes(
+  current: Partial<Record<TagCategory, AxisTagMode>>,
+  preset: Partial<Record<TagCategory, AxisTagMode>>
+): Partial<Record<TagCategory, AxisTagMode>> {
+  return sameCategoryRecord(current, preset) ? current : preset
+}

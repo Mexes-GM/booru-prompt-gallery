@@ -7,7 +7,8 @@
  *
  *   - the base's own tags for it, each removable from the base;
  *   - its subcategories, each Keep-from-base / Vary / Off;
- *   - when varying: the sampled pool, picks per prompt, loose tags vs. full sets.
+ *   - when varying: the sampled pool, picks per prompt, loose tags vs. full sets;
+ *     a pool value can be pinned into every prompt, like the base's tags.
  *
  * Rows set to Off don't open: there's nothing in them to edit.
  *
@@ -16,9 +17,8 @@
  */
 import { memo, useCallback, useEffect, useMemo, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
-import { Ban, Check, ChevronDown, ChevronRight, Lock, Minus, Package, Plus, RefreshCw, RotateCcw, Shirt, Shuffle, X } from "lucide-react"
+import { AlertTriangle, Ban, Check, ChevronDown, ChevronRight, Lock, Package, Pin, Plus, RefreshCw, RotateCcw, Shirt, Shuffle, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   DropdownMenu,
@@ -32,10 +32,16 @@ import {
 import { TAG_CATEGORY_ICONS } from "@/components/tag-category-icon"
 import { TagCategory } from "@/lib/tag-classifier"
 import { MAX_MIN_TAGS_SLIDER, MAX_MIN_PACKS_SLIDER, type AxisTagMode, type SlotGroup } from "@/lib/pack/pack-generator"
+import { poolEntriesFromInput, withoutKeptValues } from "@/lib/pack/classic-chips"
 import { TAG_CATEGORIES, formatSubcategoryLabel, getTagSlotFromOverrides, slotsOf } from "@/lib/tag-taxonomy"
-import { DEFAULT_MIN_SET_TAGS, MAX_MIN_SET_TAGS, type PackCategoryState, type PackSlotState } from "@/hooks/use-pack-mode"
+import { DEFAULT_MIN_SET_TAGS, MAX_MIN_SET_TAGS, type ClassicChipControls, type PackCategoryState, type PackSlotState } from "@/hooks/use-pack-mode"
+import { AddTagsField } from "./add-tags-field"
 import { useLowMotion } from "@/hooks/use-low-motion"
+import { Stepper } from "./count-stepper"
 import { PACK_TOUR_OPEN_PARTS_EVENT } from "./pack-builder-tour"
+import { PackSceneIdeas } from "./pack-scene-ideas"
+import type { SceneIdeaControls } from "@/hooks/use-pack-mode"
+import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
 
 const EMPTY_GROUPS: SlotGroup[] = []
 const EMPTY_COUNTS: Record<string, number> = {}
@@ -52,9 +58,9 @@ const CATEGORY_STATE_OPTIONS: { value: PackCategoryState; label: string; hint: s
 ]
 
 const SLOT_STATE_META: Record<PackSlotState, { label: string; icon: typeof Lock }> = {
-  base: { label: "Keep from base", icon: Lock },
+  base: { label: "Keep", icon: Lock },
   vary: { label: "Vary", icon: Shuffle },
-  off: { label: "Leave out", icon: Ban },
+  off: { label: "Off", icon: Ban },
 }
 
 /**
@@ -66,12 +72,21 @@ function TagChip({
   tone = "default",
   onRemove,
   removeLabel,
+  onToggle,
+  note,
+  title,
   lowMotion,
 }: {
   text: string
   tone?: "default" | "kept" | "faded"
   onRemove?: () => void
   removeLabel?: string
+  /** Pins the tag in every prompt, or leaves it to the sampling (the base's chips). */
+  onToggle?: () => void
+  /** A short warning for this chip (a pin that contradicts another kept tag). */
+  note?: string
+  /** Tooltip of a chip that can't be switched, saying why. */
+  title?: string
   lowMotion: boolean
 }) {
   const toneClass =
@@ -89,13 +104,35 @@ function TagChip({
       transition={lowMotion ? { duration: 0.12 } : { type: "spring", stiffness: 500, damping: 32 }}
       className={`group inline-flex items-center gap-1 max-w-full rounded-md border px-1.5 py-0.5 font-mono text-xs leading-5 ${toneClass}`}
     >
-      <span className="truncate max-w-[16rem]" title={text}>{text}</span>
+      {onToggle ? (
+        <button
+          type="button"
+          aria-pressed={tone === "kept"}
+          aria-label={`Pin ${text} in every prompt`}
+          title={tone === "kept" ? "In every prompt. Select to let the category decide." : "Only when it's picked. Select to pin it in every prompt."}
+          onClick={onToggle}
+          className="relative inline-flex items-center gap-1 min-w-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2.5 pointer-coarse:after:inset-x-0 pointer-coarse:after:content-['']"
+        >
+          {tone === "kept" && <Pin className="w-3 h-3 flex-shrink-0" aria-hidden />}
+          <span className="truncate max-w-[16rem]">{text}</span>
+        </button>
+      ) : (
+        <span className="inline-flex items-center gap-1 min-w-0" title={title ?? text}>
+          {title && tone === "kept" && <Pin className="w-3 h-3 flex-shrink-0" aria-hidden />}
+          <span className="truncate max-w-[16rem]">{text}</span>
+        </span>
+      )}
+      {note && (
+        <span title={note} role="img" aria-label={note} className="inline-flex">
+          <AlertTriangle className="w-3 h-3 flex-shrink-0 text-warning-text" aria-hidden />
+        </span>
+      )}
       {onRemove && (
         <button
           type="button"
           onClick={onRemove}
           aria-label={removeLabel ?? `Remove ${text}`}
-          className="relative -mr-0.5 rounded p-0.5 text-faint-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 pointer-coarse:after:absolute pointer-coarse:after:-inset-2 pointer-coarse:after:content-[''] hover:text-destructive-text hover:bg-destructive-soft transition-[color,background-color,opacity]"
+          className="relative -mr-0.5 rounded p-0.5 text-faint-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 pointer-coarse:px-2.5 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-3.5 pointer-coarse:after:left-0 pointer-coarse:after:-right-3 pointer-coarse:after:content-[''] hover:text-destructive-text hover:bg-destructive-soft transition-[color,background-color,opacity]"
         >
           <X className="w-3 h-3" />
         </button>
@@ -104,47 +141,22 @@ function TagChip({
   )
 }
 
-/** "− n +" stepper; 0 renders as `zeroLabel`. */
-function Stepper({
-  value,
-  min,
-  max,
-  onChange,
-  zeroLabel,
-  ariaLabel,
-}: {
-  value: number
-  min: number
-  max: number
-  onChange: (value: number) => void
-  zeroLabel?: string
-  ariaLabel: string
-}) {
-  return (
-    <div className="inline-flex items-center rounded-md border border-border/60 bg-background" role="group" aria-label={ariaLabel}>
-      <button
-        type="button"
-        onClick={() => onChange(Math.max(min, value - 1))}
-        disabled={value <= min}
-        aria-label={`Decrease ${ariaLabel}`}
-        className="h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11 grid place-items-center text-muted-foreground hover:text-foreground disabled:opacity-30"
-      >
-        <Minus className="w-3 h-3" />
-      </button>
-      <span className="min-w-[2.25rem] text-center text-xs font-semibold tabular-nums">
-        {value === 0 && zeroLabel ? zeroLabel : value}
-      </span>
-      <button
-        type="button"
-        onClick={() => onChange(Math.min(max, value + 1))}
-        disabled={value >= max}
-        aria-label={`Increase ${ariaLabel}`}
-        className="h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11 grid place-items-center text-muted-foreground hover:text-foreground disabled:opacity-30"
-      >
-        <Plus className="w-3 h-3" />
-      </button>
-    </div>
-  )
+/** Tooltip of a base chip in a category on Keep: its pin can't be switched there. */
+const KEEP_CHIP_TITLE = "This category keeps its tags. Set it to Vary to let prompts decide, or remove the tag."
+
+/** One sentence per pair of pinned tags that rarely go together ({tag: the one it clashes with}). */
+export function pinnedConflictLines(conflicts: Readonly<Record<string, string>>, shown: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const lines: string[] = []
+  for (const tag of shown) {
+    const other = conflicts[tag]
+    if (!other) continue
+    const key = [tag, other].sort().join("\u0000")
+    if (seen.has(key)) continue
+    seen.add(key)
+    lines.push(`${tag} and ${other} rarely go together. Both are pinned, so both stay.`)
+  }
+  return lines
 }
 
 export { Stepper as PackStepper }
@@ -191,6 +203,11 @@ interface CategoryRowProps {
   /** Marks this row's controls as the Pack Builder tour's anchors. */
   tourRole?: boolean
   tourPool?: boolean
+  /** The character chips: pin a base tag, add traits, take them back. */
+  chips?: ClassicChipControls
+  /** Scenery only: the scene picker and the picked scenes, with their titles for the summary. */
+  scenePicker?: React.ReactNode
+  pickedScenes?: string
 }
 
 const CategoryRow = memo(function CategoryRow({
@@ -226,9 +243,13 @@ const CategoryRow = memo(function CategoryRow({
   hiddenThinSets,
   tourRole,
   tourPool,
+  chips,
+  scenePicker,
+  pickedScenes,
 }: CategoryRowProps) {
   const lowMotion = useLowMotion()
-  const [draft, setDraft] = useState("")
+  const [adding, setAdding] = useState(false)
+  const added = chips?.addedByCategory[category] ?? EMPTY_TAGS
   const [expanded, setExpanded] = useState(false)
   const [showSlots, setShowSlots] = useState(false)
   // The Pack Builder tour opens this row and its subcategories when it explains them.
@@ -249,6 +270,16 @@ const CategoryRow = memo(function CategoryRow({
 
   const visibleBase = baseTags.filter((t) => !excludedBaseTags.has(t))
   const removedCount = baseTags.length - visibleBase.length
+  // A pool value every prompt keeps already (pinned from here, say) moves to the Base line: it no longer varies.
+  const poolValues = useMemo(() => withoutKeptValues(values, (tag) => keptTags.has(tag)), [values, keptTags])
+  const poolGroups = useMemo(
+    () => {
+      if (poolValues.length === values.length) return groups
+      const left = new Set(poolValues)
+      return groups.map((g) => ({ ...g, values: g.values.filter((v) => left.has(v)) })).filter((g) => g.values.length > 0)
+    },
+    [groups, poolValues, values.length]
+  )
 
   // Base tags per slot, for the subcategory list's "n on base" hints.
   const baseSlotCounts = useMemo(() => {
@@ -268,7 +299,7 @@ const CategoryRow = memo(function CategoryRow({
   }).length
 
   const ceiling = mode === "bundle" ? MAX_MIN_PACKS_SLIDER : Math.min(MAX_MIN_TAGS_SLIDER, maxPerPrompt > 0 ? maxPerPrompt : MAX_MIN_TAGS_SLIDER)
-  const maxPicks = Math.max(1, Math.min(values.length, ceiling))
+  const maxPicks = Math.max(1, Math.min(poolValues.length, ceiling))
   const picks = Math.max(1, Math.min(minCount, maxPicks))
 
   // A "full set" is an outfit for clothing; elsewhere (weapons, poses…) just a set.
@@ -276,28 +307,30 @@ const CategoryRow = memo(function CategoryRow({
   const units = `${unit}s`
 
   const kept = visibleBase.filter((t) => keptTags.has(t))
+  const conflictLines = chips ? pinnedConflictLines(chips.conflicts, [...kept, ...added]) : []
+  // A pin outlives Off: those tags still go in every prompt, and the row says so.
+  const pinnedHere = [...kept, ...added.filter((tag) => !chips?.dashed.has(tag))]
   const summary =
     state === "off"
-      ? "Left out"
+      ? pinnedHere.length > 0 ? `Left out, except pinned ${previewTags(pinnedHere)}` : "Left out"
       : state === "keep"
         ? kept.length > 0
           ? previewTags(kept)
           : "Nothing to keep on the base"
-        : values.length === 0
+        : poolValues.length === 0
           ? isCollecting
             ? "Collecting tags…"
             : "No tags found yet"
-          : `${values.length} ${values.length === 1 ? unit : units} · ${picks} per prompt`
+          : `${kept.length > 0 ? `Always ${previewTags(kept)} · ` : ""}${poolValues.length} ${poolValues.length === 1 ? unit : units} · ${picks} per prompt`
   const summaryExtra = customizedSlots > 0 ? ` · ${customizedSlots} ${customizedSlots === 1 ? "part" : "parts"} changed` : ""
 
-  const handleAdd = () => {
-    const trimmed = draft.trim()
-    if (!trimmed) return
-    onAdd(category, trimmed)
-    setDraft("")
+  // Commas separate tags, except in full sets, where they make one set.
+  const addToPool = (text: string) => {
+    poolEntriesFromInput(text, mode).forEach((value) => onAdd(category, value))
+    return false
   }
 
-  const showGrouping = mode === "individual" && groups.some((g) => g.slot !== null)
+  const showGrouping = mode === "individual" && poolGroups.some((g) => g.slot !== null)
 
   return (
     <section
@@ -322,7 +355,9 @@ const CategoryRow = memo(function CategoryRow({
           <span className="min-w-0 flex-1">
             <span className={`block text-sm font-semibold leading-tight ${state === "off" ? "text-muted-foreground" : ""}`}>{label}</span>
             <span className={`block text-xs truncate ${state === "keep" && kept.length > 0 ? "font-mono text-foreground/80" : "text-muted-foreground"}`}>
+              {pickedScenes && state !== "off" && <span className="font-sans">Scene: {pickedScenes} · </span>}
               {summary}
+              {pickedScenes && state === "off" && <span className="font-sans"> · Scene paused</span>}
               {summaryExtra && <span className="font-sans text-mode-pack-text">{summaryExtra}</span>}
             </span>
           </span>
@@ -366,25 +401,51 @@ const CategoryRow = memo(function CategoryRow({
         <div id={bodyId} className="px-3 sm:px-4 pb-4 pt-1 space-y-3 border-t border-border/40">
           {note && <p className="pt-2 text-xs text-muted-foreground">{note}</p>}
 
-          {/* The base's own tags for this category */}
-          {baseTags.length > 0 && (
+          {/* The base's own tags for this category, and traits added by hand */}
+          {(baseTags.length > 0 || chips) && (
             <div className="flex items-start gap-3 pt-2">
               <span className="w-14 flex-shrink-0 pt-1 text-xs font-medium text-muted-foreground">
                 Base
               </span>
-              <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5 pointer-coarse:gap-x-3.5 pointer-coarse:gap-y-5 flex-1 min-w-0">
                 <AnimatePresence initial={false} mode="popLayout">
                   {visibleBase.map((tag) => (
                     <TagChip
                       key={tag}
                       text={tag}
                       tone={keptTags.has(tag) ? "kept" : "faded"}
+                      onToggle={chips && state !== "keep" ? () => chips.toggle(tag) : undefined}
+                      title={chips && state === "keep" ? KEEP_CHIP_TITLE : undefined}
+                      note={chips?.conflicts[tag] ? `Rarely goes with ${chips.conflicts[tag]}` : undefined}
                       onRemove={() => onToggleExcludedBaseTag(tag)}
-                      removeLabel={`Remove ${tag} from the base`}
+                      removeLabel={`Remove ${tag} from every prompt`}
+                      lowMotion={lowMotion}
+                    />
+                  ))}
+                  {added.map((tag) => (
+                    <TagChip
+                      key={`added:${tag}`}
+                      text={tag}
+                      tone={chips?.dashed.has(tag) ? "faded" : "kept"}
+                      onToggle={chips ? () => chips.toggle(tag) : undefined}
+                      note={chips?.conflicts[tag] ? `Rarely goes with ${chips.conflicts[tag]}` : undefined}
+                      onRemove={() => chips?.remove(tag)}
+                      removeLabel={`Take ${tag} back`}
                       lowMotion={lowMotion}
                     />
                   ))}
                 </AnimatePresence>
+                {chips && !adding && (
+                  <button
+                    type="button"
+                    onClick={() => setAdding(true)}
+                    aria-label={`Add to ${label}`}
+                    className="inline-flex items-center gap-1 min-h-7 pointer-coarse:min-h-11 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add
+                  </button>
+                )}
                 {removedCount > 0 && (
                   <button
                     type="button"
@@ -392,13 +453,44 @@ const CategoryRow = memo(function CategoryRow({
                     className="inline-flex items-center gap-1 px-1.5 text-xs text-muted-foreground hover:text-foreground"
                   >
                     <RotateCcw className="w-3 h-3" />
-                    {removedCount} removed · restore
+                    {removedCount} removed · Restore
                   </button>
                 )}
                 {visibleBase.length > 0 && state === "vary" && !visibleBase.some((t) => keptTags.has(t)) && (
                   <span className="self-center text-xs text-muted-foreground italic">replaced by the varied tags</span>
                 )}
               </div>
+            </div>
+          )}
+          {chips && adding && (
+            <AddTagsField
+              label={`Add to ${label}`}
+              onAdd={(text) => chips.add(category, text).length > 0}
+              onDone={() => setAdding(false)}
+              refusedMessage="People counts like 1girl can't be added here. Put them in Always add."
+            />
+          )}
+          {chips && conflictLines.length > 0 && (
+            <div className="space-y-0.5" aria-live="polite">
+              {conflictLines.map((line) => (
+                <p key={line} className="flex items-start gap-1.5 text-xs text-warning-text">
+                  <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden />
+                  <span>{line}</span>
+                </p>
+              ))}
+            </div>
+          )}
+          {chips && (visibleBase.length > 0 || added.length > 0) && (
+            <p className="text-xs text-muted-foreground">
+              Pinned tags go in every prompt, dashed ones only when they&apos;re picked; select a tag to switch it, or remove it to keep it out of every prompt.
+            </p>
+          )}
+
+          {/* Scenery: named scenes whose tags join every prompt (Scene ideas) */}
+          {scenePicker && (
+            <div className="flex items-start gap-3">
+              <span className="w-14 flex-shrink-0 pt-1 text-xs font-medium text-muted-foreground">Scene</span>
+              <div className="flex-1 min-w-0">{scenePicker}</div>
             </div>
           )}
 
@@ -475,7 +567,7 @@ const CategoryRow = memo(function CategoryRow({
                   <span>Pick a part to change it:</span>
                   <span className="inline-flex items-center gap-1"><Lock className="w-3 h-3" /> keep the base&apos;s tags</span>
                   <span className="inline-flex items-center gap-1"><Shuffle className="w-3 h-3 text-mode-pack-text" /> vary</span>
-                  <span className="inline-flex items-center gap-1"><Ban className="w-3 h-3" /> leave out</span>
+                  <span className="inline-flex items-center gap-1"><Ban className="w-3 h-3" /> off</span>
                 </p>
               )}
             </div>
@@ -489,7 +581,7 @@ const CategoryRow = memo(function CategoryRow({
               </span>
               <div className="flex-1 min-w-0 space-y-2">
                 <div className="flex items-center gap-x-3 gap-y-2 flex-wrap text-xs text-muted-foreground">
-                  {values.length > 0 && (
+                  {poolValues.length > 0 && (
                     <div className="flex items-center gap-1.5">
                       <span>Per prompt</span>
                       <Stepper
@@ -582,12 +674,12 @@ const CategoryRow = memo(function CategoryRow({
                       ? "Loading the outfit library…"
                       : libraryCount === 0
                         ? "No outfits in the chosen styles. Pick some under Customize prompt › Outfit."
-                        : `${values.length} of ${libraryCount.toLocaleString("en")} outfits, in the styles and detail chosen under Customize prompt › Outfit.`}
+                        : `${poolValues.length} of ${libraryCount.toLocaleString("en")} outfits, in the styles and detail chosen under Customize prompt › Outfit.`}
                   </p>
                 )}
                 <div className="flex flex-wrap gap-1.5 content-start">
                   <AnimatePresence initial={false} mode="popLayout">
-                    {(showGrouping ? groups : [{ slot: null, values }]).flatMap((group) => [
+                    {(showGrouping ? poolGroups : [{ slot: null, values: poolValues }]).flatMap((group) => [
                       showGrouping ? (
                         <motion.span
                           key={`h:${group.slot ?? "none"}`}
@@ -602,40 +694,36 @@ const CategoryRow = memo(function CategoryRow({
                         <TagChip
                           key={value}
                           text={value}
+                          onToggle={chips ? () => chips.add(category, value) : undefined}
                           onRemove={() => onRemove(category, value)}
                           lowMotion={lowMotion}
                         />
                       )),
                     ])}
                   </AnimatePresence>
-                  {values.length === 0 && isCollecting &&
+                  {poolValues.length === 0 && isCollecting &&
                     [56, 72, 48, 88, 64, 52].map((w, i) => (
                       <span key={i} className="h-6 rounded-md bg-muted animate-pulse" style={{ width: w }} />
                     ))}
-                  {values.length === 0 && !isCollecting && !fromLibrary && (
+                  {poolValues.length === 0 && !isCollecting && !fromLibrary && (
                     <span className="text-xs text-muted-foreground italic py-1">
                       Nothing found in the collected posts. Add some below or collect more posts.
                     </span>
                   )}
                 </div>
 
-                <div className="flex items-center gap-1.5 max-w-md">
-                  <Input
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault()
-                        handleAdd()
-                      }
-                    }}
-                    aria-label={`Add to the ${label.toLowerCase()} pool`}
-                    placeholder={mode === "bundle" ? "Add a set (tag1, tag2, …)" : `Add a ${label.toLowerCase()} tag`}
-                    className="h-8 pointer-coarse:h-11 text-xs"
+                {chips && poolValues.length > 0 && (
+                  <p className="text-xs text-muted-foreground">Select a tag to pin it in every prompt.</p>
+                )}
+
+                <div className="max-w-md">
+                  <AddTagsField
+                    label={`Add to the ${label.toLowerCase()} pool`}
+                    labelHidden
+                    autoFocus={false}
+                    onAdd={addToPool}
+                    placeholder={mode === "bundle" ? "Add a set (tag1, tag2, …)" : `Add ${label.toLowerCase()} tags`}
                   />
-                  <Button type="button" variant="outline" size="sm" onClick={handleAdd} disabled={!draft.trim()} aria-label="Add" className="h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11 p-0">
-                    <Plus className="w-3.5 h-3.5" />
-                  </Button>
                 </div>
               </div>
             </div>
@@ -684,6 +772,12 @@ export interface PackCategoryListProps {
   minSetTags: Partial<Record<TagCategory, number>>
   onSetMinSetTags: (category: TagCategory, count: number) => void
   hiddenThinSets: Partial<Record<TagCategory, number>>
+  /** The character chips (pin, add, take back); without them the base's chips only remove. */
+  chips?: ClassicChipControls
+  /** Scene ideas, offered in the Scenery row. */
+  sceneIdeas?: SceneIdeaControls
+  /** The pack's content rating: scene ideas above it aren't offered. */
+  contentRating?: PackRatingMode | null
 }
 
 export function PackCategoryList({
@@ -717,8 +811,17 @@ export function PackCategoryList({
   minSetTags,
   onSetMinSetTags,
   hiddenThinSets,
+  chips,
+  sceneIdeas,
+  contentRating = null,
 }: PackCategoryListProps) {
   const keptTags = useMemo(() => new Set(lockedTags), [lockedTags])
+  // One element, so the Scenery row only re-renders when the scenes or the rating change.
+  const scenePicker = useMemo(
+    () => (sceneIdeas ? <PackSceneIdeas controls={sceneIdeas} rating={contentRating} /> : undefined),
+    [sceneIdeas, contentRating]
+  )
+  const pickedScenes = sceneIdeas?.applied.map((idea) => idea.title).join(", ") || undefined
   const firstVarying = categories.find((c) => categoryStates[c] === "vary")
   const handleRestore = useCallback((category: TagCategory) => onRestoreExcluded(category), [onRestoreExcluded])
 
@@ -758,6 +861,9 @@ export function PackCategoryList({
           hiddenThinSets={hiddenThinSets[cat] ?? 0}
           tourRole={cat === categories[0]}
           tourPool={cat === firstVarying}
+          chips={chips}
+          scenePicker={cat === "scenery" ? scenePicker : undefined}
+          pickedScenes={cat === "scenery" ? pickedScenes : undefined}
           note={
             cat === "appearance" && hasMultipleCharacters
               ? "Faded tags belong to the other characters, or couldn't be matched to yours, so they stay out of the prompts."

@@ -13,6 +13,8 @@ import { type OutfitSettings } from "@/lib/outfit-swap"
 import { classifyTags, computeRichnessScore, type ClassifiedTags, type RichnessScore } from "@/lib/tag-classifier"
 import { splitCommaSeparatedTags } from "@/lib/utils/tag-utils"
 import { derivePostPrompt, type DerivePostPromptResult } from "@/lib/prompt/derive-post-prompt"
+import { useTagRelations } from "@/hooks/use-tag-relations"
+import { useDatasetTags } from "@/hooks/use-dataset-tags"
 
 // Cards in the virtualized grid unmount when scrolled away and mount again on
 // the way back, which used to rerun the whole derivation for posts that were
@@ -68,6 +70,10 @@ export interface UseCardPromptArgs {
   tagOverrides?: Record<string, string>
   globalWeights?: Record<string, number>
   isGlobalWeightsEnabled?: boolean
+  /** The card's booru, for the added-tags dataset (Danbooru only). */
+  provider?: string
+  /** "Fill in missing tags": add the dataset's tags to Danbooru posts. Off unless passed. */
+  datasetTagsEnabled?: boolean
   /** Called whenever baseContent changes substantially (new post/filters) so the
    *  caller can reset any local edit state (e.g. InteractivePrompt's modifiedContent). */
   onBaseContentChange?: () => void
@@ -83,7 +89,7 @@ export interface UseCardPromptArgs {
  */
 export type UseCardPromptOptions = Omit<
   UseCardPromptArgs,
-  "post" | "tagCounts" | "globalWeights" | "isGlobalWeightsEnabled" | "onBaseContentChange"
+  "post" | "tagCounts" | "globalWeights" | "isGlobalWeightsEnabled" | "onBaseContentChange" | "provider"
 >
 
 /**
@@ -121,6 +127,8 @@ export function useCardPrompt({
   tagOverrides,
   globalWeights = {},
   isGlobalWeightsEnabled = false,
+  provider,
+  datasetTagsEnabled = false,
   onBaseContentChange,
 }: UseCardPromptArgs) {
   const excludeList = useMemo(() => splitCommaSeparatedTags(excludeInput), [excludeInput])
@@ -130,7 +138,15 @@ export function useCardPrompt({
   // hook-free derivePostPrompt (lib/prompt/derive-post-prompt.ts) so the exact
   // same pipeline can be called imperatively in a batch loop (Bulk Send's
   // "Real posts" mode) without risking the two paths drifting apart.
+  // Smart Tag Exclusion checks "Tags to add" against measured relations once they load (in an
+  // idle moment, and only when there are tags to add: searched tags appended on their own use the
+  // built-in rules until something else loads them). The result recomputes when they arrive.
+  const relations = useTagRelations(smartTagExclusion && addInput.trim() !== "", "idle")
+  // Requested when the card mounts (the grid only mounts cards near the viewport);
+  // the prompt re-derives once they arrive.
+  const datasetTags = useDatasetTags(post, provider, datasetTagsEnabled)
   const derivationDeps = [
+    relations, datasetTags,
     excludeInput, addInput, searchTags, autoAppendSearchTags, findInput, replaceInput, tagAppendRules,
     includeCharacters, optimizeTags, smartTagExclusion, experimentalPromptRules, prependAnimaArtist,
     removeLoRaTags, removeQualityTags,
@@ -153,10 +169,12 @@ export function useCardPrompt({
       randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList,
       backgroundMatchStrictness, outfitSettings,
       tagOverrides, globalWeights, isGlobalWeightsEnabled,
+      datasetTags,
     })
     if (cacheable) derivedByPost.set(post, { deps: derivationDeps, value })
     return value
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // derivationDeps is the dependency list (also the cache key above), spread here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/use-memo
   }, [post, ...derivationDeps])
 
   const {
@@ -171,6 +189,7 @@ export function useCardPrompt({
     conflictingTags: conflictResolutionConflictingTags,
     outfitTags,
     outfitDescription,
+    datasetAddedTags,
   } = derived
 
   // Check if this is an Aibooru post with prompt (still needed below for the
@@ -301,5 +320,6 @@ export function useCardPrompt({
     hasAppends,
     outfitTags,
     outfitDescription,
+    datasetAddedTags,
   }
 }

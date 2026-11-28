@@ -3,19 +3,21 @@
 import { useEffect, useState } from "react"
 import dynamic from "next/dynamic"
 import { safeTrack } from "@/lib/analytics"
+import { FEATURE_VIDEOS, type FeatureVideoId } from "@/lib/feature-intro-videos"
 import { MAIN_TOUR_STORAGE_KEY, isFeatureIntroPreview, isOverlayOpen } from "@/lib/onboarding"
 
 const loadDialog = () => import("@/components/prompt-gallery/feature-intro-dialog")
 const FeatureIntroDialog = dynamic(() => loadDialog().then((m) => m.FeatureIntroDialog), { ssr: false, loading: () => null })
 
 /**
- * Release whose feature this dialog presents. It shows while the site is on
+ * Release whose features this dialog presents (lib/feature-intro-videos.ts). It shows while the site is on
  * this minor version or the next one (FEATURE_INTRO_EXTRA_MINORS), so a release
  * that follows soon after doesn't hide it before people see it.
  */
-export const FEATURE_INTRO_RELEASE = "10.7"
+export const FEATURE_INTRO_RELEASE = "10.9"
 const FEATURE_INTRO_EXTRA_MINORS = 1
-export const FEATURE_INTRO_POSTER = "/whats-new/10.7.0-random-outfit-poster.jpg"
+/** The first video's poster: the one the dialog opens on, fetched while it waits to open. */
+export const FEATURE_INTRO_POSTER = FEATURE_VIDEOS[0].poster
 
 const SEEN_KEY = "feature_intro_seen"
 
@@ -34,7 +36,7 @@ function isBusy(): boolean {
   return el instanceof HTMLElement && (el.isContentEditable || el.matches("input, textarea, select"))
 }
 
-/** "10.8.2" is within reach of release "10.7" when the major matches and the minor is 7 or 8. */
+/** "10.10.2" is within reach of release "10.9" when the major matches and the minor is 9 or 10. */
 function isIntroVersion(version: string): boolean {
   const [major, minor] = version.split(".").map(Number)
   const [relMajor, relMinor] = FEATURE_INTRO_RELEASE.split(".").map(Number)
@@ -63,11 +65,11 @@ function markSeen() {
 
 /**
  * Opens the "what's new" dialog once per browser for the release's main
- * feature, as soon as the page has loaded, unless the user is mid-action or
+ * features, as soon as the page has loaded, unless the user is mid-action or
  * something else is open; then it waits for a pause. It is marked as seen the
  * moment it opens. The dialog's code and video load only after the page.
  */
-export function FeatureIntro({ version, onTry }: { version: string; onTry: () => void }) {
+export function FeatureIntro({ version, onTry }: { version: string; onTry: (video: FeatureVideoId) => void }) {
   const [open, setOpen] = useState<boolean | null>(null)
 
   useEffect(() => {

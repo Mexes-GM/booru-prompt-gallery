@@ -14,6 +14,8 @@ export interface BooruPost {
   width?: number
   height?: number
   _provider?: string // Added for internal use in Favorites UI
+  /** Pack Mode: a scene the scene model wrote, not a real post (negative id, no image). See lib/pack/scene/invented.ts. */
+  _invented?: boolean
   ai_metadata?: {
     prompt?: string
     negative_prompt?: string
@@ -37,7 +39,7 @@ export interface IBooruProvider {
   search(options: SearchOptions): Promise<BooruPost[]>
 }
 
-export type BooruProvider = 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'e6ai' | 'gelbooru'
+export type BooruProvider = 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'floofgens' | 'gelbooru'
 
 export const isAibooruPost = (post: BooruPost): boolean => {
   return 'ai_metadata' in post && post.ai_metadata !== undefined

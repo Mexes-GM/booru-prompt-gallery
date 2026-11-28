@@ -1,0 +1,254 @@
+/**
+ * Tag relations measured on Danbooru posts (public/tag-relations.json): which
+ * general tags exclude each other, which tag requires another, and which tag
+ * requires something of a taxonomy slot ("drinking" needs something in hand).
+ *
+ * Exclusions depend on the picture: with one person, two tags of the same slot
+ * that almost never meet in one-person posts (standing / sitting, day / night);
+ * with several people, only pairs that almost never meet in any post (one person
+ * may stand while another sits). Each is measured per content rating, with how
+ * rare the pair is (observed / expected), so a caller picks its own strictness:
+ * the conflict resolver removes a tag only for the rarest pairs, while choosing
+ * among candidates (nothing is removed) can use all of them.
+ *
+ * People-count and pairing tags are not in the data: the app's own count logic decides those.
+ * Generated file, built from the tag database; never edited by hand.
+ *
+ * The file loads lazily and is cached (loadTagRelations); the functions below are
+ * pure and work on the loaded data, so synchronous code can use it once it's in
+ * (loadedTagRelations) and fall back to its own rules before.
+ */
+
+export type RelationRating = 'sfw' | 'questionable' | 'explicit' | 'both'
+
+export interface RelationContext {
+  /** People in the picture: 1 (or unknown) uses the one-person exclusions, 2 or more the general ones. */
+  people: number
+  /** The content rating; null or undefined takes every rating. */
+  rating?: RelationRating | null
+}
+
+export interface TagRelations {
+  tags: readonly string[]
+  /** Tag (app spelling) to its index in `tags`. */
+  index: ReadonlyMap<string, number>
+  /**
+   * Exclusions: key `lo * 65536 + hi` (indices) to the context bits (low 10 bits),
+   * then the one-person and several-people ratios x1000 (8 bits each; 0 when the
+   * file has none, as the bundled core of confirmed rules).
+   */
+  excluded: ReadonlyMap<number, number>
+  /** Bit of each context in `excluded`. */
+  bits: Readonly<Record<string, number>>
+  /** Tag index to the indices it requires. */
+  requires: ReadonlyMap<number, readonly number[]>
+  /** Tag index to the taxonomy slots it requires something of. */
+  requiresSlot: ReadonlyMap<number, readonly string[]>
+  /** Tags that need more than one person ("looking at another", "hug"): they (almost) never meet `solo`. */
+  company: ReadonlySet<number>
+  /** Objects, props and creatures people hold (they meet `holding` well above chance), and ones they don't. */
+  held: ReadonlySet<number>
+  notHeld: ReadonlySet<number>
+}
+
+export interface TagRelationsFile {
+  /** 1: `ex` is [a, b, mask, ...]; 2: [a, b, mask, oneRatio, severalRatio, ...]. */
+  v: number
+  contexts: string[]
+  tags: string[]
+  ex: number[]
+  req?: number[]
+  reqSlot?: Record<string, number[]>
+  company?: number[]
+  held?: number[]
+  notHeld?: number[]
+}
+
+/** The app's spelling of a tag: lower case, spaces for underscores, single spaces. */
+export function relationKey(tag: string): string {
+  return tag.toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+const pairKey = (a: number, b: number) => (a < b ? a * 65536 + b : b * 65536 + a)
+
+export function parseTagRelations(file: TagRelationsFile): TagRelations {
+  if (!file || (file.v !== 1 && file.v !== 2) || !Array.isArray(file.tags) || !Array.isArray(file.ex)) throw new Error('Invalid tag-relations.json')
+  const stride = file.v === 2 ? 5 : 3
+  const index = new Map<string, number>()
+  file.tags.forEach((tag, i) => index.set(tag, i))
+  const excluded = new Map<number, number>()
+  for (let i = 0; i + stride - 1 < file.ex.length; i += stride) {
+    const ratios = stride === 5 ? (file.ex[i + 3] << 10) | (file.ex[i + 4] << 18) : 0
+    excluded.set(pairKey(file.ex[i], file.ex[i + 1]), file.ex[i + 2] | ratios)
+  }
+  const requires = new Map<number, number[]>()
+  const req = file.req ?? []
+  for (let i = 0; i + 1 < req.length; i += 2) {
+    const list = requires.get(req[i])
+    if (list) list.push(req[i + 1])
+    else requires.set(req[i], [req[i + 1]])
+  }
+  const requiresSlot = new Map<number, string[]>()
+  for (const [slot, ids] of Object.entries(file.reqSlot ?? {})) {
+    for (const id of ids) {
+      const list = requiresSlot.get(id)
+      if (list) list.push(slot)
+      else requiresSlot.set(id, [slot])
+    }
+  }
+  const bits: Record<string, number> = {}
+  file.contexts.forEach((context, i) => { bits[context] = 1 << i })
+  return { tags: file.tags, index, excluded, bits, requires, requiresSlot, company: new Set(file.company ?? []), held: new Set(file.held ?? []), notHeld: new Set(file.notHeld ?? []) }
+}
+
+/** A post's rating letter or word ("g", "s", "q", "e", "general"...) as a relation rating; null when unknown. */
+export function relationRatingOf(rating: string | null | undefined): RelationRating | null {
+  switch ((rating ?? '').toLowerCase()) {
+    case 'g': case 'general': case 's': case 'sensitive': case 'safe': return 'sfw'
+    case 'q': case 'questionable': return 'questionable'
+    case 'e': case 'explicit': return 'explicit'
+    default: return null
+  }
+}
+
+const RATING_CLASS: Record<RelationRating, string> = { sfw: 'sfw', questionable: 'q', explicit: 'e', both: 'both' }
+
+/** The context's bit: one person or several, and the rating ('all' when unknown). */
+export function contextBit(relations: TagRelations, context: RelationContext): number {
+  const who = context.people >= 2 ? 'multi' : 'solo'
+  const rating = context.rating ? RATING_CLASS[context.rating] : 'all'
+  return relations.bits[`${who}:${rating}`] ?? 0
+}
+
+/** Every exclusion the file has: one person at most 0.10 of the expected, several people 0.05. */
+export const ALL_EXCLUSIONS = 0.1
+
+/**
+ * True when the data says `a` and `b` (almost) never go together in this context:
+ * the pair is listed for it and, when the file measures it, met at most `maxRatio`
+ * times as often as chance would have it.
+ */
+export function excludes(relations: TagRelations, a: string, b: string, context: RelationContext, maxRatio = ALL_EXCLUSIONS): boolean {
+  const ia = relations.index.get(relationKey(a))
+  const ib = relations.index.get(relationKey(b))
+  if (ia === undefined || ib === undefined || ia === ib) return false
+  const entry = relations.excluded.get(pairKey(ia, ib)) ?? 0
+  if ((entry & contextBit(relations, context)) === 0) return false
+  const ratio = (context.people >= 2 ? entry >>> 18 : entry >>> 10) & 0xff
+  return ratio <= Math.round(maxRatio * 1000)
+}
+
+const partnersCache = new WeakMap<TagRelations, Map<number, number[]>>()
+
+/** Every tag index excluded with each tag, built once per loaded file. */
+function partnerIndex(relations: TagRelations): Map<number, number[]> {
+  let index = partnersCache.get(relations)
+  if (index) return index
+  index = new Map()
+  relations.excluded.forEach((_, key) => {
+    const lo = Math.floor(key / 65536)
+    const hi = key % 65536
+    for (const [a, b] of [[lo, hi], [hi, lo]]) {
+      const list = index!.get(a)
+      if (list) list.push(b)
+      else index!.set(a, [b])
+    }
+  })
+  partnersCache.set(relations, index)
+  return index
+}
+
+/**
+ * The tags chosen so far and everything they exclude in one context: checking a
+ * candidate is one lookup, however many tags are chosen (Pack Mode's sampling).
+ */
+export class ExclusionSet {
+  private readonly blocked = new Set<number>()
+  constructor(private readonly relations: TagRelations, private readonly context: RelationContext, private readonly maxRatio = ALL_EXCLUSIONS) {}
+
+  /** Adds a chosen tag: what it excludes is blocked from now on. */
+  add(tag: string): void {
+    const i = this.relations.index.get(relationKey(tag))
+    if (i === undefined) return
+    const bit = contextBit(this.relations, this.context)
+    const limit = Math.round(this.maxRatio * 1000)
+    const shift = this.context.people >= 2 ? 18 : 10
+    for (const j of partnerIndex(this.relations).get(i) ?? []) {
+      const entry = this.relations.excluded.get(pairKey(i, j)) ?? 0
+      if ((entry & bit) !== 0 && ((entry >>> shift) & 0xff) <= limit) this.blocked.add(j)
+    }
+  }
+
+  /** True when a chosen tag excludes `tag`. */
+  blocks(tag: string): boolean {
+    const i = this.relations.index.get(relationKey(tag))
+    return i !== undefined && this.blocked.has(i)
+  }
+}
+
+/** True for a tag that needs more than one person in the picture ("looking at another"). */
+export function needsCompany(relations: TagRelations, tag: string): boolean {
+  const i = relations.index.get(relationKey(tag))
+  return i !== undefined && relations.company.has(i)
+}
+
+/** Tags that `tag` requires ("skirt lift" requires "skirt"). */
+export function requiredBy(relations: TagRelations, tag: string): string[] {
+  const i = relations.index.get(relationKey(tag))
+  return i === undefined ? [] : (relations.requires.get(i) ?? []).map((j) => relations.tags[j])
+}
+
+/** Taxonomy slots `tag` requires something of ("drinking" requires "equipment:handheld"). */
+export function requiredSlots(relations: TagRelations, tag: string): string[] {
+  const i = relations.index.get(relationKey(tag))
+  return i === undefined ? [] : [...(relations.requiresSlot.get(i) ?? [])]
+}
+
+// ── Loading ──────────────────────────────────────────────────────────────────
+
+let loaded: TagRelations | null = null
+let loading: Promise<TagRelations | null> | null = null
+const listeners = new Set<() => void>()
+
+/** The relations once loaded, else null (callers then use their own rules). */
+export function loadedTagRelations(): TagRelations | null {
+  return loaded
+}
+
+/** Calls `listener` once the relations load; returns the unsubscribe. */
+export function subscribeTagRelations(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+
+/** For tests and scripts: sets (or clears) the loaded relations. */
+export function setTagRelations(relations: TagRelations | null): void {
+  loaded = relations
+  listeners.forEach((listener) => listener())
+}
+
+/**
+ * Loads public/tag-relations.json once (later calls share the request and the
+ * result). Resolves to null when it fails; a later call tries again.
+ */
+export function loadTagRelations(url = '/tag-relations.json'): Promise<TagRelations | null> {
+  if (loaded) return Promise.resolve(loaded)
+  if (loading) return loading
+  loading = fetch(url)
+    .then((res) => {
+      if (!res.ok) throw new Error(`tag-relations.json: HTTP ${res.status}`)
+      return res.json()
+    })
+    .then((file: TagRelationsFile) => {
+      setTagRelations(parseTagRelations(file))
+      return loaded
+    })
+    .catch((err) => {
+      console.warn('Tag relations failed to load; using the built-in conflict rules:', err)
+      return null
+    })
+    .finally(() => {
+      loading = null
+    })
+  return loading
+}

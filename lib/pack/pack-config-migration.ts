@@ -5,10 +5,22 @@
  * Pure function: no storage reads/writes here, callers pass in what they read.
  */
 import type { PackModeConfig, PackModeConfigByKind, PackModeConfigV2, PackModeKind } from '../storage'
+import type { PackPreferences } from '../storage'
+import { splitCommaSeparatedTags } from '../utils/tag-utils'
+import { isPromptFormat, type PromptFormat } from '../prompt/prompt-format'
+import { normalizeTagForPack } from './pack-generator'
 import { PACK_ARCHETYPES, type PackArchetypeId } from '../tag-taxonomy'
 import { DEFAULT_VARIETY_LEVEL } from './variety-presets'
+import { DEFAULT_SCENE_SETTINGS, type ScenePackSettings } from './scene-pack'
 
 const DEFAULT_PROMPT_COUNT = 10
+
+/**
+ * Per-category counts of a new Classic pack: Equipment and Creature start Off (0),
+ * since objects and animals drawn at random rarely belong to the scene. A saved
+ * config keeps whatever it says.
+ */
+export const DEFAULT_AXIS_MIN_COUNTS: Readonly<Record<string, number>> = { equipment: 0, creature: 0 }
 
 /**
  * Upgrades a V1 config saved with the retired `activeSlots` whitelist (it
@@ -63,7 +75,7 @@ export function migratePackConfig(
       mutedSlots: [],
       varietyLevel: DEFAULT_VARIETY_LEVEL,
       axisTagModes: {},
-      axisMinCounts: {},
+      axisMinCounts: { ...DEFAULT_AXIS_MIN_COUNTS },
       promptCount: DEFAULT_PROMPT_COUNT,
       manualAxisValues: {},
     }
@@ -79,4 +91,95 @@ export function migratePackConfig(
     promptCount: v1.promptCount ?? DEFAULT_PROMPT_COUNT,
     manualAxisValues: { ...v1.manualAxisValues },
   }
+}
+
+const pick = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T =>
+  allowed.includes(value as T) ? (value as T) : fallback
+
+/** The outfit picked per character, keeping only name -> outfit-name strings. */
+function savedOutfits(value: unknown): Pick<ScenePackSettings, 'characterOutfits'> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const entries = Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+  return entries.length > 0 ? { characterOutfits: Object.fromEntries(entries) } : {}
+}
+
+/**
+ * The engine fields of a saved config, with defaults for configs saved before
+ * they existed (or with values this version doesn't know): the scenes engine,
+ * with each scene option at its default. The classic fields are not touched,
+ * so an old config keeps reading exactly as before.
+ */
+export function packEngineConfig(config: Pick<PackModeConfigV2, 'engine' | 'sceneSettings'>): {
+  engine: 'scenes' | 'classic'
+  sceneSettings: ScenePackSettings
+} {
+  const saved: Partial<ScenePackSettings> =
+    config.sceneSettings && typeof config.sceneSettings === 'object' ? config.sceneSettings : {}
+  return {
+    engine: pick(config.engine, ['scenes', 'classic'], 'scenes'),
+    sceneSettings: {
+      mix: pick(saved.mix, ['faithful', 'remix'], DEFAULT_SCENE_SETTINGS.mix),
+      clothing: pick(saved.clothing, ['scene', 'library', 'base', 'own', 'character'], DEFAULT_SCENE_SETTINGS.clothing),
+      scenery: pick(saved.scenery, ['scene', 'vary', 'plain', 'picked'], DEFAULT_SCENE_SETTINGS.scenery),
+      extras: typeof saved.extras === 'boolean' ? saved.extras : DEFAULT_SCENE_SETTINGS.extras,
+      inventedScenes: saved.inventedScenes === true,
+      ...savedOutfits(saved.characterOutfits),
+    },
+  }
+}
+
+export const DEFAULT_PACK_PREFERENCES: Readonly<PackPreferences> = {
+  promptCount: DEFAULT_PROMPT_COUNT,
+  neverDefaults: [],
+  includeSensitive: false,
+}
+
+/** Preferences in range: a whole count from 1 to 100, normalized tags without repeats. */
+export function sanitizePackPreferences(prefs: PackPreferences): PackPreferences {
+  const count = Number.isFinite(prefs.promptCount) ? Math.round(prefs.promptCount) : DEFAULT_PROMPT_COUNT
+  const neverDefaults: string[] = []
+  for (const tag of prefs.neverDefaults) {
+    const name = normalizeTagForPack(tag)
+    if (name && !neverDefaults.includes(name)) neverDefaults.push(name)
+  }
+  // Style keeps each tag as typed ("@angeltights"), without repeats; anything else in a stored value goes.
+  const styleDefaults: string[] = []
+  const rawStyle: unknown = (prefs as { styleDefaults?: unknown }).styleDefaults
+  if (Array.isArray(rawStyle)) {
+    for (const tag of rawStyle) {
+      if (typeof tag !== 'string') continue
+      const typed = tag.trim()
+      if (typed && !styleDefaults.some((t) => normalizeTagForPack(t) === normalizeTagForPack(typed))) styleDefaults.push(typed)
+    }
+  }
+  // The builder's own format: kept only when it is one the app knows.
+  const rawFormat: unknown = (prefs as { promptFormat?: unknown }).promptFormat
+  return {
+    promptCount: Math.min(100, Math.max(1, count)),
+    neverDefaults,
+    includeSensitive: prefs.includeSensitive === true,
+    ...(styleDefaults.length > 0 ? { styleDefaults } : {}),
+    ...(isPromptFormat(rawFormat) ? { promptFormat: rawFormat } : {}),
+  }
+}
+
+/** The format the pack builder uses: its own choice once made, else the gallery's current one. */
+export function packPromptFormat(prefs: Pick<PackPreferences, 'promptFormat'>, galleryFormat: PromptFormat): PromptFormat {
+  return prefs.promptFormat ?? galleryFormat
+}
+
+/**
+ * The preferences Pack Mode starts with: the saved ones when they exist, else those
+ * the old config carries (count and the "Never include" text), else the defaults.
+ * The rest of the old config is engine tuning the redesign retires, so it is not
+ * migrated; the old config itself is left as it is.
+ */
+export function migratePackPreferences(saved: PackPreferences | null, v2: PackModeConfigV2 | null): PackPreferences {
+  if (saved) return sanitizePackPreferences(saved)
+  if (!v2) return sanitizePackPreferences(DEFAULT_PACK_PREFERENCES)
+  return sanitizePackPreferences({
+    promptCount: v2.promptCount,
+    neverDefaults: splitCommaSeparatedTags(v2.neverIncludeText ?? ''),
+    includeSensitive: false,
+  })
 }

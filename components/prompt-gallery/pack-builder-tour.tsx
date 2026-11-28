@@ -8,7 +8,7 @@
  * target isn't on screen (e.g. no category set to Vary) are skipped.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react"
-import { ArrowLeft, ArrowRight, Ban, Blocks, Database, Layers, ListChecks, Lock, Package, Shirt, Shuffle, SlidersHorizontal, UserRound, X } from "lucide-react"
+import { ArrowLeft, ArrowRight, Ban, Blocks, Clapperboard, Database, Dices, Image as ImageIcon, Layers, ListChecks, Lock, Package, Pin, Shirt, Shuffle, SlidersHorizontal, UserRound, Users, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -124,7 +124,7 @@ const STEPS: TourStep[] = [
     target: "base",
     icon: <UserRound />,
     title: "Your base",
-    body: "The card or prompt you started from. Its tags are sorted into the categories below: open one to see them and remove any you don't want. “Always add” goes into every prompt (LoRA triggers, quality tags).",
+    body: "Where the pack starts: a card, a character or a prompt. Its tags are sorted into the categories below. Open one to pin a tag in every prompt, add your own, or remove one so it never appears. “Always add” goes into every prompt (LoRA triggers, quality tags).",
   },
   {
     target: "source",
@@ -153,9 +153,9 @@ const STEPS: TourStep[] = [
       <>
         Every category is split into parts — Clothing into outfit, top, headwear, footwear… Select one to set its role:
         <ul className="mt-2 space-y-1.5">
-          <RoleLine icon={<Lock />} name="Keep from base" text="your base's tags for that part stay." />
+          <RoleLine icon={<Lock />} name="Keep" text="your base's tags for that part stay." />
           <RoleLine icon={<Shuffle />} name="Vary" text="it changes with the rest of the category." />
-          <RoleLine icon={<Ban />} name="Leave out" text="nothing from that part appears." />
+          <RoleLine icon={<Ban />} name="Off" text="nothing from that part appears." />
         </ul>
         <p className="mt-2">
           Example: Clothing on Vary but <span className="font-medium text-foreground">headwear on Keep</span> — the outfit changes, the hat stays. “2 base · 15 pool” counts the part&apos;s tags on your base and in the pool.
@@ -196,6 +196,82 @@ const STEPS: TourStep[] = [
   },
 ]
 
+/** Pack method the tour describes: the per-category builder (Classic) or real scenes (Scenes). */
+export type PackTourMethod = "classic" | "scenes"
+
+/** The Scenes tour, in the order the panel is used. `castSize`: characters the pack names. */
+function sceneSteps(castSize: number): TourStep[] {
+  return [
+    {
+      icon: <Clapperboard />,
+      title: "Packs from real scenes",
+      body: "Each prompt takes a real post's scene (pose, camera, outfit, place) and puts your character in it.",
+    },
+    {
+      target: "base",
+      icon: <UserRound />,
+      title: "Your base",
+      body: "Where the pack starts: a card, a character or a prompt. “Always add” goes into every prompt as you typed it, like LoRA triggers or quality tags.",
+    },
+    {
+      target: "scene-characters",
+      icon: <Pin />,
+      title: castSize >= 2 ? "How each character looks" : "How your character looks",
+      body: (
+        <>
+          {castSize >= 2 ? "Each character has their own traits. " : null}Select a trait to switch it:
+          <ul className="mt-2 space-y-1.5">
+            <RoleLine icon={<Pin />} name="Pinned" text="in every prompt." />
+            <RoleLine icon={<Shuffle />} name="Dashed" text="only when the scene has it." />
+            <RoleLine icon={<X />} name="Removed" text="never in a prompt." />
+          </ul>
+          <p className="mt-2">Add puts in a trait of your own.</p>
+        </>
+      ),
+    },
+    {
+      target: "source",
+      icon: <Database />,
+      title: "Where the scenes come from",
+      body: castSize >= 2
+        ? "Select this chip to choose the content rating, the booru and the search. With several characters it looks for pictures of that group."
+        : "Select this chip to choose the content rating, the booru and the search.",
+    },
+    {
+      target: "scene-people",
+      icon: <Users />,
+      title: "Who's in the picture",
+      body: "How many people the scenes show. Only the groups found in the collected posts are offered.",
+    },
+    {
+      target: "scene-situations",
+      icon: <ImageIcon />,
+      title: "Situations",
+      body: "Scenes grouped by what's happening, with a few examples each. Switch off the ones you don't want.",
+    },
+    {
+      target: "scene-options",
+      icon: <SlidersHorizontal />,
+      title: "Mix, clothing and scenery",
+      body: "Keep each scene as it is or remix it, and choose where the clothes and the place come from.",
+    },
+    {
+      target: "batch",
+      icon: <ListChecks />,
+      title: "Generate",
+      body: "Choose how many prompts, then Generate.",
+    },
+    {
+      target: "results",
+      icon: <Dices />,
+      title: "Copy what you like",
+      body: "Each prompt shows the post its scene comes from. The dice swaps in another scene. Copy one, or Copy all. Replay this tour anytime from the ⋯ menu.",
+    },
+  ]
+}
+
+const stepsFor = (method: PackTourMethod, castSize: number): TourStep[] => (method === "scenes" ? sceneSteps(castSize) : STEPS)
+
 const CARD_WIDTH = 344
 /** The centered intro card holds the example pack, so it gets more room. */
 const WELCOME_WIDTH = 420
@@ -205,10 +281,11 @@ const PAD = 6
 interface Rect { top: number; left: number; width: number; height: number }
 
 /** `data-pack-tour` targets currently present in `container` — call when starting the tour. */
-export function findPackTourTargets(container: HTMLElement | null): string[] {
+export function findPackTourTargets(container: HTMLElement | null, method: PackTourMethod = "classic"): string[] {
   if (!container) return []
-  // Only targets actually on screen: below lg, one of the Setup/Prompts tabs is hidden.
-  return STEPS.flatMap((s) => {
+  // Only targets actually on screen: below lg, one of the Setup/Prompts tabs is hidden; in
+  // Scenes, a pool with no scenes yet has no situations to point at.
+  return stepsFor(method, 1).flatMap((s) => {
     const el = s.target ? container.querySelector(`[data-pack-tour="${s.target}"]`) : null
     return s.target && el && el.getClientRects().length > 0 ? [s.target] : []
   })
@@ -219,13 +296,17 @@ export interface PackBuilderTourProps {
   containerRef: RefObject<HTMLElement | null>
   /** Targets present when the tour started (findPackTourTargets); other steps are skipped. */
   availableTargets: string[]
+  /** Which method's tour to show (default Classic). */
+  method?: PackTourMethod
+  /** Characters the pack names: the Scenes tour mentions a cast in its Characters step. */
+  castSize?: number
   onClose: () => void
 }
 
-export function PackBuilderTour({ containerRef, availableTargets, onClose }: PackBuilderTourProps) {
+export function PackBuilderTour({ containerRef, availableTargets, method = "classic", castSize = 1, onClose }: PackBuilderTourProps) {
   const steps = useMemo(
-    () => STEPS.filter((s) => !s.target || availableTargets.includes(s.target)),
-    [availableTargets]
+    () => stepsFor(method, castSize).filter((s) => !s.target || availableTargets.includes(s.target)),
+    [availableTargets, method, castSize]
   )
   const [index, setIndex] = useState(0)
   const [rect, setRect] = useState<Rect | null>(null)

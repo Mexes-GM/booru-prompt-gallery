@@ -146,6 +146,71 @@ interface TagCategoryRow {
   category: number
 }
 
+// ---------------------------------------------------------------------------
+// Gelbooru's own tag list (`gelbooru_tags`: name as Gelbooru spells it, category
+// 0 general, 1 artist, 3 copyright, 4 character, 5 meta, 6 deprecated). There is
+// no RPC for it, so it is read with plain GETs, budgeted like the legacy path:
+// names past the budget stay to the Danbooru table, and are not cached.
+// ---------------------------------------------------------------------------
+const GELBOORU_TABLE_CHUNK = 150
+const GELBOORU_TABLE_MAX_CHUNKS = 6
+/** Gelbooru's "deprecated" type: a retired tag. It is filed as meta (5), so prompts leave it out. */
+export const GELBOORU_DEPRECATED = 6
+const META = 5
+
+/** A PostgREST `in` list with every value quoted, so commas, parentheses and quotes in names are safe. */
+export function quotedInList(values: readonly string[]): string {
+  return `(${values.map((v) => `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`).join(',')})`
+}
+
+async function resolveGelbooruCategoriesCached(supabase: SupabaseClient, tags: Iterable<string>): Promise<Map<string, number>> {
+  const now = Date.now()
+  const resolved = new Map<string, number>()
+  const missing: string[] = []
+  for (const tag of tags) {
+    const name = tag.toLowerCase()
+    if (!name) continue
+    const entry = categoryCache.get(`gelbooru_tags:${name}`)
+    if (entry && now - entry.at < CATEGORY_CACHE_TTL_MS) {
+      if (entry.category !== null) resolved.set(toTagLookupKey(name), entry.category)
+    } else {
+      missing.push(name)
+    }
+  }
+  const chunks: string[][] = []
+  for (let i = 0; i < missing.length; i += GELBOORU_TABLE_CHUNK) chunks.push(missing.slice(i, i + GELBOORU_TABLE_CHUNK))
+  const results = await Promise.all(
+    chunks.slice(0, GELBOORU_TABLE_MAX_CHUNKS).map(async (chunk) => {
+      const { data, error } = await supabase.from('gelbooru_tags').select('name, category').filter('name', 'in', quotedInList(chunk))
+      if (error) throw error
+      return { chunk, rows: (data ?? []) as TagCategoryRow[] }
+    })
+  )
+  for (const { chunk, rows } of results) {
+    const found = new Map(rows.map((row) => [row.name.toLowerCase(), Number(row.category)]))
+    for (const name of chunk) {
+      const category = found.get(name)
+      if (category !== undefined && !Number.isNaN(category)) resolved.set(toTagLookupKey(name), category)
+      const cacheKey = `gelbooru_tags:${name}`
+      categoryCache.delete(cacheKey)
+      categoryCache.set(cacheKey, { category: category ?? null, at: now })
+    }
+  }
+  return resolved
+}
+
+/**
+ * Categories for a Gelbooru page: Gelbooru's own list first, the Danbooru table
+ * for what the list doesn't have. Gelbooru spells many names its own way
+ * ("pokemon_scarlet_and_violet" where Danbooru has "pokemon_sv"), so only its list
+ * types them. A retired (deprecated) Gelbooru tag is filed as meta. A failed read of
+ * the list leaves the Danbooru answers alone.
+ */
+export function mergeGelbooruCategories(danbooru: Map<string, number>, gelbooru: ReadonlyMap<string, number>): Map<string, number> {
+  for (const [key, category] of gelbooru) danbooru.set(key, category === GELBOORU_DEPRECATED ? META : category)
+  return danbooru
+}
+
 /**
  * Danbooru's categories, filled in by the provider table where Danbooru has no
  * row. Keyed by `toTagLookupKey`: Gelbooru/Rule34 do not spell tags the way
@@ -160,6 +225,16 @@ async function resolveTableCategories(
   tags: Set<string>,
   provider?: string
 ): Promise<Map<string, number>> {
+  if (provider === 'gelbooru') {
+    const [danbooru, gelbooru] = await Promise.all([
+      resolveTagCategoriesCached(supabase, tags, null),
+      resolveGelbooruCategoriesCached(supabase, tags).catch((e) => {
+        logger.warn('gelbooru_tags_lookup_error', { error: (e as { message?: string })?.message ?? String(e) })
+        return new Map<string, number>()
+      }),
+    ])
+    return mergeGelbooruCategories(danbooru, gelbooru)
+  }
   const [tagMap, providerTagMap] = await Promise.all([
     resolveTagCategoriesCached(supabase, tags, null),
     provider

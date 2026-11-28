@@ -34,6 +34,28 @@ export function lastPageFromCount(total: number, perPage: number, maxPage = MAX_
   return Math.max(1, Math.min(maxPage, Math.ceil(total / perPage)))
 }
 
+/** The post count in a `/counts/posts.json` answer (`{"counts":{"posts":840}}`), or null without one. */
+export function countFromResponse(data: unknown): number | null {
+  const total = (data as { counts?: { posts?: unknown } } | null)?.counts?.posts
+  return typeof total === "number" && Number.isFinite(total) && total >= 0 ? total : null
+}
+
+/**
+ * The last page of a search: from the site's post count when it gives one (one request),
+ * else by binary search over `hasPosts` (findLastPage). A count that fails to arrive counts
+ * as missing.
+ */
+export async function lastPageOf({ count, hasPosts, perPage, maxPage = MAX_RANDOM_PAGE }: {
+  count: () => Promise<number | null>
+  hasPosts: (page: number) => Promise<boolean>
+  perPage: number
+  maxPage?: number
+}): Promise<{ lastPage: number; count: number | null }> {
+  const total = await count().catch(() => null)
+  if (total !== null) return { lastPage: lastPageFromCount(total, perPage, maxPage), count: total }
+  return { lastPage: await findLastPage(hasPosts, maxPage), count: null }
+}
+
 /**
  * Page 1 first (it's what the feed fetches before the range is known, so its
  * request stays valid), then pages 2..lastPage in a seeded random order.

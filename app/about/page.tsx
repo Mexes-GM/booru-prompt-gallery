@@ -40,7 +40,7 @@ export default function AboutPage() {
           <CardContent>
             <ul className="list-disc pl-6 space-y-2">
               <li>
-                <strong>Multi-provider support:</strong> browse Danbooru, Gelbooru, e621, e6AI, Aibooru, and Rule34.
+                <strong>Multi-provider support:</strong> browse Danbooru, Gelbooru, e621, Floofgens, Aibooru, and Rule34.
               </li>
               <li>
                 <strong>Smart prompt cleaning:</strong> strips metadata and resolves 180+ contradictory-tag rules (e.g.
@@ -67,6 +67,44 @@ export default function AboutPage() {
                 <strong>Background options:</strong> keep, remove, replace, or randomize backgrounds per card.
               </li>
             </ul>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-effect">
+          <CardHeader>
+            <CardTitle>Data sources</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p>
+              The tags that <strong>Fill in missing tags</strong> adds to Danbooru posts come from{" "}
+              <a
+                href="https://huggingface.co/datasets/Mexes/danbooru-added-tags"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 hover:text-primary-text"
+              >
+                Mexes/danbooru-added-tags
+              </a>
+              , built from{" "}
+              <a
+                href="https://huggingface.co/datasets/BootsofLagrangian/danbooru-multitier-captions-202606"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 hover:text-primary-text"
+              >
+                BootsofLagrangian/danbooru-multitier-captions-202606
+              </a>
+              . Both are licensed under{" "}
+              <a
+                href="https://creativecommons.org/licenses/by/4.0/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 hover:text-primary-text"
+              >
+                CC BY 4.0
+              </a>
+              .
+            </p>
           </CardContent>
         </Card>
 

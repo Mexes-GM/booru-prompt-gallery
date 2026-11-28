@@ -15,6 +15,7 @@ import { SEGMENT_PILL_SPRING } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { CardScaleControl } from "@/components/prompt-gallery/card-scale-control"
 import { preloadToolDialogs } from "@/components/prompt-gallery/gallery-modals-loader"
+import { useComfyEnabled } from "@/hooks/use-comfyui-settings"
 
 type Mode = "browse" | "merge" | "pack"
 
@@ -81,9 +82,13 @@ export function GalleryToolbar({
   // as a transition, so React yields frames and the pill's spring isn't frozen.
   const [mode, setOptimisticMode] = useOptimistic(committedMode)
   const activeMode = MODES.find((m) => m.id === mode)!
+  const comfyMode = useComfyEnabled()
+  // With Send to ComfyUI on, Browse's buttons send instead of copying.
+  const modeHint = comfyMode && activeMode.id === "browse" ? "Send prompts one by one" : activeMode.hint
 
   const selectMode = (next: Mode) => {
-    if (next === mode) return
+    // Pack again while in Pack Mode still opens the pack screen (it may be closed behind a bar).
+    if (next === mode && next !== "pack") return
     const prev = committedMode
     startTransition(() => {
       setOptimisticMode(next)
@@ -131,6 +136,7 @@ export function GalleryToolbar({
                 key={m.id}
                 type="button"
                 role="radio"
+                data-mode={m.id}
                 aria-checked={active}
                 tabIndex={active ? 0 : -1}
                 onClick={() => selectMode(m.id)}
@@ -155,7 +161,7 @@ export function GalleryToolbar({
             )
           })}
         </div>
-        <span className="text-center text-xs text-muted-foreground sm:text-left">{activeMode.hint}</span>
+        <span className="text-center text-xs text-muted-foreground sm:text-left">{modeHint}</span>
       </div>
 
       <div className="grid grid-cols-3 items-center gap-1 sm:flex">

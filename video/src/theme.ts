@@ -6,6 +6,8 @@ const geist = loadGeist("normal", { weights: ["400", "500", "600", "700"], subse
 const geistMono = loadGeistMono("normal", { weights: ["500"], subsets: ["latin"] })
 
 export const FONT = geist.fontFamily
+/** Resolves once both fonts can be measured (see `textWidth`). */
+export const fontsReady = Promise.all([geist.waitUntilDone(), geistMono.waitUntilDone()])
 export const MONO = geistMono.fontFamily
 
 /** Dark theme tokens, copied from app/globals.css (.dark). */
@@ -26,6 +28,9 @@ export const C = {
   info: "oklch(0.71 0.16 246)",
   favorites: "oklch(0.72 0.13 5)",
   pack: "oklch(0.71 0.11 225)",
+  success: "oklch(0.71 0.1513 164)",
+  successText: "oklch(0.79 0.15 164)",
+  overlayForeground: "oklch(1 0 0)",
 } as const
 
 /**

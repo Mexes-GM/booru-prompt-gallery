@@ -36,13 +36,27 @@ export type TagResult = {
  * "alias -> tag" UI hint) requires a per-row subquery, not a filter.
  */
 export async function searchTags(query: string): Promise<TagResult[]> {
+  try {
+    return await searchTagsOrThrow(query)
+  } catch (error) {
+    console.error('Error searching tags client-side:', error)
+    return []
+  }
+}
+
+/**
+ * searchTags, but a failed lookup (timeout, network) throws instead of looking
+ * like "no tag matches", for callers that need to tell the two apart. `limit`
+ * caps the results (of the 20 the lookup returns), best matches first.
+ */
+export async function searchTagsOrThrow(query: string, limit = 5): Promise<TagResult[]> {
   if (!query || query.trim().length < 2) {
     return []
   }
 
   const normalizedQuery = query.trim().toLowerCase().replace(/ /g, '_')
 
-  try {
+  {
     const supabase = createClient()
     if (!supabase) return []
 
@@ -77,13 +91,9 @@ export async function searchTags(query: string): Promise<TagResult[]> {
       if (!aStarts && bStarts) return 1
 
       return b.postCount - a.postCount
-    }).slice(0, 5)
+    }).slice(0, limit)
 
     return finalResults
-
-  } catch (error) {
-    console.error('Error searching tags client-side:', error)
-    return []
   }
 }
 
@@ -149,25 +159,34 @@ export async function getAllTagOverridesClient(): Promise<Record<string, string>
  * general tags (species, groups, weapons) were classified other:character, and
  * would otherwise be named as characters. Those are left unclassified.
  */
-export async function fetchTagOverridesForNames(names: string[]): Promise<Record<string, string>> {
+export async function fetchTagOverridesForNames(
+  names: string[],
+  /** Called with the names whose lookup failed (after one retry), so a caller can ask again later. */
+  onFailed?: (names: string[]) => void
+): Promise<Record<string, string>> {
   const unique = Array.from(new Set(names.map((n) => n.trim().toLowerCase().replace(/ /g, '_')).filter(Boolean)))
   const overrides: Record<string, string> = {}
   if (unique.length === 0) return overrides
 
   const CHUNK = 150
+  // A large pool sends many chunks at once; a few at a time keeps them from failing together.
+  const PARALLEL = 4
   const supabase = createClient()
   if (!supabase) return overrides
   const chunks: string[][] = []
   for (let i = 0; i < unique.length; i += CHUNK) chunks.push(unique.slice(i, i + CHUNK))
 
-  await Promise.all(chunks.map(async (chunk) => {
+  const failed: string[] = []
+  const fetchChunk = async (chunk: string[], retried = false): Promise<void> => {
     const { data, error } = await supabase
       .from('auto_suggest_tags')
       .select('name, category, category_name, subcategory')
       .eq('status', 'approved')
       .in('name', chunk)
     if (error || !data) {
+      if (!retried) return fetchChunk(chunk, true)
       if (error) console.warn('fetchTagOverridesForNames chunk failed:', error.message)
+      failed.push(...chunk)
       return
     }
     data.forEach((tag: { name: string; category: number | null; category_name: string | null; subcategory?: string | null }) => {
@@ -177,9 +196,54 @@ export async function fetchTagOverridesForNames(names: string[]): Promise<Record
       overrides[tag.name] = val
       if (tag.name.includes('_')) overrides[tag.name.replace(/_/g, ' ')] = val
     })
-  }))
+  }
 
+  for (let i = 0; i < chunks.length; i += PARALLEL) {
+    await Promise.all(chunks.slice(i, i + PARALLEL).map((chunk) => fetchChunk(chunk)))
+  }
+  if (failed.length > 0) onFailed?.(failed)
   return overrides
+}
+
+/** Gelbooru's own tag types (`gelbooru_tags`), by Gelbooru spelling; null = not in the table. Kept for the session. */
+const gelbooruTagCache = new Map<string, number | null>()
+const GELBOORU_TAG_CHUNK = 150
+const GELBOORU_TAG_PARALLEL = 4
+
+/** A PostgREST `in` list with every value quoted, so commas, parentheses and quotes in names are safe. */
+export function postgrestInList(values: readonly string[]): string {
+  return `(${values.map((v) => `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`).join(',')})`
+}
+
+/**
+ * Gelbooru's type for each tag (0 general, 1 artist, 3 copyright, 4 character, 5 meta,
+ * 6 deprecated) from the public `gelbooru_tags` table, a full list of Gelbooru's tags
+ * with enough posts. `names` in any spelling ("pokemon scarlet and violet" or with
+ * underscores); the result is keyed by the spaced form, with null for a tag the table
+ * doesn't have. Answers are kept for the session. Throws when a chunk can't be read,
+ * so the caller can fall back instead of reading "no row" for "unknown".
+ */
+export async function fetchGelbooruTagCategories(names: readonly string[]): Promise<Map<string, number | null>> {
+  const spaced = (name: string) => name.trim().toLowerCase().replace(/_/g, ' ')
+  const wanted = Array.from(new Set(names.map(spaced).filter(Boolean)))
+  const missing = wanted.filter((name) => !gelbooruTagCache.has(name))
+  if (missing.length > 0) {
+    const supabase = createClient()
+    if (!supabase) throw new Error('Supabase is not configured')
+    const chunks = chunked(missing, GELBOORU_TAG_CHUNK)
+    for (let i = 0; i < chunks.length; i += GELBOORU_TAG_PARALLEL) {
+      await Promise.all(chunks.slice(i, i + GELBOORU_TAG_PARALLEL).map(async (chunk) => {
+        const { data, error } = await supabase
+          .from('gelbooru_tags')
+          .select('name, category')
+          .filter('name', 'in', postgrestInList(chunk.map((name) => name.replace(/ /g, '_'))))
+        if (error || !Array.isArray(data)) throw new Error(error?.message ?? 'gelbooru_tags lookup failed')
+        const found = new Map((data as { name: string; category: number }[]).map((row) => [spaced(row.name), Number(row.category)]))
+        chunk.forEach((name) => gelbooruTagCache.set(name, found.get(name) ?? null))
+      }))
+    }
+  }
+  return new Map(wanted.map((name) => [name, gelbooruTagCache.get(name) ?? null]))
 }
 
 /**

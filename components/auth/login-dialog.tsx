@@ -50,15 +50,24 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
       // but don't report it as an error (was a recurring non-actionable issue).
       const isExpectedRateLimit =
         /for security purposes|only request this after|rate limit|too many/i.test(msg)
-      if (!isExpectedRateLimit) {
+      // The request never reached the sign-in service: offline, or blocked by
+      // a privacy extension or network filter. Not a bug we can act on.
+      const isNetworkFailure = /failed to fetch|networkerror|load failed|network request failed/i.test(msg)
+      if (!isExpectedRateLimit && !isNetworkFailure) {
         reportError(error, {
           tags: { context: "magic_link_login" }
         })
       }
       toastError({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Something went wrong",
+        title: isNetworkFailure ? "Couldn't reach sign-in" : "Couldn't send the sign-in email",
+        // Supabase's rate-limit text says how long to wait; anything else is
+        // internal detail, so it gets a plain next step instead.
+        description: isNetworkFailure
+          ? "Check your connection. If an ad or tracker blocker is on, allow this site and try again."
+          : isExpectedRateLimit ? msg : "Check the email address and try again.",
         errorSource: "magic_link_login",
+        reportable: !isNetworkFailure,
+        context: { message: msg },
       })
       setIsLoading(false)
     }
@@ -74,12 +83,17 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
     const { error } = await supabase.auth.verifyOtp({ email, token: otpCode.trim(), type: "email" })
     setIsVerifying(false)
     if (error) {
+      const isBadCode = /expired|invalid/i.test(error.message)
+      const isRateLimit = /for security purposes|only request this after|rate limit|too many/i.test(error.message)
       toastError({
-        title: "Invalid code",
-        description: /expired|invalid/i.test(error.message)
-          ? "That code is invalid or has expired. Request a new one."
-          : error.message,
+        title: isBadCode ? "Code didn't work" : "Couldn't sign in",
+        description: isBadCode
+          ? "The code is wrong or has expired. Request a new one."
+          : isRateLimit
+            ? error.message
+            : "Try again, or request a new code.",
         errorSource: "otp_verify",
+        context: { message: error.message },
       })
       return
     }
@@ -102,7 +116,7 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
   return (
     <Dialog open={isOpen} onOpenChange={resetState}>
       <DialogTrigger asChild>
-        {children || <Button variant="outline">Sign In</Button>}
+        {children || <Button variant="outline">Sign in</Button>}
       </DialogTrigger>
       <DialogContent className="sm:max-w-[400px] p-0 overflow-hidden bg-background/95 backdrop-blur-xl border-border/50 shadow-2xl">
         <div className="p-6">
@@ -117,9 +131,9 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
                 className="space-y-6"
               >
                 <DialogHeader>
-                  <DialogTitle className="text-2xl font-bold tracking-tight text-center">Welcome!</DialogTitle>
+                  <DialogTitle className="text-2xl font-bold tracking-tight text-center">Sign in</DialogTitle>
                   <DialogDescription className="text-center">
-                    Sign in to save favorites and preferences.
+                    Save your favorites and preferences to your account.
                   </DialogDescription>
                 </DialogHeader>
 
@@ -147,7 +161,7 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         <>
-                          Send Magic Link
+                          Email me a sign-in link
                           <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
                         </>
                       )}
@@ -170,7 +184,7 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
                 <div className="space-y-2">
                   <h3 className="text-xl font-semibold">Check your email</h3>
                   <p className="text-sm text-muted-foreground max-w-[250px] mx-auto">
-                    We&apos;ve sent a magic link to <span className="font-medium text-foreground">{email}</span>
+                    We sent a sign-in link to <span className="font-medium text-foreground">{email}</span>
                   </p>
                 </div>
                 <form onSubmit={handleVerifyCode} className="w-full max-w-[260px] space-y-2 pt-2">
@@ -202,7 +216,7 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
           </AnimatePresence>
         </div>
         <div className="p-4 bg-muted/30 border-t border-border/50 text-center text-xs text-muted-foreground">
-          By signing in, you agree to our <Link href="/terms" className="underline hover:text-primary-text" onClick={() => resetState(false)}>Terms of Service</Link> and <Link href="/privacy" className="underline hover:text-primary-text" onClick={() => resetState(false)}>Privacy Policy</Link>.
+          By signing in, you agree to our <Link href="/terms" className="underline hover:text-primary-text" onClick={() => resetState(false)}>Terms of service</Link> and <Link href="/privacy" className="underline hover:text-primary-text" onClick={() => resetState(false)}>Privacy policy</Link>.
         </div>
       </DialogContent>
     </Dialog>

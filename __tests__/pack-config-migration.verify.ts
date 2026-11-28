@@ -7,11 +7,13 @@
  *   3. V1 legacy 'clothing' key -> used as the 'wardrobe' config.
  *   4. An existing V2 config is returned unchanged.
  *   5. Nothing saved at all -> 'character' archetype defaults.
+ *   6. Engine fields: a config saved without them reads as the scenes engine with
+ *      default options, its classic fields untouched; unknown values fall back.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/pack-config-migration.verify.ts
  */
 import type { PackModeConfig, PackModeConfigByKind, PackModeConfigV2 } from "../lib/storage"
-import { migratePackConfig } from "../lib/pack/pack-config-migration"
+import { migratePackConfig, packEngineConfig } from "../lib/pack/pack-config-migration"
 
 let passed = 0
 let failed = 0
@@ -99,6 +101,26 @@ function makeV1(overrides: Partial<PackModeConfig> = {}): PackModeConfig {
   assert(JSON.stringify(result.lockedCategories) === JSON.stringify(["appearance"]), "no config: character archetype defaults")
   assert(result.varietyLevel === 3, "no config: varietyLevel defaults to 3")
   assert(result.promptCount === 10, "no config: default promptCount 10")
+  assert(result.axisMinCounts.equipment === 0 && result.axisMinCounts.creature === 0, "no config: Equipment and Creature start Off")
+  assert(result.axisMinCounts.pose === undefined && result.axisMinCounts.clothing === undefined, "no config: the other categories follow the Variety preset")
+}
+
+// ── A saved config keeps its Equipment and Creature as they were ──
+{
+  const saved: PackModeConfigV2 = {
+    lockedCategories: ["appearance"],
+    lockedSlots: [],
+    mutedSlots: [],
+    varietyLevel: 3,
+    axisTagModes: {},
+    axisMinCounts: {},
+    promptCount: 10,
+    manualAxisValues: {},
+  }
+  const result = migratePackConfig(saved, {}, "character")
+  assert(result.axisMinCounts.equipment === undefined && result.axisMinCounts.creature === undefined, "saved V2: Equipment and Creature untouched")
+  const fromV1 = migratePackConfig(null, { character: makeV1({ axisMinCounts: { equipment: 2 } }) }, "character")
+  assert(fromV1.axisMinCounts.equipment === 2 && fromV1.axisMinCounts.creature === undefined, "a migrated V1 config keeps its own counts")
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)

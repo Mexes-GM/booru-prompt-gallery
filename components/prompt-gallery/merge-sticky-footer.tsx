@@ -9,6 +9,9 @@ import { track } from '@/lib/analytics'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useLowMotion } from '@/hooks/use-low-motion'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
+import { useComfySend } from '@/hooks/use-comfyui-send'
+import { ComfyInlineJob, ComfyInlineJobPresence } from './comfyui-inline-job'
+import { SendGlyph } from './comfyui-motion'
 import Image from 'next/image'
 import { getPostThumbnailUrl } from "@/lib/proxy-url"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -17,6 +20,7 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Slider } from "@/components/ui/slider"
 import { RemovableTagChip } from './removable-tag-chip'
+import { Stepper } from './count-stepper'
 import { CATEGORY_TEXT_CLASS, CATEGORY_BORDER_CLASS, CATEGORY_ACTIVE_CLASS } from './category-chip-styles'
 import { PACK_AXES, TAG_CATEGORY_IDS } from '@/lib/tag-taxonomy'
 
@@ -38,6 +42,12 @@ interface MergeStickyFooterProps {
     onRandomize?: () => void
     randomSettings: RandomSettings
     setRandomSettings: (settings: RandomSettings | ((prev: RandomSettings) => RandomSettings)) => void
+    /** Merge mode: keep only tags found in at least this many selected posts. */
+    minSharedPosts: number
+    maxSharedPosts: number
+    onMinSharedPostsChange: (value: number) => void
+    /** Tags left out by minSharedPosts. */
+    hiddenTagCount: number
 }
 
 const SymbolTag = memo(({ 
@@ -109,17 +119,21 @@ const MergeStickyFooterComponent = ({
     onToggleMergeModeType,
     onRandomize,
     randomSettings,
-    setRandomSettings
+    setRandomSettings,
+    minSharedPosts,
+    maxSharedPosts,
+    onMinSharedPostsChange,
+    hiddenTagCount
 }: MergeStickyFooterProps) => {
 
     const lowMotion = useLowMotion()
     const [isCopied, triggerCopyFeedback] = useCopyFeedback()
     const [isCleared, setIsCleared] = useState(false)
-    
-    const handleCopy = (text: string) => {
-        onCopy(text)
-        triggerCopyFeedback()
-        
+    const comfy = useComfySend()
+    const sendRef = useRef<HTMLButtonElement>(null)
+    const focusSend = useCallback(() => sendRef.current?.focus(), [])
+
+    const trackUse = () => {
         if (mergeModeType === 'variations') {
             track('variant_mode_used', {
                 merged_posts_count: selectedPosts.size
@@ -129,6 +143,17 @@ const MergeStickyFooterComponent = ({
                 merged_posts_count: selectedPosts.size
             })
         }
+    }
+
+    const handleCopy = (text: string) => {
+        onCopy(text)
+        triggerCopyFeedback()
+        trackUse()
+    }
+
+    // ComfyUI mode: the same text goes to ComfyUI instead of the clipboard.
+    const handleSend = async (text: string) => {
+        if (await comfy.send(text, () => handleCopy(text))) trackUse()
     }
 
     const handleClear = () => {
@@ -171,7 +196,9 @@ const MergeStickyFooterComponent = ({
                 <motion.div
                     key="merge-footer"
                     initial={lowMotion ? { opacity: 0 } : { y: 200, opacity: 0, scale: 0.95 }}
-                    animate={lowMotion ? { opacity: 1 } : { y: 0, opacity: 1, scale: 1 }}
+                    // Always settle y and scale: lowMotion can turn on after the first frame (it reads the
+                    // viewport in an effect), and an opacity-only target would leave the footer half off-screen.
+                    animate={{ y: 0, opacity: 1, scale: 1 }}
                     exit={lowMotion ? { opacity: 0 } : { y: 200, opacity: 0, scale: 0.95 }}
                     transition={lowMotion ? { duration: 0.15 } : {
                         type: "spring",
@@ -179,7 +206,7 @@ const MergeStickyFooterComponent = ({
                         damping: 25,
                         mass: 0.8
                     }}
-                    className={`fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-3xl border shadow-2xl rounded-2xl overflow-hidden ring-1 ring-foreground/5 sm:max-h-[400px] max-h-[320px] ${lowMotion ? "bg-background/95" : "bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/85"}`}
+                    className={`fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-3xl border shadow-2xl rounded-2xl overflow-hidden ring-1 ring-foreground/5 sm:max-h-[400px] ${comfy.enabled ? "max-h-[360px]" : "max-h-[320px]"} ${lowMotion ? "bg-background/95" : "bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/85"}`}
                     style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
                 >
                     {/* Border Glow Effect */}
@@ -191,13 +218,16 @@ const MergeStickyFooterComponent = ({
                             />
                         )}
                     </div>
-                    <div className="p-3 sm:p-4 flex flex-col gap-3 sm:gap-4">
+                    {/* ComfyUI mode adds a row under the tags, so the footer gets a little taller on phones.
+                        Capping this column at the footer's height (less its border) lets the tag box
+                        shrink (it scrolls) so the row is never cut off. */}
+                    <div className={`p-3 sm:p-4 flex flex-col gap-3 sm:gap-4 ${comfy.enabled ? 'max-h-[calc(358px-env(safe-area-inset-bottom,0px))] sm:max-h-[calc(398px-env(safe-area-inset-bottom,0px))]' : ''}`}>
 
                         {/* Header / Controls */}
                         <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="flex items-center gap-2">
                                 <span className="font-bold text-sm sm:text-base">
-                                    {mergeModeType === 'merge' ? 'Merge Prompt' : 'Variations Mode'}
+                                    {mergeModeType === 'merge' ? 'Merge' : 'Variations'}
                                 </span>
                                 <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
                                     {selectedPosts.size} posts
@@ -219,8 +249,8 @@ const MergeStickyFooterComponent = ({
                                     </TooltipTrigger>
                                     <TooltipContent>
                                         {mergeModeType === 'merge' 
-                                            ? 'Switch to Variations Mode ({ tagA | tagB })' 
-                                            : 'Switch to Merge Mode (combines tags into one prompt)'}
+                                            ? 'Switch to Variations ({ tagA | tagB })' 
+                                            : 'Switch to Merge (combines tags into one prompt)'}
                                     </TooltipContent>
                                 </Tooltip>
                             </div>
@@ -243,6 +273,7 @@ const MergeStickyFooterComponent = ({
                                                 variant="outline"
                                                 size="sm"
                                                 className="h-8 px-2 rounded-l-none bg-primary/5 hover:bg-primary/10 border-primary/20 text-primary-text"
+                                                aria-label="Randomizer settings"
                                             >
                                                 <Settings2 className="w-3.5 h-3.5" />
                                             </Button>
@@ -250,7 +281,7 @@ const MergeStickyFooterComponent = ({
                                         <PopoverContent className="w-72 p-0 overflow-hidden border-primary/20 shadow-2xl" align="end" sideOffset={8}>
                                             <div className="bg-gradient-to-r from-primary/10 to-transparent p-3 border-b border-primary/10 flex items-center gap-2">
                                                 <Dices className="w-4 h-4 text-primary-text" />
-                                                <span className="text-sm font-semibold text-primary-text">Randomizer Settings</span>
+                                                <span className="text-sm font-semibold text-primary-text">Randomizer settings</span>
                                             </div>
                                             
                                             <div className="p-4 space-y-6">
@@ -358,7 +389,7 @@ const MergeStickyFooterComponent = ({
                                         </motion.div>
                                     </div>
                                 </Button>
-                                <Button variant="ghost" size="icon" onClick={onExit} className="h-8 w-8 rounded-full hover:bg-muted" aria-label="Exit merge mode">
+                                <Button variant="ghost" size="icon" onClick={onExit} className="h-8 w-8 rounded-full hover:bg-muted" aria-label="Exit Merge mode">
                                     <X className="w-4 h-4" />
                                 </Button>
                             </div>
@@ -366,7 +397,7 @@ const MergeStickyFooterComponent = ({
 
                         {/* Selection Thumbnails */}
                         {selectedPosts.size > 0 && (
-                            <ScrollArea className="w-full whitespace-nowrap pb-2">
+                            <ScrollArea className="w-full shrink-0 whitespace-nowrap pb-2">
                                 <div className="flex gap-2 p-1">
                                     <AnimatePresence mode='popLayout'>
                                         {Array.from(selectedPosts.values()).map(({ post, parts }) => (
@@ -411,8 +442,26 @@ const MergeStickyFooterComponent = ({
                             </ScrollArea>
                         )}
 
+                        {/* Shared-tags filter: only useful once there's more than one post to share tags */}
+                        {mergeModeType === 'merge' && selectedPosts.size > 1 && (
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground -mt-1 sm:-mt-2">
+                                <span>Tags in at least</span>
+                                <Stepper
+                                    value={minSharedPosts}
+                                    min={1}
+                                    max={maxSharedPosts}
+                                    onChange={onMinSharedPostsChange}
+                                    ariaLabel="minimum posts per tag"
+                                />
+                                <span>of {selectedPosts.size} posts</span>
+                                <span className="sr-only" aria-live="polite">
+                                    {hiddenTagCount > 0 ? `${hiddenTagCount} ${hiddenTagCount === 1 ? 'tag' : 'tags'} hidden` : ''}
+                                </span>
+                            </div>
+                        )}
+
                         {/* Prompt Output */}
-                        <div className="relative">
+                        <div className={comfy.enabled ? "relative flex min-h-0 flex-col" : "relative"}>
                             <div className="min-h-[60px] max-h-[120px] sm:max-h-[200px] w-full rounded-md border border-input bg-muted/50 px-3 py-3 text-sm shadow-sm overflow-y-auto overflow-x-hidden flex flex-col gap-2">
                                 {mergeModeType === 'variations' && variationsOutput ? (
                                     <div className="flex flex-wrap gap-1.5 min-h-[2rem] content-start items-center">
@@ -502,6 +551,15 @@ const MergeStickyFooterComponent = ({
                                                     />
                                                 ))}
                                             </AnimatePresence>
+                                            {hiddenTagCount > 0 && (
+                                                <span
+                                                    className="inline-flex items-center px-1.5 py-1.5 sm:py-0.5 rounded border border-dashed border-border text-xs text-muted-foreground tabular-nums select-none"
+                                                    title="Tags in fewer posts than the minimum. They're left out of the copied prompt."
+                                                    aria-hidden="true"
+                                                >
+                                                    +{hiddenTagCount} hidden
+                                                </span>
+                                            )}
                                         </div>
                                     ) : (
                                         <motion.span
@@ -510,13 +568,39 @@ const MergeStickyFooterComponent = ({
                                             exit={{ opacity: 0 }}
                                             className="text-muted-foreground italic block mt-1"
                                         >
-                                            Select posts to merge prompt parts...
+                                            {hiddenTagCount > 0
+                                                ? 'No tag is in that many posts. Lower the minimum to see tags.'
+                                                : 'Select posts to merge prompt parts...'}
                                         </motion.span>
                                     )
                                 )}
                             </div>
 
-                            <div className="absolute bottom-2 right-2 flex gap-2 z-10">
+                            {/* ComfyUI mode: the job's status and Send sit in a row under the tags, so neither covers them. */}
+                            <div className={comfy.enabled ? "mt-2 flex min-h-8 items-center justify-end gap-2" : "absolute bottom-2 right-2 flex gap-2 z-10"}>
+                                <ComfyInlineJobPresence show={comfy.enabled && (comfy.job !== null || comfy.sending)}>
+                                    <ComfyInlineJob
+                                        jobId={comfy.job?.jobId ?? null}
+                                        api={comfy.job?.api ?? null}
+                                        launching={comfy.sending}
+                                        onDismiss={comfy.dismiss}
+                                        returnFocus={focusSend}
+                                    />
+                                </ComfyInlineJobPresence>
+                                {comfy.enabled ? (
+                                    <Button
+                                        ref={sendRef}
+                                        size="sm"
+                                        onClick={() => void handleSend(mergedPrompt)}
+                                        disabled={!mergedPrompt}
+                                        aria-busy={comfy.sending || undefined}
+                                        aria-label="Send prompt to ComfyUI"
+                                        className="shrink-0 shadow-sm"
+                                    >
+                                        <SendGlyph sending={comfy.sending} className="w-4 h-4 mr-2 [&_svg]:size-full!" />
+                                        Send
+                                    </Button>
+                                ) : (
                                 <Button
                                     size="sm"
                                     onClick={() => handleCopy(mergedPrompt)}
@@ -555,6 +639,7 @@ const MergeStickyFooterComponent = ({
                                         {isCopied && <Particles color="green" />}
                                     </AnimatePresence>
                                 </Button>
+                                )}
                             </div>
                         </div>
 

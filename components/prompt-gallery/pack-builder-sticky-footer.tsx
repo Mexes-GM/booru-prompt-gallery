@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
     DropdownMenu,
     DropdownMenuCheckboxItem,
@@ -14,6 +15,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { BUILDER_SWITCH_TEXT } from "./pack/builder-switch"
 import { Check, Package, Shuffle, Copy, CopyCheck, X, Dices, Pencil, Loader2, RefreshCw, AlertTriangle, Database, HelpCircle, ChevronDown, MoreHorizontal, LogOut, Eraser, Brain, Layers, Plus, UserRound } from "lucide-react"
 import { BooruPost } from '@/lib/booru/types'
 import { TagCategory } from '@/lib/tag-classifier'
@@ -23,22 +25,36 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useLowMotion } from '@/hooks/use-low-motion'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { useNaturalPrompt, usePromptFormat } from '@/hooks/use-natural-prompt'
-import { convertPromptOnce } from '@/lib/prompt/natural-prompt-loader'
+import { convertPromptOnce, preloadNaturalPrompt } from '@/lib/prompt/natural-prompt-loader'
 import type { NaturalPromptSource } from '@/lib/prompt/natural-format'
-import type { PromptFormat } from '@/lib/prompt/prompt-format'
+import { PROMPT_FORMATS, PROMPT_FORMAT_INFO, isPromptFormat, type PromptFormat } from '@/lib/prompt/prompt-format'
 import { toast } from '@/hooks/use-toast'
 import { ToastAction } from '@/components/ui/toast'
 import Image from 'next/image'
 import { getPostThumbnailUrl } from "@/lib/proxy-url"
 import { withResolutionPrefix } from '@/lib/pack/prompt-resolution'
 import { userPreferences } from '@/lib/storage'
-import { MAX_MIN_TOTAL_TAGS, type PackCategoryState, type PackSlotState } from '@/hooks/use-pack-mode'
-import { summarizePackSourceAnswers, type PackSourceAnswers } from './pack-source-modal'
+import { MAX_MIN_TOTAL_TAGS, type ClassicChipControls, type PackCategoryState, type PackSlotState, type SceneIdeaControls } from '@/hooks/use-pack-mode'
+import type { PackRatingMode } from '@/hooks/use-pack-seed-search'
+import { PROVIDER_LABELS, summarizePackSourceAnswers, type PackSourceAnswers } from './pack-source-modal'
 import { PackVarietySelect } from './pack-variety-select'
 import { PackCategoryList, PackStepper } from './pack-category-list'
 import { TagAutocompleteTextarea } from './tag-autocomplete-textarea'
 import { PackBuilderTour, findPackTourTargets, PACK_SOURCE_HINT_STORAGE_KEY, PACK_TOUR_OPEN_PARTS_EVENT, PACK_TOUR_STORAGE_KEY } from './pack-builder-tour'
 import type { VarietyLevel, VarietySetting } from '@/lib/pack/variety-presets'
+import type { CharacterLook } from '@/lib/pack/character-identity'
+import type { ScenePackSettings } from '@/lib/pack/scene-pack'
+import type { UsePackScenesResult } from '@/hooks/use-pack-scenes'
+import { PackScenesPanel } from './pack-scenes-panel'
+import { radioGroupKeyDown } from './radio-keys'
+import { PackCharacterSearch } from './pack-character-search'
+import { MAX_CAST, type CastRole } from '@/lib/pack/scene/cast'
+import { usePackComfySend, type PackSendRow } from '@/hooks/use-pack-comfy-send'
+import { packSendRequest } from '@/lib/pack/pack-comfy-send'
+import type { ComfySent } from './comfyui-send'
+import { ComfySideJob, ComfySideJobPresence } from './comfyui-side-job'
+import { SendGlyph } from './comfyui-motion'
+import { SEND_TEXT, sendAllAnnouncement, sendAllLabel, sendAllNote } from './pack/pack-text'
 
 export interface PackBuilderStickyFooterProps {
     isOpen: boolean
@@ -102,6 +118,9 @@ export interface PackBuilderStickyFooterProps {
     isSeeding?: boolean
     seedProgress?: { current: number; target: number } | null
     loadedPostCount: number
+    /** The source's booru refused the last request or couldn't be reached. */
+    postsFailed?: boolean
+    onRetryPosts?: () => void
     /** Posts reused from earlier sessions for this source (lib/pack/pool-cache.ts). */
     savedPostCount?: number
     onClearSavedPosts?: () => void
@@ -112,8 +131,21 @@ export interface PackBuilderStickyFooterProps {
     onRegenerate: () => void
     /** Re-rolls one generated prompt in place (§6). Returns false if no candidate was found. */
     onRerollPrompt: (index: number) => boolean
+    /** Drops the base (closing the builder, when there is no `onHide`). */
     onClearBase: () => void
+    /** "Change base": offers another base while the pack stays as it is. Without it, the button drops the base. */
+    onChangeBase?: () => void
+    /** Puts the pack aside without losing it (closing the builder). Without it, closing drops the base. */
+    onHide?: () => void
+    /** The base is a character chosen by name, with no card. */
+    baseFromCharacter?: boolean
+    /** Where a card base's look comes from (Typical or This card), offered when the typical look is known. */
+    baseLook?: CharacterLook
+    onSetBaseLook?: (look: CharacterLook) => void
+    typicalLookAvailable?: boolean
     onExit: () => void
+    /** Opens this pack's card or character in the new builder (the one that opens by default). */
+    onOpenNewBuilder?: () => void
     prompts: PackPrompt[]
     /** What the natural-language formats convert for one prompt (see usePackMode). */
     naturalSourceOf: (prompt: PackPrompt) => NaturalPromptSource
@@ -124,8 +156,41 @@ export interface PackBuilderStickyFooterProps {
     onCopyPrompt: (prompt: PackPrompt, text: string, format: PromptFormat) => Promise<boolean>
     onCopyAll: (text: string, format: PromptFormat) => Promise<boolean>
     onResetLearning?: () => void
+    /** How prompts are built: whole scenes of real posts, or the classic per-category mixer. */
+    engine?: 'scenes' | 'classic'
+    onSetEngine?: (engine: 'scenes' | 'classic') => void
+    /** Scenes engine state (usePackScenes); its prompts arrive through `prompts`. */
+    scenes?: UsePackScenesResult
+    sceneSettings?: ScenePackSettings
+    onSceneSettingsChange?: (settings: ScenePackSettings) => void
+    /** Classic's character chips (pin, add, take back). */
+    classicChips?: ClassicChipControls
+    /** Scene ideas (both methods): named scenes whose tags join the character's chips. */
+    sceneIdeas?: SceneIdeaControls
+    /** The pack's content rating: scene ideas above it aren't offered. */
+    contentRating?: PackRatingMode | null
+    /** "Never include" (both methods): tags left out of every prompt, as typed. */
+    neverIncludeText?: string
+    onNeverIncludeTextChange?: (text: string) => void
+    /** Scenes engine, character base: the characters the pack names (the base one first). */
+    cast?: readonly { character: string }[]
+    onAddCastMember?: (character: string) => 'added' | 'duplicate' | 'full' | 'not-a-character-base'
+    onRemoveCastMember?: (character: string) => void
+    onSetCastRole?: (character: string, role: CastRole) => void
+    /** The search for scenes with the cast's people, when the source doesn't ask for them. */
+    compositionSearch?: string | null
+    onUseCompositionSearch?: () => void
+    /** The search the app set up for the cast's group, when that is the source. */
+    castSourceQuery?: string | null
+    /** The app switched the source to the cast's group search on its own. */
+    castSourceAuto?: boolean
     children?: React.ReactNode
 }
+
+const ENGINE_OPTIONS = [
+    { value: 'scenes', label: 'Scenes', hint: "Each prompt reuses a real post's scene with your character in it." },
+    { value: 'classic', label: 'Classic', hint: 'Mixes tags category by category, with a control for each one.' },
+] as const
 
 /** Bare lowercase tag text of one prompt token (weights/brackets stripped). */
 function bareTag(token: string): string {
@@ -160,9 +225,19 @@ const PromptRow = memo(({
     format,
     fullDetail,
     tagOverrides,
+    sceneMode = false,
+    onSend,
+    sendJob = null,
+    sending = false,
+    onDismissSend,
 }: {
     prompt: PackPrompt
     index: number
+    /** ComfyUI mode: Send beside Copy, and the job in a picture box beside the prompt. */
+    onSend?: (index: number) => void
+    sendJob?: ComfySent | null
+    sending?: boolean
+    onDismissSend?: (index: number) => void
     /** `shown`: the converted text on screen, so the copy matches it. */
     onCopy: (prompt: PackPrompt, shown?: string) => Promise<boolean>
     onReroll: (index: number) => void
@@ -173,6 +248,8 @@ const PromptRow = memo(({
     format: PromptFormat
     fullDetail: boolean
     tagOverrides: Record<string, string>
+    /** Scenes engine: everything but the identity is the scene, shown at normal weight. */
+    sceneMode?: boolean
 }) => {
     const tokens = useMemo(() => prompt.prompt.split(',').map((t) => t.trim()).filter(Boolean), [prompt.prompt])
     const [isCopied, triggerCopyFeedback] = useCopyFeedback()
@@ -184,13 +261,15 @@ const PromptRow = memo(({
     const handleCopy = async () => {
         if (await onCopy(prompt, naturalText)) triggerCopyFeedback()
     }
+    const sendRef = useRef<HTMLButtonElement>(null)
+    const focusSend = useCallback(() => sendRef.current?.focus(), [])
+    const dismissSend = useCallback(() => onDismissSend?.(index), [onDismissSend, index])
 
     return (
         <motion.div
             layout={!lowMotion}
             initial={lowMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
             animate={lowMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-            exit={lowMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
             transition={lowMotion ? { duration: 0.15 } : { type: "spring", stiffness: 400, damping: 30 }}
             className="group flex items-start gap-2.5 rounded-lg border border-border/50 bg-background hover:border-border transition-colors p-2.5"
         >
@@ -206,25 +285,40 @@ const PromptRow = memo(({
                 {showResolution && prompt.width && prompt.height && (
                     <span
                         className="text-xs text-mode-pack-text tabular-nums whitespace-nowrap"
-                        title="Suggested size, from the posts this prompt's pose came from"
+                        title={prompt.scene ? "Suggested size, from the post this prompt's scene came from" : "Suggested size, from the posts this prompt's pose came from"}
                     >
                         {prompt.width}×{prompt.height}
                     </span>
                 )}
             </div>
+            {prompt.scene?.preview && (
+                <div className="relative w-10 h-14 flex-shrink-0 rounded-md overflow-hidden bg-muted border" title={`Scene from post #${prompt.scene.postId}`}>
+                    <Image
+                        src={getPostThumbnailUrl(prompt.scene.preview)}
+                        alt={`Scene from post ${prompt.scene.postId}`}
+                        fill
+                        sizes="40px"
+                        className="object-cover"
+                        unoptimized
+                    />
+                </div>
+            )}
+            <div className="flex-1 min-w-0">
             {naturalText ? (
-                <p className="flex-1 min-w-0 text-xs lg:text-[13px] leading-relaxed text-foreground break-words select-all">
+                <p className="text-xs lg:text-[13px] leading-relaxed text-foreground break-words select-all">
                     {naturalText}
                 </p>
             ) : (
-            <p className={`flex-1 min-w-0 text-xs lg:text-[13px] leading-relaxed font-mono break-words select-all ${natural.status === 'loading' ? 'opacity-60' : ''}`}>
+            <p className={`text-xs lg:text-[13px] leading-relaxed font-mono break-words select-all ${natural.status === 'loading' ? 'opacity-60' : ''}`}>
                 {tokens.map((token, i) => {
                     const bare = bareTag(token)
                     const tone = lockedSet.has(bare)
                         ? 'text-muted-foreground'
                         : variedSet.has(bare)
                             ? 'text-foreground font-semibold'
-                            : 'text-faint-foreground'
+                            : sceneMode
+                                ? 'text-foreground'
+                                : 'text-faint-foreground'
                     return (
                         <span key={`${i}-${token}`}>
                             <span className={tone}>{token}</span>
@@ -234,7 +328,37 @@ const PromptRow = memo(({
                 })}
             </p>
             )}
+            </div>
+            {onSend && (
+                <ComfySideJobPresence show={sendJob !== null || sending} className="shrink-0">
+                    <ComfySideJob
+                        jobId={sendJob?.jobId ?? null}
+                        api={sendJob?.api ?? null}
+                        launching={sending}
+                        onDismiss={dismissSend}
+                        returnFocus={focusSend}
+                        width={prompt.width}
+                        height={prompt.height}
+                        className="w-[4.5rem] sm:w-24"
+                    />
+                </ComfySideJobPresence>
+            )}
             <div className="flex flex-col sm:flex-row pointer-coarse:flex-col gap-0.5">
+                {onSend && (
+                    <Button
+                        ref={sendRef}
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => onSend(index)}
+                        className={`${ROW_ACTION_CLASS} text-muted-foreground hover:text-foreground hover:bg-muted ${sending || sendJob ? 'opacity-100' : ''}`}
+                        aria-label={SEND_TEXT.row(index + 1)}
+                        aria-busy={sending || undefined}
+                        title={SEND_TEXT.rowTitle}
+                    >
+                        <SendGlyph sending={sending} className="w-3.5 h-3.5 [&_svg]:size-full!" />
+                    </Button>
+                )}
                 <Button
                     type="button"
                     variant="ghost"
@@ -267,6 +391,11 @@ const warnTagsCopied = () => toast({
     variant: "destructive",
     duration: 3000,
 })
+const warnTagsSent = () => toast({
+    description: "Couldn't load the prompt converter, so the prompts were sent as tags. Check your connection and try again.",
+    variant: "destructive",
+    duration: 3000,
+})
 
 /** Results list: generated prompts with per-item copy/reroll + a "Copy all" split button. */
 const PackResultsList = memo(({
@@ -280,6 +409,8 @@ const PackResultsList = memo(({
     variedSet,
     isCollecting,
     minTotalTags,
+    sceneMode = false,
+    castSize = 1,
 }: {
     prompts: PackPrompt[]
     naturalSourceOf: (prompt: PackPrompt) => NaturalPromptSource
@@ -291,8 +422,11 @@ const PackResultsList = memo(({
     variedSet: ReadonlySet<string>
     isCollecting: boolean
     minTotalTags: number
+    sceneMode?: boolean
+    /** Characters the pack names: with two or more, the tags format gets an honest note. */
+    castSize?: number
 }) => {
-    const { format, fullDetail } = usePromptFormat()
+    const { format, fullDetail, setFormat } = usePromptFormat()
     const shortCount = minTotalTags > 0
         ? prompts.filter((p) => p.prompt.split(',').filter((t) => t.trim()).length < minTotalTags).length
         : 0
@@ -345,17 +479,70 @@ const PackResultsList = memo(({
         if (await onCopyAll(text, failed ? 'tags' : format)) triggerCopyAllFeedback()
     }
 
+    // ComfyUI mode: a row sends what its Copy copies, in the chosen format, without the
+    // "[WIDTHxHEIGHT] " prefix; the suggested size goes as the exact image size (packSendRequest).
+    const comfy = usePackComfySend()
+    const { sendOne, sendAll: sendRows, dismiss: dismissSend } = comfy
+    const sendRowOf = (index: number, warn: () => void, copyInstead: () => void): PackSendRow | null => {
+        const p = prompts[index]
+        if (!p) return null
+        return {
+            key: index,
+            forPrompt: p.prompt,
+            build: async () => {
+                const body = await bodyOf(p)
+                if (body.failed) warn()
+                return packSendRequest(p, body.text)
+            },
+            onCopyInstead: copyInstead,
+        }
+    }
+    const handleSend = (index: number) => {
+        const p = prompts[index]
+        const row = sendRowOf(index, warnTagsSent, () => { if (p) void handleCopyPrompt(p) })
+        if (row) sendOne(row)
+    }
+    const handleSendAll = () => {
+        // One warning for the whole pack when the converter can't load.
+        let warned = false
+        const warnOnce = () => {
+            if (!warned) warnTagsSent()
+            warned = true
+        }
+        const copyInstead = () => void handleCopyAll()
+        void sendRows(prompts.flatMap((_, i) => sendRowOf(i, warnOnce, copyInstead) ?? []))
+    }
+    const sendBusy = comfy.all.kind === 'sending'
+    const allSent = comfy.all.kind === 'ended' && comfy.all.sent === comfy.all.total
+    const sendStopped = comfy.all.kind === 'ended' && comfy.all.sent < comfy.all.total
+    const sendNote = sendAllNote(comfy.all)
+
     return (
         <div id="pack-results-section" className="flex flex-col gap-3 lg:min-h-0 lg:flex-1">
             <div className="flex items-center justify-between gap-2 pb-2 border-b border-border/40 flex-shrink-0 max-lg:sticky max-lg:top-0 max-lg:z-10 max-lg:bg-background max-lg:pt-1">
                 <div className="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0">
                     <h3 className="text-sm font-semibold text-foreground">Prompts</h3>
+                    {/* The app-wide prompt format, here too: the prompts below re-render in it without leaving the pack. */}
+                    <Select
+                        value={format}
+                        onValueChange={(value) => { if (isPromptFormat(value)) setFormat(value) }}
+                        onOpenChange={(open) => { if (open) preloadNaturalPrompt() }}
+                    >
+                        <SelectTrigger aria-label="Prompt format" className="h-8 pointer-coarse:h-11 w-auto min-w-[6.5rem] gap-1.5 bg-background px-2.5 text-xs">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {PROMPT_FORMATS.map((option) => (
+                                <SelectItem key={option} value={option} className="text-xs">{PROMPT_FORMAT_INFO[option].label}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                     {prompts.length > 0 && (
                         <>
                             <span className="text-xs font-semibold bg-muted text-foreground px-2 py-0.5 rounded-full tabular-nums">
                                 {prompts.length}
                             </span>
-                            {format === 'tags' && (
+                            {format === 'tags' && !sceneMode && (
                                 <span className="text-xs text-muted-foreground">
                                     <span className="font-semibold text-foreground">bold</span> = varied
                                 </span>
@@ -364,6 +551,25 @@ const PackResultsList = memo(({
                     )}
                 </div>
                 {prompts.length > 0 && (
+                    <div className="flex flex-shrink-0 items-center gap-1.5">
+                    {comfy.enabled && (
+                        <>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={sendBusy ? undefined : handleSendAll}
+                                aria-disabled={sendBusy || undefined}
+                                aria-busy={sendBusy || undefined}
+                                aria-label={comfy.all.kind === 'idle' ? SEND_TEXT.allLabel : undefined}
+                                className={`h-9 pointer-coarse:h-11 text-xs tabular-nums ${sendBusy ? 'cursor-progress' : ''} ${allSent ? 'text-success-text' : ''} ${sendStopped ? 'text-warning-text' : ''}`}
+                            >
+                                {allSent ? <Check className="w-3.5 h-3.5 mr-1.5" /> : sendStopped ? <AlertTriangle className="w-3.5 h-3.5 mr-1.5" /> : <SendGlyph sending={sendBusy} className="w-3.5 h-3.5 mr-1.5 [&_svg]:size-full!" />}
+                                {sendAllLabel(comfy.all)}
+                            </Button>
+                            <span className="sr-only" role="status" aria-live="polite">{sendAllAnnouncement(comfy.all)}</span>
+                        </>
+                    )}
                     <div className="inline-flex flex-shrink-0 rounded-md shadow-xs" data-pack-tour="copy-all">
                         <Button
                             type="button"
@@ -395,15 +601,31 @@ const PackResultsList = memo(({
                                     <span className="flex flex-col gap-0.5">
                                         <span>Add size as [WIDTHxHEIGHT]</span>
                                         <span className="text-xs text-muted-foreground">
-                                            For the extension&apos;s Import List. Taken from the posts each prompt&apos;s pose came from.
+                                            {sceneMode
+                                                ? "For the extension's Import List. Taken from the post each prompt's scene came from."
+                                                : "For the extension's Import List. Taken from the posts each prompt's pose came from."}
                                         </span>
                                     </span>
                                 </DropdownMenuCheckboxItem>
                             </DropdownMenuContent>
                         </DropdownMenu>
                     </div>
+                    </div>
                 )}
             </div>
+
+            {sendNote && (
+                <p className="flex items-start gap-1.5 text-xs text-warning-text flex-shrink-0">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-px" />
+                    {sendNote}
+                </p>
+            )}
+
+            {castSize >= 2 && format === 'tags' && prompts.length > 0 && (
+                <p className="text-xs text-muted-foreground flex-shrink-0">
+                    In tag prompts, image models can mix up which traits belong to which character.
+                </p>
+            )}
 
             {shortCount > 0 && (
                 <p className="flex items-start gap-1.5 text-xs text-warning-text flex-shrink-0">
@@ -419,14 +641,16 @@ const PackResultsList = memo(({
                         <>
                             <Loader2 className="w-6 h-6 text-faint-foreground animate-spin" />
                             <p className="text-xs text-muted-foreground max-w-xs">
-                                Collecting posts to sample from. You can set up the categories meanwhile, or generate now with what&apos;s already in.
+                                {sceneMode
+                                    ? "Collecting posts to take scenes from. You can generate now with what's already in."
+                                    : "Collecting posts to sample from. You can set up the categories meanwhile, or generate now with what's already in."}
                             </p>
                         </>
                     ) : (
                         <>
                             <Shuffle className="w-6 h-6 text-muted-foreground/40" />
                             <p className="text-xs text-muted-foreground max-w-xs">
-                                Choose what to keep and what to vary, then press <span className="font-semibold text-foreground">Generate</span>.
+                                {sceneMode ? 'Choose who is in the picture and which situations to use' : 'Choose what to keep and what to vary'}, then press <span className="font-semibold text-foreground">Generate</span>.
                             </p>
                         </>
                     )}
@@ -435,24 +659,29 @@ const PackResultsList = memo(({
                 // One scroll area per screen: the column scrolls on its own on lg+,
                 // and below lg the whole Prompts tab scrolls instead (no nesting).
                 <div className="flex flex-col gap-2 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
-                    <AnimatePresence mode="popLayout">
-                        {prompts.map((p, i) => (
-                            <PromptRow
-                                key={`${i}-${p.prompt}`}
-                                prompt={p}
-                                index={i}
-                                onCopy={handleCopyPrompt}
-                                onReroll={onReroll}
-                                lockedSet={lockedSet}
-                                variedSet={variedSet}
-                                showResolution={addResolution}
-                                naturalSourceOf={naturalSourceOf}
-                                format={format}
-                                fullDetail={fullDetail}
-                                tagOverrides={tagOverrides}
-                            />
-                        ))}
-                    </AnimatePresence>
+                    {/* No exit animation: a replaced row goes at once. An exit waits for frames, and
+                        in a tab that isn't painted the old row stayed next to its replacement. */}
+                    {prompts.map((p, i) => (
+                        <PromptRow
+                            key={`${i}-${p.prompt}`}
+                            prompt={p}
+                            index={i}
+                            onCopy={handleCopyPrompt}
+                            onReroll={onReroll}
+                            lockedSet={lockedSet}
+                            variedSet={variedSet}
+                            showResolution={addResolution}
+                            naturalSourceOf={naturalSourceOf}
+                            format={format}
+                            fullDetail={fullDetail}
+                            tagOverrides={tagOverrides}
+                            sceneMode={sceneMode}
+                            onSend={comfy.enabled ? handleSend : undefined}
+                            sendJob={comfy.enabled ? comfy.jobOf(i, p.prompt) : null}
+                            sending={comfy.enabled && comfy.sending.has(i)}
+                            onDismissSend={dismissSend}
+                        />
+                    ))}
                 </div>
             )}
         </div>
@@ -467,8 +696,11 @@ function CollectionStatus({
     isCollecting,
     seedProgress,
     loadedPostCount,
+    postsFailed = false,
+    onRetryPosts,
     savedPostCount,
     poolSize,
+    poolUnit = 'tags',
     showSourceHint,
     onDismissSourceHint,
 }: {
@@ -480,8 +712,12 @@ function CollectionStatus({
     isCollecting: boolean
     seedProgress: { current: number; target: number } | null
     loadedPostCount: number
+    postsFailed?: boolean
+    onRetryPosts?: () => void
     savedPostCount: number
     poolSize: number
+    /** What poolSize counts: varied tags (classic) or usable scenes. */
+    poolUnit?: 'tags' | 'scenes'
 }) {
     const noPosts = !isCollecting && loadedPostCount === 0
     return (
@@ -503,7 +739,7 @@ function CollectionStatus({
                             <ChevronDown className="w-3 h-3 text-muted-foreground flex-shrink-0" />
                         </button>
                     </TooltipTrigger>
-                    <TooltipContent>Where the varied tags are sampled from. Select to change it.</TooltipContent>
+                    <TooltipContent>{poolUnit === 'scenes' ? 'Where the scenes come from. Select to change it.' : 'Where the varied tags are sampled from. Select to change it.'}</TooltipContent>
                 </Tooltip>
                 {showSourceHint && (
                     <div
@@ -526,7 +762,24 @@ function CollectionStatus({
             </div>
 
             <div className="inline-flex items-center gap-1.5 min-w-0 text-xs tabular-nums whitespace-nowrap" aria-live="polite">
-                {isCollecting ? (
+                {postsFailed && !isCollecting ? (
+                    <>
+                        <AlertTriangle className="w-3.5 h-3.5 text-warning-text flex-shrink-0" />
+                        <span className="text-warning-text truncate">
+                            Couldn&apos;t load posts from {PROVIDER_LABELS[sourceAnswers.booruProvider]}
+                        </span>
+                        {onRetryPosts && (
+                            <button
+                                type="button"
+                                onClick={onRetryPosts}
+                                className="inline-flex items-center gap-1 min-h-7 pointer-coarse:min-h-11 px-1.5 rounded-md font-medium text-foreground hover:bg-muted"
+                            >
+                                <RefreshCw className="w-3 h-3" aria-hidden />
+                                Try again
+                            </button>
+                        )}
+                    </>
+                ) : isCollecting ? (
                     <>
                         <Loader2 className="w-3.5 h-3.5 animate-spin text-mode-pack-text flex-shrink-0" />
                         <span className="font-medium text-foreground truncate">
@@ -543,7 +796,7 @@ function CollectionStatus({
                     <>
                         <span className="w-2 h-2 rounded-full bg-success flex-shrink-0" aria-hidden />
                         <span className="font-medium text-foreground">{loadedPostCount} posts</span>
-                        <span className="hidden sm:inline text-muted-foreground">· {poolSize} tags</span>
+                        <span className="hidden sm:inline text-muted-foreground">· {poolSize} {poolUnit}</span>
                     </>
                 )}
             </div>
@@ -602,6 +855,8 @@ const PackBuilderStickyFooterComponent = ({
     isSeeding = false,
     seedProgress = null,
     loadedPostCount,
+    postsFailed = false,
+    onRetryPosts,
     savedPostCount = 0,
     onClearSavedPosts,
     canLoadMorePosts,
@@ -611,14 +866,41 @@ const PackBuilderStickyFooterComponent = ({
     onRegenerate,
     onRerollPrompt,
     onClearBase,
+    onChangeBase,
+    onHide,
+    baseFromCharacter = false,
+    baseLook = 'typical',
+    onSetBaseLook,
+    typicalLookAvailable = false,
     onExit,
+    onOpenNewBuilder,
     prompts,
     naturalSourceOf,
     onCopyPrompt,
     onCopyAll,
     onResetLearning,
+    engine = 'classic',
+    onSetEngine,
+    scenes,
+    sceneSettings,
+    onSceneSettingsChange,
+    neverIncludeText = '',
+    classicChips,
+    sceneIdeas,
+    contentRating = null,
+    onNeverIncludeTextChange,
+    cast,
+    onAddCastMember,
+    onRemoveCastMember,
+    onSetCastRole,
+    compositionSearch = null,
+    onUseCompositionSearch,
+    castSourceQuery = null,
+    castSourceAuto = false,
     children,
 }: PackBuilderStickyFooterProps) => {
+    // The scenes panel replaces the category list once its state is wired in.
+    const sceneMode = engine === 'scenes' && !!scenes && !!sceneSettings && !!onSceneSettingsChange
 
     const lowMotion = useLowMotion()
 
@@ -642,18 +924,44 @@ const PackBuilderStickyFooterComponent = ({
     const [justGenerated, setJustGenerated] = useState(false)
     const handleGenerateClick = useCallback(() => {
         onRegenerate()
-        setJustGenerated(true)
-        setTimeout(() => setJustGenerated(false), 1200)
+        // Scenes generate in the background and show their own busy state instead.
+        if (!sceneMode) {
+            setJustGenerated(true)
+            setTimeout(() => setJustGenerated(false), 1200)
+        }
         showTab('prompts')
         document.getElementById('pack-results-section')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-    }, [onRegenerate, showTab])
+    }, [onRegenerate, showTab, sceneMode])
+    const isGenerating = sceneMode && !!scenes?.isGenerating
+
+    // The cast (scenes engine, character base): add or remove characters.
+    const castSize = sceneMode ? scenes?.castSize ?? 1 : 1
+    const showCast = sceneMode && baseFromCharacter && !!cast && !!onAddCastMember
+    const [addingCharacter, setAddingCharacter] = useState(false)
+    const [castMessage, setCastMessage] = useState<string | null>(null)
+    const [castSearchOpen, setCastSearchOpen] = useState(false)
+    const handlePickCastMember = useCallback((character: string) => {
+        if (!onAddCastMember) return
+        const result = onAddCastMember(character)
+        if (result === 'added') {
+            setAddingCharacter(false)
+            setCastMessage(null)
+        } else if (result === 'duplicate') {
+            setCastMessage(`${character} is already in the pack.`)
+        } else if (result === 'full') {
+            setCastMessage(`A pack can have up to ${MAX_CAST} characters.`)
+        }
+    }, [onAddCastMember])
+    const handleSetCastRole = useCallback((character: string, role: CastRole) => onSetCastRole?.(character, role), [onSetCastRole])
 
     const handleReroll = useCallback((index: number) => {
         const ok = onRerollPrompt(index)
         if (!ok) {
             toast({
-                title: "No new variations",
-                description: "Collect more posts or raise Variety to get a fresh option here.",
+                title: sceneMode ? "No other scenes left" : "No new variations",
+                description: sceneMode
+                    ? "Turn on more situations or collect more posts to get a fresh scene here."
+                    : "Collect more posts or raise Variety to get a fresh option here.",
                 action: (
                     <ToastAction altText="Collect more posts" onClick={onLoadMorePosts}>
                         Collect more
@@ -661,7 +969,7 @@ const PackBuilderStickyFooterComponent = ({
                 ),
             })
         }
-    }, [onRerollPrompt, onLoadMorePosts])
+    }, [onRerollPrompt, onLoadMorePosts, sceneMode])
 
     // Live display value while dragging the "Prompts" count slider, decoupled
     // from the committed promptCount prop — onValueChange fires every
@@ -676,9 +984,11 @@ const PackBuilderStickyFooterComponent = ({
         setLivePromptCount(promptCount)
     }
 
-    // "Always add" stays tucked behind a link until it's used.
+    // "Always add" and "Never include" stay tucked behind a link until they're used.
     const [alwaysAddOpen, setAlwaysAddOpen] = useState(false)
     const showAlwaysAdd = alwaysAddOpen || customBaseText.trim() !== ''
+    const [neverOpen, setNeverOpen] = useState(false)
+    const showNever = neverOpen || neverIncludeText.trim() !== ''
 
     const baseThumb = baseCard ? getPostThumbnailUrl(baseCard.preview_file_url || baseCard.file_url) : null
 
@@ -702,10 +1012,16 @@ const PackBuilderStickyFooterComponent = ({
 
     // Still connecting (nothing reported yet) counts as collecting too — the
     // first page can take a moment and the builder shouldn't look idle meanwhile.
-    const isCollecting = isSeeding || (loadedPostCount === 0 && canLoadMorePosts)
+    // A failed request isn't collecting: the header says so and offers to try again.
+    const isCollecting = !postsFailed && (isSeeding || (loadedPostCount === 0 && canLoadMorePosts))
     const progress = seedProgress ? Math.min(1, seedProgress.current / Math.max(1, seedProgress.target)) : null
     const nothingVaries = PACK_AXES.every((cat) => categoryStates[cat] !== 'vary')
-    const generateBlocked = nothingVaries || needsCharacterChoice
+    const noScenes = sceneMode && !!scenes?.pool && scenes.pool.scenes.length === 0
+    const allSituationsOff = sceneMode && !!scenes?.pool && scenes.pool.scenes.length > 0 && scenes.enabledScenes === 0
+    const missingRole = sceneMode ? scenes?.missingRoles[0] ?? null : null
+    const generateBlocked = sceneMode
+        ? needsCharacterChoice || !!missingRole || !scenes?.pool || noScenes || allSituationsOff
+        : nothingVaries || needsCharacterChoice
     const poolsTooSmall = minTotalTags > 0 && estimatedTagsPerPrompt < minTotalTags
 
     // Guided tour (pack-builder-tour.tsx): auto-starts the first time the builder
@@ -713,10 +1029,12 @@ const PackBuilderStickyFooterComponent = ({
     // opened first so the steps about its parts and pool have something to point at.
     const contentRef = useRef<HTMLDivElement>(null)
     const [tourTargets, setTourTargets] = useState<string[] | null>(null)
+    // Scenes has its own tour; Classic keeps the per-category one.
+    const tourMethod = sceneMode ? 'scenes' : 'classic'
     const startTour = useCallback(() => {
-        window.dispatchEvent(new Event(PACK_TOUR_OPEN_PARTS_EVENT))
-        requestAnimationFrame(() => setTourTargets(findPackTourTargets(contentRef.current)))
-    }, [])
+        if (tourMethod === 'classic') window.dispatchEvent(new Event(PACK_TOUR_OPEN_PARTS_EVENT))
+        requestAnimationFrame(() => setTourTargets(findPackTourTargets(contentRef.current, tourMethod)))
+    }, [tourMethod])
     const builderOpen = isOpen && hasSetupAnswers
 
     // One-time hint on the source chip for people who finished the tour before
@@ -764,12 +1082,15 @@ const PackBuilderStickyFooterComponent = ({
         onOpenSource()
     }, [onOpenSource])
 
-    // Closing the builder — the X, Escape or a click outside — always does the
-    // same thing: it drops the base and goes back to the gallery to pick
-    // another one. Pack Mode itself stays on; leaving it is in the ⋯ menu.
+    // Closing the builder — the X, Escape or a click outside — puts the pack
+    // aside, whole (base, characters, settings, prompts), so the gallery can be
+    // used and the pack picked up again. Without `onHide` it drops the base.
+    // "Change base" drops it on purpose; leaving Pack Mode is in the ⋯ menu.
     const handleDialogOpenChange = useCallback((open: boolean) => {
-        if (!open) onClearBase()
-    }, [onClearBase])
+        if (open) return
+        if (onHide) onHide()
+        else onClearBase()
+    }, [onHide, onClearBase])
 
     const headerButtonClass = "h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11 flex-shrink-0 text-muted-foreground hover:text-foreground"
 
@@ -793,6 +1114,11 @@ const PackBuilderStickyFooterComponent = ({
                                 Pick a card and press <span className="font-medium text-foreground">Use as base</span> to build a pack.
                             </p>
                         </div>
+                        {onOpenNewBuilder && (
+                            <Button variant="ghost" size="sm" onClick={onOpenNewBuilder} className="h-9 pointer-coarse:h-11 flex-shrink-0 text-xs text-muted-foreground hover:text-foreground">
+                                {BUILDER_SWITCH_TEXT.toNewLabel}
+                            </Button>
+                        )}
                         <Button variant="ghost" size="icon" onClick={onExit} className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11 rounded-full hover:bg-muted flex-shrink-0" aria-label="Exit Pack Mode">
                             <X className="w-4 h-4" />
                         </Button>
@@ -806,6 +1132,12 @@ const PackBuilderStickyFooterComponent = ({
                     showCloseButton={false}
                     // Focus the builder itself, not its first control: the source
                     // chip's tooltip would otherwise pop open on every visit.
+                    // Escape inside an open list or menu (the Look select, a menu) closes
+                    // only that; the builder stays open.
+                    onEscapeKeyDown={(e) => {
+                        const target = e.target instanceof Element ? e.target : null
+                        if (castSearchOpen || target?.closest('[role="listbox"], [role="menu"], [data-radix-popper-content-wrapper]')) e.preventDefault()
+                    }}
                     onOpenAutoFocus={(e) => {
                         e.preventDefault()
                         contentRef.current?.focus()
@@ -832,8 +1164,11 @@ const PackBuilderStickyFooterComponent = ({
                                 isCollecting={isCollecting}
                                 seedProgress={seedProgress}
                                 loadedPostCount={loadedPostCount}
+                                postsFailed={postsFailed}
+                                onRetryPosts={onRetryPosts}
                                 savedPostCount={savedPostCount}
-                                poolSize={poolSize}
+                                poolSize={sceneMode ? scenes?.pool?.scenes.length ?? 0 : poolSize}
+                                poolUnit={sceneMode ? 'scenes' : 'tags'}
                             />
                         </div>
 
@@ -848,7 +1183,7 @@ const PackBuilderStickyFooterComponent = ({
                                     <RefreshCw className="w-4 h-4 text-muted-foreground" />
                                     Collect more posts
                                 </DropdownMenuItem>
-                                {onSetAllAxisTagModes && (
+                                {onSetAllAxisTagModes && !sceneMode && (
                                     <>
                                         <DropdownMenuSeparator />
                                         <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">All pools</DropdownMenuLabel>
@@ -886,6 +1221,15 @@ const PackBuilderStickyFooterComponent = ({
                                         </span>
                                     </DropdownMenuItem>
                                 )}
+                                {onOpenNewBuilder && (
+                                    <DropdownMenuItem onSelect={onOpenNewBuilder} className="gap-2">
+                                        <Package className="w-4 h-4 text-muted-foreground" />
+                                        <span className="flex flex-col">
+                                            {BUILDER_SWITCH_TEXT.toNewLabel}
+                                            <span className="text-xs text-muted-foreground">{BUILDER_SWITCH_TEXT.toNewHint}</span>
+                                        </span>
+                                    </DropdownMenuItem>
+                                )}
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem onSelect={onExit} className="gap-2">
                                     <LogOut className="w-4 h-4 text-muted-foreground" />
@@ -896,12 +1240,12 @@ const PackBuilderStickyFooterComponent = ({
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <DialogClose asChild>
-                                    <Button variant="ghost" size="icon" className={headerButtonClass} aria-label="Close builder and pick another base">
+                                    <Button variant="ghost" size="icon" className={headerButtonClass} aria-label={onHide ? "Close builder and keep the pack" : "Close builder and pick another base"}>
                                         <X className="w-4 h-4" />
                                     </Button>
                                 </DialogClose>
                             </TooltipTrigger>
-                            <TooltipContent>Close and pick another base (Esc)</TooltipContent>
+                            <TooltipContent>{onHide ? "Close and keep the pack (Esc)" : "Close and pick another base (Esc)"}</TooltipContent>
                         </Tooltip>
 
                         {/* Collection progress — determinate while chasing a target, sweeping while connecting. */}
@@ -990,16 +1334,72 @@ const PackBuilderStickyFooterComponent = ({
                                         )}
                                         <div className="flex-1 min-w-0 flex flex-col gap-2">
                                             <div className="flex items-center justify-between gap-2">
-                                                <h3 className="text-sm font-semibold truncate">{baseCard ? `Base card #${baseCard.id}` : 'Your prompt'}</h3>
-                                                <Button type="button" variant="outline" size="sm" onClick={baseCard ? onClearBase : onEditBasePrompt} className="h-8 pointer-coarse:h-11 px-2.5 text-xs flex-shrink-0">
-                                                    <Pencil className="w-3 h-3 mr-1.5" />
-                                                    {baseCard ? "Change base" : "Edit prompt"}
-                                                </Button>
+                                                <h3 className="text-sm font-semibold truncate min-w-0">{baseCard ? `Base card #${baseCard.id}` : baseFromCharacter ? (sceneMode ? 'Base' : 'Character') : 'Your prompt'}</h3>
+                                                <div className="flex flex-wrap items-center justify-end gap-1.5 min-w-0">
+                                                    {/* A card base's look: what most of the character's posts show, or the card's own. */}
+                                                    {baseCard && typicalLookAvailable && onSetBaseLook && (
+                                                        <Select value={baseLook} onValueChange={(v) => onSetBaseLook(v as CharacterLook)}>
+                                                            <SelectTrigger aria-label="Character look" className="h-8 pointer-coarse:h-11 w-auto gap-1.5 bg-background px-2.5 text-xs">
+                                                                <span className="text-muted-foreground">Look:</span>
+                                                                <SelectValue />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="typical" className="text-xs">Typical</SelectItem>
+                                                                <SelectItem value="card" className="text-xs">This card</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                    )}
+                                                    <Button type="button" variant="outline" size="sm" onClick={baseCard || baseFromCharacter ? onChangeBase ?? onClearBase : onEditBasePrompt} className="h-8 pointer-coarse:h-11 px-2.5 text-xs flex-shrink-0">
+                                                        <Pencil className="w-3 h-3 mr-1.5" />
+                                                        {baseCard || baseFromCharacter ? "Change base" : "Edit prompt"}
+                                                    </Button>
+                                                </div>
                                             </div>
-                                            {!baseCard && (
+                                            {!baseCard && !showCast && (
                                                 <p className="text-xs font-mono text-foreground/80 line-clamp-2 break-words" title={basePrompt}>
-                                                    {basePrompt}
+                                                    {baseFromCharacter ? basePrompt.replace(/_/g, ' ') : basePrompt}
                                                 </p>
+                                            )}
+                                            {showCast && cast && (
+                                                <div className="space-y-1.5">
+                                                    <ul className="flex flex-wrap gap-1.5" aria-label="Characters">
+                                                        {cast.map(({ character }) => (
+                                                            <li key={character} className="inline-flex items-center gap-1 rounded-md border border-border bg-foreground/[0.07] pl-2 pr-0.5 font-mono text-xs text-foreground">
+                                                                {character}
+                                                                {cast.length > 1 && onRemoveCastMember && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => onRemoveCastMember(character)}
+                                                                        aria-label={`Remove ${character} from the pack`}
+                                                                        className="relative rounded p-1 text-faint-foreground hover:text-destructive-text hover:bg-destructive-soft pointer-coarse:after:absolute pointer-coarse:after:-inset-3 pointer-coarse:after:content-['']"
+                                                                    >
+                                                                        <X className="w-3 h-3" />
+                                                                    </button>
+                                                                )}
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                    {addingCharacter ? (
+                                                        <div className="space-y-1">
+                                                            <PackCharacterSearch onPick={handlePickCastMember} onSuggestionsOpenChange={setCastSearchOpen} />
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                {castMessage ? <p className="text-xs text-warning-text" role="status">{castMessage}</p> : <span />}
+                                                                <Button type="button" variant="ghost" size="sm" onClick={() => { setAddingCharacter(false); setCastMessage(null) }} className="h-8 pointer-coarse:h-11 text-xs">
+                                                                    Cancel
+                                                                </Button>
+                                                            </div>
+                                                        </div>
+                                                    ) : cast.length < MAX_CAST ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setAddingCharacter(true)}
+                                                            className="inline-flex items-center gap-1 min-h-7 pointer-coarse:min-h-11 text-xs text-muted-foreground hover:text-foreground"
+                                                        >
+                                                            <Plus className="w-3.5 h-3.5" />
+                                                            Add a character
+                                                        </button>
+                                                    ) : null}
+                                                </div>
                                             )}
                                             {!baseCard && (baseClassified.other?.length ?? 0) > 0 && (
                                                 <div className="flex items-start gap-2 flex-wrap">
@@ -1064,6 +1464,24 @@ const PackBuilderStickyFooterComponent = ({
                                                         placeholder="e.g. masterpiece, best quality, solo"
                                                         className="text-xs font-mono min-h-[2.25rem] h-9 max-h-24 resize-y py-2"
                                                     />
+                                                    {sceneMode && (
+                                                        <p className="text-xs text-muted-foreground">
+                                                            Goes at the start of every prompt exactly as typed. It doesn&apos;t replace anything in the scene.
+                                                        </p>
+                                                    )}
+                                                    {!sceneMode && classicChips && classicChips.keptByAlwaysAdd.length > 0 && (
+                                                        <p className="text-xs text-muted-foreground" role="status">
+                                                            <span className="font-mono">{classicChips.keptByAlwaysAdd.join(', ')}</span> {classicChips.keptByAlwaysAdd.length === 1 ? "is" : "are"} removed, but Always add puts {classicChips.keptByAlwaysAdd.length === 1 ? "it" : "them"} in every prompt.
+                                                        </p>
+                                                    )}
+                                                    {sceneMode && scenes && scenes.alwaysAddOmitted.length > 0 && (
+                                                        <p className="text-xs text-muted-foreground" role="status">
+                                                            <span>
+                                                                Not added: <span className="font-mono">{scenes.alwaysAddOmitted.join(', ')}</span>.{' '}
+                                                                {scenes.alwaysAddOmitted.length === 1 ? "It doesn't" : "They don't"} match who&apos;s in the picture.
+                                                            </span>
+                                                        </p>
+                                                    )}
                                                 </div>
                                             ) : (
                                                 <button
@@ -1075,9 +1493,100 @@ const PackBuilderStickyFooterComponent = ({
                                                     Always add tags (LoRA triggers, quality tags…)
                                                 </button>
                                             )}
+                                            {onNeverIncludeTextChange && (showNever ? (
+                                                <div className="space-y-1">
+                                                    <Label htmlFor="pack-never-include" className="text-xs font-medium text-muted-foreground">
+                                                        Never include
+                                                    </Label>
+                                                    <TagAutocompleteTextarea
+                                                        id="pack-never-include"
+                                                        value={neverIncludeText}
+                                                        onValueChange={onNeverIncludeTextChange}
+                                                        placeholder="e.g. hat, jewelry"
+                                                        className="text-xs font-mono min-h-[2.25rem] h-9 max-h-24 resize-y py-2"
+                                                    />
+                                                    <p className="text-xs text-muted-foreground">
+                                                        {sceneMode
+                                                            ? "Left out of every prompt, along with its variants (jewelry also removes gold jewelry). The scenes are still used."
+                                                            : "Left out of every prompt, along with its variants (jewelry also removes gold jewelry), even from full sets."}
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setNeverOpen(true)}
+                                                    className="self-start inline-flex items-center gap-1 min-h-7 pointer-coarse:min-h-11 text-xs text-muted-foreground hover:text-foreground"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5" />
+                                                    Never include tags
+                                                </button>
+                                            ))}
                                         </div>
                                     </section>
 
+                                    {onSetEngine && (
+                                        <section className="rounded-xl border border-border/70 bg-card/70 px-3 py-2.5 sm:px-4 space-y-1" aria-label="Method">
+                                            <div className="flex items-center justify-between gap-3 flex-wrap">
+                                                <span id="pack-engine-label" className="text-sm font-semibold">Method</span>
+                                                <div
+                                                    className="inline-flex rounded-lg border border-border/60 bg-muted/40 p-0.5"
+                                                    role="radiogroup"
+                                                    aria-labelledby="pack-engine-label"
+                                                    onKeyDown={(e) => radioGroupKeyDown(e, ENGINE_OPTIONS.filter((opt) => opt.value !== 'classic' || castSize < 2).map((opt) => opt.value), engine, onSetEngine)}
+                                                >
+                                                    {ENGINE_OPTIONS.map((opt) => {
+                                                        const active = engine === opt.value
+                                                        const disabled = opt.value === 'classic' && castSize >= 2
+                                                        return (
+                                                            <button
+                                                                key={opt.value}
+                                                                type="button"
+                                                                role="radio"
+                                                                aria-checked={active}
+                                                                aria-disabled={disabled || undefined}
+                                                                disabled={disabled}
+                                                                tabIndex={active ? 0 : -1}
+                                                                onClick={() => onSetEngine(opt.value)}
+                                                                className={`h-8 pointer-coarse:h-11 px-3 text-xs font-medium rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${active ? 'bg-mode-pack text-mode-pack-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'}`}
+                                                            >
+                                                                {opt.label}
+                                                            </button>
+                                                        )
+                                                    })}
+                                                </div>
+                                            </div>
+                                            <p className="text-xs text-muted-foreground">
+                                                {ENGINE_OPTIONS.find((opt) => opt.value === engine)?.hint}
+                                            </p>
+                                            {castSize >= 2 && (
+                                                <p className="text-xs text-muted-foreground">Classic works with one character. Remove the others to use it.</p>
+                                            )}
+                                        </section>
+                                    )}
+
+                                    {sceneMode && scenes && sceneSettings && onSceneSettingsChange ? (
+                                        <PackScenesPanel
+                                            scenes={scenes}
+                                            settings={sceneSettings}
+                                            onSettingsChange={onSceneSettingsChange}
+                                            onToggleRemovedTag={onToggleExcludedBaseTag}
+                                            onSetRole={handleSetCastRole}
+                                            compositionSearch={compositionSearch}
+                                            onUseCompositionSearch={onUseCompositionSearch}
+                                            castSourceQuery={castSourceQuery}
+                                            castSourceAuto={castSourceAuto}
+                                            baseIsCard={!!baseCard}
+                                            hasMultipleCharacters={hasMultipleCharacters}
+                                            isCollecting={isCollecting}
+                                            loadedPostCount={loadedPostCount}
+                                            promptCount={promptCount}
+                                            canLoadMorePosts={canLoadMorePosts && !isCollecting}
+                                            onLoadMorePosts={onLoadMorePosts}
+                                            onOpenSource={handleOpenSource}
+                                            sceneIdeas={sceneIdeas}
+                                            contentRating={contentRating}
+                                        />
+                                    ) : (
                                     <PackCategoryList
                                         categories={PACK_AXES}
                                         categoryStates={categoryStates}
@@ -1109,7 +1618,11 @@ const PackBuilderStickyFooterComponent = ({
                                         minSetTags={minSetTags}
                                         onSetMinSetTags={onSetMinSetTags}
                                         hiddenThinSets={hiddenThinSets}
+                                        chips={classicChips}
+                                        sceneIdeas={sceneIdeas}
+                                        contentRating={contentRating}
                                     />
+                                    )}
 
                                     {children}
                                 </div>
@@ -1132,7 +1645,9 @@ const PackBuilderStickyFooterComponent = ({
                                         lockedSet={lockedSet}
                                         variedSet={variedSet}
                                         isCollecting={isCollecting}
-                                        minTotalTags={minTotalTags}
+                                        minTotalTags={sceneMode ? 0 : minTotalTags}
+                                        sceneMode={sceneMode}
+                                        castSize={sceneMode ? scenes?.castSize ?? 1 : 1}
                                     />
                                 </div>
                             </div>
@@ -1159,6 +1674,7 @@ const PackBuilderStickyFooterComponent = ({
                                 </div>
 
                                 <div className="flex items-center gap-2 flex-wrap">
+                                    {!sceneMode && (<>
                                     <PackVarietySelect value={varietyLevel} onChange={onVarietyLevelChange} />
                                     <Popover>
                                         <PopoverTrigger asChild>
@@ -1193,21 +1709,35 @@ const PackBuilderStickyFooterComponent = ({
                                     <span className="hidden lg:inline ml-auto text-xs text-muted-foreground tabular-nums">
                                         ≈ {estimatedTagsPerPrompt} tags each
                                     </span>
+                                    </>)}
                                     <Button
                                         type="button"
                                         size="lg"
                                         onClick={handleGenerateClick}
                                         disabled={generateBlocked}
+                                        aria-busy={isGenerating}
                                         className={`max-lg:flex-1 lg:w-full h-11 font-semibold shadow-sm transition-all duration-200 ${justGenerated ? 'bg-success hover:bg-success/90 text-success-foreground' : 'bg-mode-pack hover:bg-mode-pack/90 text-mode-pack-foreground'}`}
                                     >
-                                        {justGenerated ? <Check className="w-4 h-4 mr-2" /> : <Shuffle className="w-4 h-4 mr-2" />}
-                                        {justGenerated
+                                        {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : justGenerated ? <Check className="w-4 h-4 mr-2" /> : <Shuffle className="w-4 h-4 mr-2" />}
+                                        {isGenerating
+                                            ? 'Generating…'
+                                            : justGenerated
                                             ? 'Generated'
                                             : needsCharacterChoice
                                                 ? 'Pick a character first'
-                                                : nothingVaries
-                                                    ? 'Set a category to Vary'
-                                                    : `Generate ${livePromptCount} prompts`}
+                                                : sceneMode
+                                                    ? missingRole
+                                                        ? `Pick a role for ${missingRole}`
+                                                        : !scenes?.pool
+                                                        ? 'Finding scenes…'
+                                                        : noScenes
+                                                            ? 'No scenes to use yet'
+                                                            : allSituationsOff
+                                                                ? 'Turn on a situation'
+                                                                : `Generate ${livePromptCount} prompts`
+                                                    : nothingVaries
+                                                        ? 'Set a category to Vary'
+                                                        : `Generate ${livePromptCount} prompts`}
                                     </Button>
                                 </div>
                             </div>
@@ -1215,7 +1745,7 @@ const PackBuilderStickyFooterComponent = ({
                     )}
 
                     {tourTargets && (
-                        <PackBuilderTour containerRef={contentRef} availableTargets={tourTargets} onClose={() => setTourTargets(null)} />
+                        <PackBuilderTour containerRef={contentRef} availableTargets={tourTargets} method={tourMethod} castSize={scenes?.castSize ?? 1} onClose={() => setTourTargets(null)} />
                     )}
                 </DialogContent>
             </Dialog>

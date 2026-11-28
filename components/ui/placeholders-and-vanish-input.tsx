@@ -12,6 +12,7 @@ export function PlaceholdersAndVanishInput({
   setValue: setPropValue,
   className,
   disableVanish = false,
+  paused = false,
   "aria-label": ariaLabel,
 }: {
   placeholders: string[];
@@ -21,12 +22,15 @@ export function PlaceholdersAndVanishInput({
   setValue?: (val: string) => void;
   className?: string;
   disableVanish?: boolean;
+  /** Stops the placeholder rotation (the page behind a modal layer). */
+  paused?: boolean;
   "aria-label"?: string;
 }) {
   const [currentPlaceholder, setCurrentPlaceholder] = useState(0);
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
+    if (paused) return;
     const startAnimation = () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
@@ -54,7 +58,7 @@ export function PlaceholdersAndVanishInput({
       }
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [placeholders]);
+  }, [placeholders, paused]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const newDataRef = useRef<any[]>([]);

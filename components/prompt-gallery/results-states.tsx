@@ -129,19 +129,19 @@ export function ResultsStates({
             )
           ) : imageRateLimited ? (
             <div className="space-y-2">
-              <p className="text-sm text-warning-text">Slow down! Too many requests at once.</p>
+              <p className="text-sm text-warning-text">Many images failed to load, so loading more is paused.</p>
               <Button
                 onClick={onResumeScroll}
                 variant="outline"
                 className="gap-2"
               >
                 <RefreshCw className="w-4 h-4" />
-                Resume Scroll
+                Resume loading
               </Button>
             </div>
           ) : (
             <div className="space-y-2">
-              <p className="text-sm text-destructive-text">Failed to load more posts.</p>
+              <p className="text-sm text-destructive-text">Couldn&apos;t load more posts.</p>
               <Button
                 onClick={loadMore}
                 variant="outline"
@@ -155,7 +155,7 @@ export function ResultsStates({
 
           {noMoreResults && !loadMoreError && !imageRateLimited && !sessionCapReached && (
             <p className="text-muted-foreground text-sm py-4">
-              --- End of results ---
+              End of results
             </p>
           )}
         </div>
@@ -209,13 +209,13 @@ export function ResultsStates({
           <AlertTriangle className="w-10 h-10 mx-auto text-warning-text mb-3" />
           {favoritesError ? (
             <>
-              <p className="text-lg font-medium mb-1">Could not load favorites from cloud</p>
+              <p className="text-lg font-medium mb-1">Couldn&apos;t load your favorites</p>
               <p className="text-sm text-muted-foreground mb-4">Check your connection and try again.</p>
             </>
           ) : (
             <>
-              <p className="text-lg font-medium mb-1">Failed to load favorites</p>
-              <p className="text-sm text-muted-foreground mb-4">The post data could not be retrieved. Please try again.</p>
+              <p className="text-lg font-medium mb-1">Couldn&apos;t load your favorite posts</p>
+              <p className="text-sm text-muted-foreground mb-4">The source didn&apos;t return them. Try again.</p>
             </>
           )}
           <Button onClick={retryLoadFavorites} variant="outline" className="gap-2">

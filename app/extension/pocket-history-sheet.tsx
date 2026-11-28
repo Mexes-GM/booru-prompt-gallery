@@ -1,5 +1,6 @@
 "use client"
 
+import { copyText } from "@/lib/clipboard"
 import { memo, useMemo } from "react"
 import { Copy, ExternalLink, History, Loader2, Send, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -141,7 +142,7 @@ const HistoryRow = memo(function HistoryRow({
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(displayContent)
+      await copyText(displayContent)
       onUsedPrompt(post)
       toast({ title: "Copied", description: "Prompt copied to clipboard." })
     } catch {

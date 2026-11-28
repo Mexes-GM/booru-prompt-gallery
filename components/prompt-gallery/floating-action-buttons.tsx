@@ -47,13 +47,13 @@ export function FloatingActionButtons({
             onClick={toggleAiConvertMode}
             variant={isAiConvertMode ? "default" : "secondary"}
             className={`rounded-full shadow-lg h-10 w-10 p-0 ${isAiConvertMode ? "" : "hidden sm:inline-flex bg-background/80 backdrop-blur border"}`}
-            aria-label={isAiConvertMode ? "Disable AI Mode" : "Enable AI Mode"}
+            aria-label={isAiConvertMode ? "Exit AI convert" : "Turn on AI convert"}
           >
             <Sparkles className="h-5 w-5" />
           </Button>
         </TooltipTrigger>
         <TooltipContent side="left">
-          {isAiConvertMode ? "Disable AI Mode" : "Enable AI Mode"}
+          {isAiConvertMode ? "Exit AI convert" : "Turn on AI convert"}
         </TooltipContent>
       </Tooltip>
 
@@ -63,13 +63,13 @@ export function FloatingActionButtons({
             onClick={handleToggleMergeMode}
             variant={isMergeMode ? "default" : "secondary"}
             className={`rounded-full shadow-lg h-10 w-10 p-0 ${isMergeMode ? "" : "hidden sm:inline-flex bg-background/80 backdrop-blur border"}`}
-            aria-label={isMergeMode ? "Disable Merge Mode" : "Enable Merge Mode"}
+            aria-label={isMergeMode ? "Exit Merge mode" : "Turn on Merge mode"}
           >
             <FileCheck2 className="h-5 w-5" />
           </Button>
         </TooltipTrigger>
         <TooltipContent side="left">
-          {isMergeMode ? "Disable Merge Mode" : "Enable Merge Mode"}
+          {isMergeMode ? "Exit Merge mode" : "Turn on Merge mode"}
         </TooltipContent>
       </Tooltip>
 

@@ -1,5 +1,7 @@
 "use client"
 
+import { copyText } from "@/lib/clipboard"
+import { toastCopied, toastCopyFailed } from "@/lib/copy-toast"
 import type React from "react"
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, startTransition, useDeferredValue, lazy } from "react"
 import { Card, CardContent } from "@/components/ui/card"
@@ -73,6 +75,7 @@ import {
   hasMultipleTags, getFinalQueryTagsWithMeta, getProviderTagLimit, isTagCountSupportedProvider, detectMisusedMetatags, BooruPost, BooruProvider, isAibooruPost, apiUrl,
 } from "@/lib/api-client"
 import { urlHasHost } from "@/lib/booru/urls"
+import { canonicalProvider } from "@/lib/booru/retired-providers"
 import { favKey } from "@/lib/favorites-logic"
 
 import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
@@ -152,20 +155,49 @@ import { usePackSeed, PACK_SEED_TARGET_POSTS, PACK_ENRICH_POSTS } from "@/hooks/
 import { poolCacheKey, loadPoolCache, savePoolCache, clearPoolCache, mergePostLists } from "@/lib/pack/pool-cache"
 import { normalizePackSourceRating, countPostRatings, type RatingBreakdown } from "@/lib/pack/source-rating"
 import { collapseNearDuplicates } from "@/lib/pack/near-duplicates"
-import { searchedCharacterOf } from "@/lib/pack/character-focus"
+import { isSamePackBase, keptPackMessage, type PackBaseKey } from "@/lib/pack/kept-pack"
+import { enrichPoolPosts, prefetchPoolDatasetTags } from "@/lib/pack/dataset-tags"
+import { datasetTagsVersion } from "@/lib/dataset-tags-cache"
+import { searchedCharacterIn, searchedCharacterOf } from "@/lib/pack/character-focus"
+import { characterSearchTags } from "@/lib/pack/character-identity"
+import { castDefaultSearch, castPeople, castTheme, compositionQuery } from "@/lib/pack/scene/cast"
+import { getTagSlotFromOverrides } from "@/lib/tag-taxonomy"
 import { usePackAxisFallbacks } from "@/hooks/use-pack-axis-fallbacks"
-import { usePackSeedSearch, type UsePackSeedSearchResult } from "@/hooks/use-pack-seed-search"
+import { usePackScenes } from "@/hooks/use-pack-scenes"
+import { usePackSeedSearch, type PackRatingMode, type UsePackSeedSearchResult } from "@/hooks/use-pack-seed-search"
+import { useTagRelations } from "@/hooks/use-tag-relations"
 import type { PackSourceAnswers } from "./pack-source-modal"
 // Pack Mode's dialogs and builder load when Pack is first picked (or hovered).
 const loadPackEntryModal = () => import("./pack-entry-modal")
 const loadPackSourceModal = () => import("./pack-source-modal")
 const loadPackBuilderStickyFooter = () => import("./pack-builder-sticky-footer")
+const loadPackBriefBuilder = () => import("./pack/pack-brief-builder")
 const PackEntryModal = dynamic(() => loadPackEntryModal().then(m => m.PackEntryModal), { ssr: false, loading: () => null })
 const PackSourceModal = dynamic(() => loadPackSourceModal().then(m => m.PackSourceModal), { ssr: false, loading: () => null })
 const PackBuilderStickyFooter = dynamic(() => loadPackBuilderStickyFooter().then(m => m.PackBuilderStickyFooter), { ssr: false, loading: () => null })
+const PackBriefBuilder = dynamic(() => loadPackBriefBuilder().then(m => m.PackBriefBuilder), { ssr: false, loading: () => null })
+import type { PackBriefStart } from "./pack/pack-brief-builder"
+import type { CastMember } from "@/lib/pack/brief"
+import { savedPackPromptCount, type SavedPack } from "@/lib/pack/saved-pack"
+import { useStableCallback } from "@/hooks/use-stable-callback"
+import { usePageScrollLock } from "@/hooks/use-page-scroll-lock"
+import { GalleryPausedContext } from "@/components/prompt-gallery/gallery-paused"
+import {
+  AlertDialog as PackReplaceDialog,
+  AlertDialogAction as PackReplaceAction,
+  AlertDialogCancel as PackReplaceCancel,
+  AlertDialogContent as PackReplaceContent,
+  AlertDialogDescription as PackReplaceDescription,
+  AlertDialogFooter as PackReplaceFooter,
+  AlertDialogHeader as PackReplaceHeader,
+  AlertDialogTitle as PackReplaceTitle,
+} from "@/components/ui/alert-dialog"
+import { BUILDER_SWITCH_TEXT, baseOfStart, sameBriefStart } from "./pack/builder-switch"
+import { usableSearchTags } from "@/lib/pack/brief-pack"
 import { StickyMiniControlPanel } from "./sticky-mini-control-panel"
-import { FileCheck2, PenLine, SlidersHorizontal } from "lucide-react"
+import { FileCheck2, Package, PenLine, SlidersHorizontal } from "lucide-react"
 import { ControlSection } from "@/components/prompt-gallery/control-section"
+import { ComfyStatusChip } from "@/components/prompt-gallery/comfyui-status"
 import { ProviderSelect } from "@/components/prompt-gallery/provider-select"
 import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll-trigger"
 import { SaveFavoriteButton } from "./save-favorite-button"
@@ -178,6 +210,7 @@ import { loadGlobalWeightsModal } from "@/components/prompt-gallery/gallery-moda
 import { SiteCornerMenu } from "@/components/prompt-gallery/site-corner-menu"
 import { MainTour } from "@/components/prompt-gallery/main-tour"
 import { FeatureIntro } from "@/components/prompt-gallery/feature-intro"
+import type { FeatureVideoId } from "@/lib/feature-intro-videos"
 import { recordPromptCopy } from "@/lib/support-prompt"
 import { GalleryHero } from "@/components/prompt-gallery/gallery-hero"
 // The two option sections' content loads when a section header is hovered,
@@ -191,7 +224,7 @@ const preloadFiltersSection = () => { void loadTagsManagementPanel() }
 const preloadPromptSection = () => { void loadTagsManagementPanel(); void loadPromptGenerationOptionsPanel(); void loadGlobalWeightsModal() }
 const preloadMode = (mode: "browse" | "merge" | "pack") => {
   if (mode === "merge") void loadMergeStickyFooter()
-  if (mode === "pack") { void loadPackEntryModal(); void loadPackSourceModal(); void loadPackBuilderStickyFooter() }
+  if (mode === "pack") { void loadPackEntryModal(); void loadPackSourceModal(); void loadPackBuilderStickyFooter(); void loadPackBriefBuilder() }
 }
 
 /**
@@ -224,8 +257,13 @@ import { usePresetsAndHistory } from "@/hooks/use-presets-and-history"
 import { useHistoryPosts } from "@/hooks/use-history-posts"
 import { useFilteredPosts } from "@/hooks/use-filtered-posts"
 import { usePromptFormat } from "@/hooks/use-natural-prompt"
+import { useComfyEnabled } from "@/hooks/use-comfyui-settings"
+import { ComfyUIPanelHost } from "@/components/prompt-gallery/comfyui-panel-host"
+import { openComfyPanel } from "@/lib/comfyui/panel-request"
 import { PROMPT_FORMAT_INFO, hasWordBudget, type PromptFormat } from "@/lib/prompt/prompt-format"
 import { NaturalPromptStatus } from "@/components/prompt-gallery/prompt-format-setting"
+
+const NO_PACK_POSTS: BooruPost[] = []
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PackSeedFetcher
@@ -420,9 +458,9 @@ function UnavailablePostsNotice({
                 <AlertCircle className="h-5 w-5 text-destructive-text" />
               </div>
               <div className="space-y-1">
-                <AlertTitle className="text-destructive-text font-medium mb-0">Missing Favorites</AlertTitle>
+                <AlertTitle className="text-destructive-text font-medium mb-0">Some favorites didn&apos;t load</AlertTitle>
                 <AlertDescription className="text-muted-foreground text-xs leading-relaxed">
-                  <strong className="text-foreground">{unavailableKeys.length}</strong> posts couldn&apos;t be loaded from the original booru server. They might be temporarily down or deleted by the author.
+                  <strong className="text-foreground">{unavailableKeys.length}</strong> posts couldn&apos;t be loaded from their source. It may be down for now, or the posts were deleted.
                 </AlertDescription>
               </div>
             </div>
@@ -481,9 +519,9 @@ function UnavailablePostsNotice({
                     <Trash2 className="h-5 w-5 text-destructive-text" />
                   </div>
                   <div className="space-y-1">
-                    <AlertTitle className="text-destructive-text font-medium mb-0">Posts Deleted</AlertTitle>
+                    <AlertTitle className="text-destructive-text font-medium mb-0">Posts deleted</AlertTitle>
                     <AlertDescription className="text-muted-foreground text-xs">
-                      <strong className="text-foreground">{state.confirmed.length}</strong> posts have been permanently removed from the booru source and cannot be recovered.
+                      <strong className="text-foreground">{state.confirmed.length}</strong> posts were removed from their source and can&apos;t be recovered.
                     </AlertDescription>
                   </div>
                 </div>
@@ -529,7 +567,6 @@ export function PromptGallery() {
   const [activeFavoriteFolder, setActiveFavoriteFolder] = useState<string | null | 'all' | 'artists'>('all')
   const favs = useBooruFavorites(search.booruProvider)
   const savedArtists = useSavedArtists()
-  const tagCounts = useTagCounts(search.allPosts, search.booruProvider)
   const { toast } = useToast()
   const isMobile = useIsMobile()
 
@@ -600,9 +637,9 @@ export function PromptGallery() {
   const {
     promptOptions, setPromptOptions,
     includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist,
-    autoAppendSearchTags, experimentalPromptRules,
+    autoAppendSearchTags, experimentalPromptRules, fillMissingTags,
     setIncludeCharacters, setOptimizeTags, setSmartTagExclusion, setPrependAnimaArtist,
-    setAutoAppendSearchTags, setExperimentalPromptRules,
+    setAutoAppendSearchTags, setExperimentalPromptRules, setFillMissingTags,
   } = usePromptOptions()
   const { format: promptFormat, fullDetail: promptFullDetail } = usePromptFormat()
 
@@ -684,27 +721,9 @@ export function PromptGallery() {
   const [showStickyPanel, setShowStickyPanel] = useState(false)
   const controlPanelRef = useRef<HTMLDivElement>(null)
 
-  // "Try Random outfit" in the release dialog: open Customize prompt and put
-  // focus on its Outfit setting.
-  const openOutfitSetting = useCallback(() => {
-    // Bring the control panel to the top so the section drops down below it.
-    // A jump, not the page's smooth scroll: the section measures where to
-    // open as it renders, so the panel must already be in place.
-    const top = controlPanelRef.current?.getBoundingClientRect().top
-    if (top !== undefined && Math.abs(top - 16) > 8) {
-      window.scrollTo({ top: window.scrollY + top - 16, behavior: "instant" })
-    }
-    // Opened once its content has loaded; the setting renders when the
-    // section (or the mobile sheet) has opened.
-    void Promise.all([loadTagsManagementPanel(), loadPromptGenerationOptionsPanel()]).finally(() => {
-      setPromptOptionsOpen(true)
-      window.setTimeout(() => {
-        const select = document.getElementById("outfit-mode-select-embedded")
-        select?.focus({ preventScroll: true })
-        select?.scrollIntoView({ block: "nearest" })
-      }, 350)
-    })
-  }, [])
+  // "Set up ComfyUI" in the release dialog: the ComfyUI dialog, which opens
+  // on the setup guide until setup is done.
+  const openComfySetup = useCallback(() => openComfyPanel(null, null), [])
 
   // Folder Delete State
   const [folderToDelete, setFolderToDelete] = useState<{ id: string, name: string } | null>(null)
@@ -792,6 +811,48 @@ export function PromptGallery() {
 
   // Extract stable packMode pieces to avoid dependency churn
   const packModeIsPackMode = packMode.isPackMode
+  // The pack builder (components/prompt-gallery/pack/pack-brief-builder.tsx) and where its
+  // pack started; `key` is new for every start. Every way into Pack Mode starts it. The
+  // pack stays while Pack Mode is off and comes back when it is turned on again; it shows
+  // only in Pack Mode, and steps aside while the user picks a card for a new pack.
+  const [packBrief, setPackBrief] = useState<{ start: PackBriefStart; key: number } | null>(null)
+  const [packPickingCard, setPackPickingCard] = useState(false)
+  if (packPickingCard && !packModeIsPackMode) setPackPickingCard(false)
+  // The builder in use: the new one (default) or the classic one, kept for whoever finds it
+  // useful. Each keeps its own pack; switching starts the other from the same card or character.
+  const [packBuilderKind, setPackBuilderKind] = useState<'brief' | 'classic'>('brief')
+  // "Open in the classic builder" in the entry dialog, for the next start only.
+  const [packEntryClassic, setPackEntryClassic] = useState(false)
+  const packBriefOpen = !!packBrief && packModeIsPackMode && !packPickingCard && packBuilderKind === 'brief'
+  // The pack builder is a modal layer over the gallery: while it is open the gallery stays on
+  // screen behind it, dimmed, but paused. It is inert (no pointer, keyboard or screen reader), the
+  // page doesn't scroll and keeps its position, its animations stop (data-gallery-paused,
+  // globals.css) and the parts that run on a timer wait (GalleryPausedContext).
+  const galleryPaused = packBriefOpen
+  usePageScrollLock(galleryPaused)
+  // Pages of posts the pack loads bring tag counts too: the cards take them once the pack closes.
+  const tagCounts = useTagCounts(search.allPosts, search.booruProvider, galleryPaused)
+  // The pack saved on the last visit (lib/pack/saved-pack.ts) comes back the first time Pack Mode
+  // opens the new builder with no pack, in place of the entry dialog. Read once per visit.
+  const savedPackReadRef = useRef(false)
+  const restoreSavedPackBrief = useCallback((): boolean => {
+    if (savedPackReadRef.current) return false
+    savedPackReadRef.current = true
+    let saved: SavedPack | null = null
+    try {
+      saved = userPreferences.getSavedPack()
+    } catch {
+      // Storage unavailable: no pack to bring back.
+    }
+    if (!saved) return false
+    const restored = saved
+    setPackBrief((prev) => prev ?? { start: { kind: 'restored', saved: restored }, key: 1 })
+    return true
+  }, [])
+  // The card a pack started from, marked in the gallery.
+  const packBriefCardId = packBrief?.start.kind === 'card' ? packBrief.start.post.id : null
+  // Pack Mode picks and cleans tags with the measured tag relations: load them while it's open.
+  useTagRelations(packModeIsPackMode)
   const packModeSetBaseCard = packMode.setBaseCard
   const packModeReseedAllAxes = packMode.reseedAllAxes
 
@@ -841,6 +902,7 @@ export function PromptGallery() {
   const packSourceKeyRef = useRef(packSourceKey)
   useEffect(() => { packSourceKeyRef.current = packSourceKey }, [packSourceKey])
 
+
   // Latest usePackSeedSearch result (freshly fetched posts), reported up by
   // <PackSeedFetcher>, plus the posts saved for this source in earlier
   // sessions. Pools are always sampled from both, merged. A small state
@@ -848,10 +910,134 @@ export function PromptGallery() {
   // PromptGallery doesn't re-render from the full result on every page.
   const packSeedSearchRef = useRef<UsePackSeedSearchResult | null>(null)
   const packCachedRef = useRef<{ key: string; posts: BooruPost[] } | null>(null)
-  const [packSeedSnapshot, setPackSeedSnapshot] = useState<{ postCount: number; savedCount: number; canLoadMore: boolean; ratings: RatingBreakdown } | null>(null)
+  const [packSeedSnapshot, setPackSeedSnapshot] = useState<{ posts: BooruPost[]; postCount: number; savedCount: number; canLoadMore: boolean; ratings: RatingBreakdown; failed: boolean } | null>(null)
+
+  // Scenes engine (the default): its own pool, picks and prompts, fed by the same posts and settings.
+  const packBaseCard = packMode.baseCard
+  const packSceneNatural = useMemo(() => ({
+    provider: packBaseCard?._provider || search.booruProvider,
+    character: packMode.focusCharacter,
+    copyrights: packBaseCard?.tag_string_copyright || undefined,
+    baseRating: packBaseCard?.rating,
+  }), [packBaseCard, search.booruProvider, packMode.focusCharacter])
+  // Classic doesn't know about casts: with two or more characters the method is Scenes.
+  const packSceneCast = packMode.sceneCast
+  const packHasCast = packSceneCast.length >= 2
+  const packEngine = packHasCast ? 'scenes' : packMode.engine
+  const packCastNames = useMemo(() => packSceneCast.map((m) => m.character).filter(Boolean), [packSceneCast])
+  const packScenes = usePackScenes({
+    enabled: packModeIsPackMode && packMode.hasBase && packEngine === 'scenes' && !packBrief,
+    // The posts the header counts: the pool always shows what was collected.
+    posts: packSeedSnapshot?.posts ?? NO_PACK_POSTS,
+    overrides: packMode.effectiveTagOverrides,
+    members: packSceneCast,
+    baseExtras: packMode.sceneBaseExtras,
+    baseFixed: packMode.sceneBaseFixed,
+    baseClothing: packMode.sceneBaseClothing,
+    removedTags: packMode.excludedBaseTags,
+    baseFromCharacter: packMode.baseFromCharacter,
+    alwaysAdd: packMode.alwaysAddTags,
+    neverIncludeText: packMode.neverIncludeText,
+    characterTags: packHasCast ? packCastNames : packMode.focusedCharacterTags,
+    contentRating: packMode.contentRating,
+    settings: packMode.sceneSettings,
+    promptCount: packMode.promptCount,
+    cleanOptions: packCleanOptions,
+    globalWeights,
+    isGlobalWeightsEnabled,
+    outfitOptions: packOutfitOptions,
+    natural: packSceneNatural,
+    baseKey: packBaseCard ? `card:${packBaseCard.id}` : `prompt:${packMode.basePrompt}`,
+    sourceKey: packSourceKey,
+    provider: packSourceAnswers.booruProvider,
+    chipStore: packMode.chipStore,
+    sceneIdeas: packMode.activeSceneIdeas,
+    enrichTags: packMode.enrichTagSlots,
+  })
+  const packUsesScenes = packEngine === 'scenes'
   // Only seeds pools ONCE per base — re-running it on every incidental result
   // update would fight the user's own edits.
   const hasSeededRef = useRef(false)
+
+  // Closing the builder puts the pack aside instead of dropping it: base,
+  // characters, settings and prompts all live up here (usePackMode,
+  // usePackScenes), so they stay as they are while the gallery is in use.
+  // A new base, or Discard, starts over; leaving Pack Mode forgets the flag.
+  const [packBuilderHidden, setPackBuilderHidden] = useState(false)
+  if (packBuilderHidden && !packModeIsPackMode) setPackBuilderHidden(false)
+  // The classic builder opened from the pack screen ("Classic builder" in its header): closing
+  // it goes back to that screen, not to a kept classic pack.
+  const packClassicFromBriefRef = useRef(false)
+  const handleHidePackBuilder = useCallback(() => {
+    if (packClassicFromBriefRef.current) {
+      packClassicFromBriefRef.current = false
+      setPackBuilderKind('brief')
+      return
+    }
+    setPackBuilderHidden(true)
+  }, [])
+  const handleShowPackBuilder = useCallback(() => setPackBuilderHidden(false), [])
+  const packModeSetBasePromptForDiscard = packMode.setBasePrompt
+  // "Discard" on the kept-pack bar: drops the base (and with it the pack) and goes
+  // back to the gallery; Pack Mode stays on.
+  const handleDiscardKeptPack = useCallback(() => {
+    packModeSetBaseCard(null)
+    packModeSetBasePromptForDiscard('')
+    setPackBuilderHidden(false)
+    // Keep the fetched posts: the next base on this source reuses them.
+    hasSeededRef.current = false
+  }, [packModeSetBaseCard, packModeSetBasePromptForDiscard])
+  // "Change base" inside the builder offers every way to start another, over the
+  // builder. The pack stays as it is until a new base is confirmed: closing the
+  // dialog (Cancel, Escape, a click outside) goes back to it.
+  const handleChangePackBase = useCallback(() => {
+    setPackEntryStartInPrompt(false)
+    setPackEntryOpen(true)
+  }, [])
+  const packModeHasBaseForEntry = packMode.hasBase
+  // "From a card": the gallery is where the next card is picked. A pack already
+  // there is kept aside (its bar shows) until a card replaces it, or it is reopened.
+  const handlePackEntryChooseCard = useCallback(() => {
+    setPackEntryOpen(false)
+    // The card picked next goes to the builder chosen in the dialog; each shows its own hint meanwhile.
+    if (packEntryClassic) {
+      setPackBuilderKind('classic')
+      setPackEntryClassic(false)
+      if (packModeHasBaseForEntry) setPackBuilderHidden(true)
+      return
+    }
+    setPackBuilderKind('brief')
+    setPackPickingCard(true)
+  }, [packModeHasBaseForEntry, packEntryClassic])
+
+  // Every entry ends here: a new pack in the builder, Pack Mode on, the dialog closed.
+  const packModeEnablePackMode = packMode.enablePackMode
+  const startNewPackBrief = useCallback((start: PackBriefStart) => {
+    packModeEnablePackMode()
+    setPackBrief((prev) => ({ start, key: (prev?.key ?? 0) + 1 }))
+    setPackBuilderKind('brief')
+    setPackPickingCard(false)
+    setPackEntryOpen(false)
+    setPackEntryStartInPrompt(false)
+    setPackEntryClassic(false)
+  }, [packModeEnablePackMode])
+
+  // What the pack is built on, to tell a base picked again from a new one.
+  const packCurrentBaseKey = useMemo<PackBaseKey | null>(() => {
+    if (!packMode.hasBase) return null
+    if (packMode.baseCard) return { kind: 'card', id: packMode.baseCard.id }
+    if (packMode.baseFromCharacter) return { kind: 'character', names: packCastNames.length > 0 ? packCastNames : [packMode.basePrompt] }
+    return { kind: 'prompt', text: packMode.basePrompt }
+  }, [packMode.hasBase, packMode.baseCard, packMode.baseFromCharacter, packMode.basePrompt, packCastNames])
+  /** The base the pack already has, picked again (a card, the entry dialog): the pack comes back as it is. */
+  const reopenIfSamePackBase = useCallback((next: PackBaseKey): boolean => {
+    if (!isSamePackBase(packCurrentBaseKey, next)) return false
+    setPackEntryOpen(false)
+    setPackEntryStartInPrompt(false)
+    setPackBuilderHidden(false)
+    return true
+  }, [packCurrentBaseKey])
+
   // Sources that already fetched fresh posts this session: picking another
   // base on the same source reuses what's in memory instead of refetching.
   const enrichedSourcesRef = useRef<Set<string>>(new Set())
@@ -864,25 +1050,51 @@ export function PromptGallery() {
   // collapsed to one (lib/pack/near-duplicates.ts). Memoized on the two input
   // arrays: seeding polls this every 150ms while pages land.
   const packPoolMemoRef = useRef<{ fresh: BooruPost[]; cached: BooruPost[]; posts: BooruPost[] } | null>(null)
+  // "Fill in missing tags" for the pool's Danbooru posts. Read through a ref:
+  // the pool readers below are stable callbacks.
+  const packDatasetRef = useRef({ enabled: fillMissingTags, provider: packSourceAnswers.booruProvider as string })
+  useEffect(() => {
+    packDatasetRef.current = { enabled: fillMissingTags, provider: packSourceAnswers.booruProvider }
+  }, [fillMissingTags, packSourceAnswers.booruProvider])
+  const packEnrichedMemoRef = useRef<{ base: BooruPost[]; enabled: boolean; provider: string; version: number; posts: BooruPost[] } | null>(null)
   const packPoolPosts = useCallback((): BooruPost[] => {
     const cached = packCachedRef.current?.key === packSourceKeyRef.current ? packCachedRef.current.posts : []
     const fresh = packSeedSearchRef.current?.allPosts ?? []
     const memo = packPoolMemoRef.current
-    if (memo && memo.fresh === fresh && memo.cached === cached) return memo.posts
-    const posts = collapseNearDuplicates(mergePostLists(fresh, cached))
-    packPoolMemoRef.current = { fresh, cached, posts }
+    let base: BooruPost[]
+    if (memo && memo.fresh === fresh && memo.cached === cached) base = memo.posts
+    else {
+      base = collapseNearDuplicates(mergePostLists(fresh, cached))
+      packPoolMemoRef.current = { fresh, cached, posts: base }
+    }
+    // Dataset tags join each post's own tags when the pool is read (the saved
+    // pool keeps posts as fetched), using only those already loaded.
+    const { enabled, provider } = packDatasetRef.current
+    const version = datasetTagsVersion()
+    const enriched = packEnrichedMemoRef.current
+    if (enriched && enriched.base === base && enriched.enabled === enabled && enriched.provider === provider && enriched.version === version) return enriched.posts
+    const posts = enrichPoolPosts(base, enabled, provider)
+    packEnrichedMemoRef.current = { base, enabled, provider, version, posts }
     return posts
   }, [])
+
+  /** Waits (up to its time budget) for the pool's dataset tags; never fails, never blocks past the budget. */
+  const loadPackDatasetTags = useCallback(
+    () => prefetchPoolDatasetTags(packPoolPosts(), packDatasetRef.current),
+    [packPoolPosts]
+  )
 
   const updatePackSnapshot = useCallback(() => {
     const search = packSeedSearchRef.current
     const saved = packCachedRef.current?.key === packSourceKeyRef.current ? packCachedRef.current.posts.length : 0
     const posts = packPoolPosts()
     setPackSeedSnapshot({
+      posts,
       postCount: posts.length,
       savedCount: saved,
       canLoadMore: search ? !search.noMoreResults && !search.sessionCapReached : true,
       ratings: countPostRatings(posts),
+      failed: !!search?.failed,
     })
   }, [packPoolPosts])
 
@@ -916,12 +1128,50 @@ export function PromptGallery() {
     else rebasePackSeeding()
   }, [resetPackSeeding, rebasePackSeeding])
 
+  // A cast's scenes come from pictures of the same mix of people, not of these
+  // characters together (a crossover rarely has any). A source the app set up
+  // follows the cast; one the user wrote is kept, and the panel offers the search.
+  const packCastRolesKnown = packSceneCast.every((m) => !!m.role)
+  const packCastSearch = useMemo(() => {
+    if (!packHasCast || !packCastRolesKnown) return null
+    const people = castPeople(packSceneCast.map((m) => m.role))
+    // Only the theme of a source the user wrote comes along: not its names, counts or "solo".
+    const theme = packSourceAnswers.fromCharacter
+      ? ''
+      : castTheme(packSourceAnswers.searchTags, packSceneCast.map((m) => m.character), (tag) => getTagSlotFromOverrides(tag, packMode.effectiveTagOverrides)?.slot === 'other:character')
+    return compositionQuery(people, packSourceAnswers.booruProvider, theme, packSourceAnswers.ratingMode)
+  }, [packHasCast, packCastRolesKnown, packSceneCast, packSourceAnswers, packMode.effectiveTagOverrides])
+  const packPrimaryCharacter = packSceneCast[0]?.character ?? ''
+  useEffect(() => {
+    if (!packModeIsPackMode || !packMode.baseFromCharacter || !packSourceAnswers.fromCharacter || !packPrimaryCharacter) return
+    const wanted = castDefaultSearch(
+      packSceneCast.map((m) => m.role),
+      characterSearchTags(packPrimaryCharacter, packSourceAnswers.booruProvider),
+      packSourceAnswers.booruProvider,
+      packSourceAnswers.ratingMode
+    )
+    // An effect on purpose: a role can arrive later, when a character's trait profile loads, with no handler to hook into.
+    if (wanted && wanted !== packSourceAnswers.searchTags) applyPackSource({ ...packSourceAnswers, searchTags: wanted })
+  }, [packModeIsPackMode, packMode.baseFromCharacter, packSceneCast, packPrimaryCharacter, packSourceAnswers, applyPackSource])
+  // The source already is the cast's group search: set up by the app, or the same tags (with the user's theme).
+  const packSourceIsCastSearch = useMemo(() => {
+    if (!packCastSearch) return false
+    if (packMode.baseFromCharacter && packSourceAnswers.fromCharacter) return true
+    const words = (text: string) => text.split(/[\s,]+/).filter(Boolean).join(' ')
+    return words(packSourceAnswers.searchTags) === words(packCastSearch)
+  }, [packCastSearch, packMode.baseFromCharacter, packSourceAnswers])
+  const handleUseCompositionSearch = useCallback(() => {
+    if (!packCastSearch) return
+    applyPackSource({ ...packSourceAnswers, tagsSource: 'custom', searchTags: packCastSearch })
+  }, [packCastSearch, packSourceAnswers, applyPackSource])
+
   // Source for a new base: "Current search" follows the gallery's search and
   // provider as they are now; a custom or empty source the user chose stays.
   // The content rating is always the last one picked (safe until changed).
+  // A source that came with a typed character was never the user's choice: it follows the search too.
   const defaultPackSource = useCallback((): PackSourceAnswers => (
-    packSourceAnswers.tagsSource === 'current'
-      ? { ...packSourceAnswers, searchTags: search.searchTags, booruProvider: search.booruProvider }
+    packSourceAnswers.tagsSource === 'current' || packSourceAnswers.fromCharacter
+      ? { ...packSourceAnswers, tagsSource: 'current', fromCharacter: undefined, searchTags: search.searchTags, booruProvider: search.booruProvider }
       : packSourceAnswers
   ), [packSourceAnswers, search.searchTags, search.booruProvider])
 
@@ -929,30 +1179,185 @@ export function PromptGallery() {
   // default source; the header chip changes it. Editing an existing prompt
   // base keeps the source as it is.
   const packModeSetFocusCharacter = packMode.setFocusCharacter
-  const handleSetAsPackBase = useCallback((post: BooruPost) => {
+  // The classic builder from a start of the new one: the same card, prompt or characters as
+  // its base, on the default source. The base it already has, picked again, brings its pack back.
+  const packModeSetBasePromptForClassic = packMode.setBasePrompt
+  const packModeSetBaseFromCharacter = packMode.setBaseFromCharacter
+  const startClassicPack = useCallback((from: PackBriefStart) => {
+    const start = baseOfStart(from)
+    packModeEnablePackMode()
     const source = defaultPackSource()
-    packModeSetBaseCard(post)
-    // A multi-character post keeps the character the search is about, if any;
-    // otherwise the builder asks which one to keep.
-    packModeSetFocusCharacter(searchedCharacterOf(post, source.searchTags))
-    applyPackSource(source)
+    if (start.kind === 'card') {
+      if (!reopenIfSamePackBase({ kind: 'card', id: start.post.id })) {
+        packModeSetBaseCard(start.post)
+        packModeSetFocusCharacter(searchedCharacterOf(start.post, source.searchTags))
+        applyPackSource(source)
+      }
+    } else {
+      const names = start.kind === 'characters' ? [...start.names] : start.kind === 'search' && start.character ? [start.character] : []
+      if (names[0]) {
+        if (!reopenIfSamePackBase({ kind: 'character', names })) {
+          packModeSetBaseFromCharacter(names[0], names.slice(1))
+          applyPackSource(source)
+        }
+      } else {
+        const text = start.kind === 'prompt' ? start.text : start.kind === 'search' ? start.search : ''
+        if (text && !reopenIfSamePackBase({ kind: 'prompt', text })) {
+          packModeSetBasePromptForClassic(text)
+          applyPackSource(source)
+        }
+      }
+    }
+    setPackBuilderKind('classic')
+    setPackBuilderHidden(false)
+    setPackPickingCard(false)
     setPackEntryOpen(false)
     setPackEntryStartInPrompt(false)
-  }, [packModeSetBaseCard, packModeSetFocusCharacter, applyPackSource, defaultPackSource])
+    setPackEntryClassic(false)
+  }, [packModeEnablePackMode, reopenIfSamePackBase, packModeSetBaseCard, packModeSetBaseFromCharacter, packModeSetBasePromptForClassic, defaultPackSource, packModeSetFocusCharacter, applyPackSource])
+  // Every entry of the dialog: the builder the dialog chose.
+  const startPackBrief = useCallback(
+    (start: PackBriefStart) => (packEntryClassic ? startClassicPack(start) : startNewPackBrief(start)),
+    [packEntryClassic, startClassicPack, startNewPackBrief]
+  )
+  // A card starts the pack builder with the card's character, and offers its outfit and pose.
+  // The same card again brings back the pack it started.
+  // A card that would replace a pack with prompts, waiting for the user to confirm.
+  const [packReplaceCard, setPackReplaceCard] = useState<{ post: BooruPost; prompts: number } | null>(null)
+  const setAsPackBaseNow = useCallback((post: BooruPost) => {
+    // The classic builder takes the card as its base, as it always did.
+    if (packBuilderKind === 'classic') {
+      startClassicPack({ kind: 'card', post })
+      return
+    }
+    const current = packBrief?.start
+    if (current?.kind === 'card' && current.post.id === post.id) {
+      setPackPickingCard(false)
+      setPackEntryOpen(false)
+      return
+    }
+    // A card asked for while the user picks one for a new pack starts it. Any other card
+    // would replace a pack with prompts without a word: it asks first.
+    if (!packPickingCard) {
+      let prompts = 0
+      try {
+        prompts = savedPackPromptCount(userPreferences.getSavedPack())
+      } catch {
+        // Storage unavailable: nothing saved to lose.
+      }
+      if (prompts > 0) {
+        setPackReplaceCard({ post, prompts })
+        return
+      }
+    }
+    startNewPackBrief({ kind: 'card', post })
+  }, [packBrief, packBuilderKind, packPickingCard, startClassicPack, startNewPackBrief])
+  const handleConfirmPackReplace = useCallback(() => {
+    if (packReplaceCard) startNewPackBrief({ kind: 'card', post: packReplaceCard.post })
+    setPackReplaceCard(null)
+  }, [packReplaceCard, startNewPackBrief])
 
-  const packModeSetBasePrompt = packMode.setBasePrompt
+  // Switching builders: the other one starts from the same card, prompt or characters (its own
+  // pack with that base comes back as it was); the rest of the pack stays with the one it was made in.
+  const handleOpenClassicBuilder = useCallback(() => {
+    if (!packBrief) return
+    startClassicPack(packBrief.start)
+    packClassicFromBriefRef.current = true
+    toast({ description: BUILDER_SWITCH_TEXT.toClassic, duration: 6000 })
+  }, [packBrief, startClassicPack, toast])
+  // The pack builder is memoized: its props stay the same while the gallery renders.
+  const stableOpenClassicBuilder = useStableCallback(handleOpenClassicBuilder)
+  const packClassicStart = useMemo<PackBriefStart | null>(() => {
+    if (packMode.baseCard) return { kind: 'card', post: packMode.baseCard }
+    if (packMode.baseFromCharacter) return { kind: 'characters', names: packCastNames.length > 0 ? packCastNames : [packMode.basePrompt] }
+    if (packMode.basePrompt) return { kind: 'prompt', text: packMode.basePrompt }
+    return null
+  }, [packMode.baseCard, packMode.baseFromCharacter, packMode.basePrompt, packCastNames])
+  const handleOpenNewBuilder = useCallback(() => {
+    const sameBase = !!packBrief && !!packClassicStart && sameBriefStart(packBrief.start, packClassicStart)
+    if (packClassicStart && !sameBase) startNewPackBrief(packClassicStart)
+    else {
+      setPackBuilderKind('brief')
+      if (!packBrief && !restoreSavedPackBrief()) {
+        setPackEntryStartInPrompt(false)
+        setPackEntryOpen(true)
+      }
+    }
+    toast({ description: BUILDER_SWITCH_TEXT.toNew, duration: 6000 })
+  }, [packBrief, packClassicStart, startNewPackBrief, toast, restoreSavedPackBrief])
+  // Cards keep the first handler they get (MasonryItem's arePropsEqual skips callbacks),
+  // so theirs is stable and always runs the latest one: a stale one saw an old pack.
+  const setAsPackBaseRef = useRef(setAsPackBaseNow)
+  useLayoutEffect(() => { setAsPackBaseRef.current = setAsPackBaseNow }, [setAsPackBaseNow])
+  const handleSetAsPackBase = useCallback((post: BooruPost) => setAsPackBaseRef.current(post), [])
+
+  // "From my prompt": the prompt's tags go to the rows of the pack builder.
   const handleSubmitPackPrompt = useCallback((text: string) => {
-    packModeSetBasePrompt(text)
-    if (packEntryStartInPrompt) rebasePackSeeding()
-    else applyPackSource(defaultPackSource())
-    setPackEntryOpen(false)
+    try {
+      userPreferences.setLastPackBasePrompt(text)
+    } catch {
+      // Non-fatal: the dialog just won't remember it.
+    }
+    startPackBrief({ kind: 'prompt', text })
+  }, [startPackBrief])
+
+  // "From my search": the one character the gallery's search is about, from
+  // its results. That character becomes the base with no card, and the
+  // search itself is the source their look and pools come from.
+  const packSearchCharacter = useMemo(
+    () => (packEntryOpen ? searchedCharacterIn(search.allPosts ?? [], search.debouncedSearchTags) : null),
+    [packEntryOpen, search.allPosts, search.debouncedSearchTags]
+  )
+  const packSearchTags = useMemo(() => (packEntryOpen ? usableSearchTags(search.searchTags) : []), [packEntryOpen, search.searchTags])
+  // "From my search": the search's tags and the character its results are about.
+  const handleStartFromSearch = useCallback(() => {
+    startPackBrief({ kind: 'search', search: search.searchTags, character: packSearchCharacter })
+  }, [startPackBrief, search.searchTags, packSearchCharacter])
+
+  // "From a character": the characters go to Who; the pack finds their own posts.
+  const handleStartFromCharacters = useCallback((characters: readonly string[]) => {
+    if (!characters[0]) return
+    startPackBrief({ kind: 'characters', names: [...characters] })
+  }, [startPackBrief])
+  // Several characters picked at once: always the new builder, one per prompt.
+  const handleStartFromCast = useCallback((cast: readonly CastMember[]) => {
+    if (!cast[0]) return
+    startNewPackBrief({ kind: 'characters', names: cast.map((m) => m.tag), cast: [...cast] })
+  }, [startNewPackBrief])
+  const packModeDisablePackMode = packMode.disablePackMode
+  // Closing leaves Pack Mode; the pack stays and comes back with it.
+  const handleExitPackBrief = useCallback(() => {
+    setPackPickingCard(false)
+    packModeDisablePackMode()
+  }, [packModeDisablePackMode])
+  // "New pack" in the builder: the entry dialog over it. Cancel goes back to this pack.
+  const handleNewPackBrief = useCallback(() => {
     setPackEntryStartInPrompt(false)
-  }, [packModeSetBasePrompt, rebasePackSeeding, applyPackSource, defaultPackSource, packEntryStartInPrompt])
+    setPackEntryOpen(true)
+  }, [])
+  // The pack builder keeps its own rating and saves it (the preference the classic builder reads);
+  // the classic builder's source takes it once the pack closes, so nothing here renders meanwhile.
+  const packBriefRatingRef = useRef<PackRatingMode | null>(null)
+  const handlePackBriefRating = useCallback((ratingMode: PackRatingMode) => {
+    packBriefRatingRef.current = ratingMode
+  }, [])
+  useEffect(() => {
+    const ratingMode = packBriefRatingRef.current
+    if (packBriefOpen || !ratingMode) return
+    packBriefRatingRef.current = null
+    setPackSourceAnswers((prev) => (prev.ratingMode === ratingMode ? prev : { ...prev, ratingMode }))
+  }, [packBriefOpen])
 
   const handlePackEntryCancel = useCallback(() => {
     setPackEntryOpen(false)
     setPackEntryStartInPrompt(false)
+    setPackEntryClassic(false)
   }, [])
+  // Picking a card for the new builder, given up: back to the pack (or out of the hint).
+  const handleCancelPickCard = useCallback(() => {
+    setPackPickingCard(false)
+    if (!packBrief) packModeDisablePackMode()
+  }, [packBrief, packModeDisablePackMode])
 
   const handleEditBasePrompt = useCallback(() => {
     setPackEntryStartInPrompt(true)
@@ -961,8 +1366,11 @@ export function PromptGallery() {
 
   const handleApplyPackSourceAnswers = useCallback((answers: PackSourceAnswers) => {
     setPackSourceOpen(false)
-    applyPackSource(answers)
-  }, [applyPackSource])
+    // Tags left as the app set them for a typed character stay the app's: they follow
+    // the character (and the cast) on the new booru or rating instead of becoming the user's.
+    const untouched = !!packSourceAnswers.fromCharacter && answers.tagsSource === packSourceAnswers.tagsSource && answers.searchTags === packSourceAnswers.searchTags
+    applyPackSource(untouched ? { ...answers, fromCharacter: true } : answers)
+  }, [applyPackSource, packSourceAnswers])
 
   // Seed-search view whose `allPosts` is the whole pool (fresh + saved,
   // deduped), so seeding targets count UNIQUE posts. Danbooru pages by
@@ -1011,11 +1419,20 @@ export function PromptGallery() {
       if (packSourceKeyRef.current !== key) return
       packCachedRef.current = { key, posts }
     }
+    // Starts on the saved posts while fresh ones are fetched; awaited before the final reseed.
+    const datasetVersion = datasetTagsVersion()
+    const savedDatasetTags = loadPackDatasetTags()
     packModeReseedAllAxes(packPoolPosts(), packAxisFallbacks)
     updatePackSnapshot()
 
     if (enrichedSourcesRef.current.has(key)) {
       void persistPackPool(key)
+      // No fresh posts follow, so nothing else would reseed: do it once the
+      // saved posts' dataset tags are in, if any were still missing.
+      await savedDatasetTags
+      if (packSourceKeyRef.current !== key || datasetTagsVersion() === datasetVersion) return
+      packModeReseedAllAxes(packPoolPosts(), packAxisFallbacks)
+      updatePackSnapshot()
       return
     }
     enrichedSourcesRef.current.add(key)
@@ -1033,9 +1450,11 @@ export function PromptGallery() {
       await packSeed.ensureSeeded(poolSearch(search), PACK_SEED_TARGET_POSTS, makeLiveReseed(packPoolPosts().length))
     }
     if (packSourceKeyRef.current !== key) return
+    await loadPackDatasetTags()
+    if (packSourceKeyRef.current !== key) return
     packModeReseedAllAxes(packPoolPosts(), packAxisFallbacks)
     await persistPackPool(key)
-  }, [packModeReseedAllAxes, packAxisFallbacks, packSeed, makeLiveReseed, packPoolPosts, poolSearch, updatePackSnapshot, persistPackPool])
+  }, [packModeReseedAllAxes, packAxisFallbacks, packSeed, makeLiveReseed, packPoolPosts, poolSearch, updatePackSnapshot, persistPackPool, loadPackDatasetTags])
 
   // Runs a pending seed once a base and fetched results both exist.
   const packHasBase = packMode.hasBase
@@ -1058,9 +1477,21 @@ export function PromptGallery() {
     const start = packPoolPosts().length
     await packSeed.ensureSeeded(poolSearch(search), start + PACK_SEED_TARGET_POSTS, makeLiveReseed(start))
     if (packSourceKeyRef.current !== key) return
+    await loadPackDatasetTags()
+    if (packSourceKeyRef.current !== key) return
     packModeReseedAllAxes(packPoolPosts(), packAxisFallbacks)
     await persistPackPool(key)
-  }, [packSeed, packModeReseedAllAxes, packAxisFallbacks, makeLiveReseed, packPoolPosts, poolSearch, persistPackPool])
+  }, [packSeed, packModeReseedAllAxes, packAxisFallbacks, makeLiveReseed, packPoolPosts, poolSearch, persistPackPool, loadPackDatasetTags])
+
+  // The booru refused or couldn't be reached: ask again, then seed as if the source were new.
+  const handleRetryPackPosts = useCallback(() => {
+    const search = packSeedSearchRef.current
+    if (!search) return
+    search.retry()
+    enrichedSourcesRef.current.delete(packSourceKeyRef.current)
+    hasSeededRef.current = false
+    setSeedRequest((n) => n + 1)
+  }, [])
 
   /** Forgets the posts saved for the current source (fresh ones stay). */
   const handleClearSavedPackPosts = useCallback(async () => {
@@ -1099,9 +1530,12 @@ export function PromptGallery() {
   }, [packModeRemoveAxisValue, search.booruProvider, packMode.varietyLevel])
 
   const packModeRegenerate = packMode.regenerate
+  const packScenesGenerate = packScenes.generate
   const handlePackRegenerate = useCallback(() => {
-    packModeRegenerate()
+    if (packUsesScenes) packScenesGenerate()
+    else packModeRegenerate()
     track('pack_generated', {
+      engine: packUsesScenes ? 'scenes' : 'classic',
       booru_source: search.booruProvider,
       variety_level: packMode.varietyLevel,
       locked_categories: Array.from(packMode.lockedCategories).join(','),
@@ -1109,10 +1543,11 @@ export function PromptGallery() {
       locked_category_count: packMode.lockedCategories.size,
       active_axis_count: packMode.activeAxisCategories.length,
     })
-  }, [packModeRegenerate, search.booruProvider, packMode.varietyLevel, packMode.promptCount, packMode.lockedCategories, packMode.activeAxisCategories])
+  }, [packUsesScenes, packScenesGenerate, packModeRegenerate, search.booruProvider, packMode.varietyLevel, packMode.promptCount, packMode.lockedCategories, packMode.activeAxisCategories])
 
   // Natural Language AI Mode State
   const [isAiConvertMode, setIsAiConvertMode] = useState(false)
+  const comfyMode = useComfyEnabled()
   const aiConvertFooterMounted = useMountedOnceActive(isAiConvertMode)
   const [aiConvertTags, setAiConvertTags] = useState("")
   const [aiConvertImage, setAiConvertImage] = useState<string | undefined>(undefined)
@@ -1173,6 +1608,26 @@ export function PromptGallery() {
     packMode.enablePackMode()
     handleSetAsPackBase(post)
   }, [mergeModeIsMergeMode, mergeModeDisableMergeMode, packMode, handleSetAsPackBase])
+
+  // The Pack button, and "Open Pack Mode" in the release dialog: always the pack screen (the classic
+  // builder is reached from there). Its pack comes back as it was; with none, the entry dialog.
+  const openPackScreen = useCallback(() => {
+    setIsAiConvertMode(false)
+    if (mergeModeIsMergeMode) mergeModeDisableMergeMode()
+    packMode.enablePackMode()
+    packClassicFromBriefRef.current = false
+    setPackBuilderKind('brief')
+    setPackPickingCard(false)
+    if (!packBrief && !restoreSavedPackBrief()) {
+      setPackEntryStartInPrompt(false)
+      setPackEntryOpen(true)
+    }
+  }, [mergeModeIsMergeMode, mergeModeDisableMergeMode, packMode, packBrief, restoreSavedPackBrief])
+  // "Open Pack Mode" or "Set up ComfyUI", after the release dialog has closed.
+  const handleFeatureIntroTry = useCallback(
+    (video: FeatureVideoId) => (video === 'pack' ? openPackScreen() : openComfySetup()),
+    [openPackScreen, openComfySetup]
+  )
 
   const effectiveScale = useMemo(() => {
     if (isMobile) {
@@ -1289,9 +1744,9 @@ export function PromptGallery() {
       const isAibooruError = search.booruProvider === 'aibooru' && is403
 
       toastError({
-        title: isAibooruError ? "Aibooru Access Blocked" : "Connection error",
+        title: isAibooruError ? "Aibooru blocked the request" : "Connection error",
         description: isAibooruError
-          ? "Aibooru is blocking server requests. Try Danbooru or Rule34 instead."
+          ? "Aibooru is blocking requests from this site. Try another source, like Danbooru."
           : (search.error.message || "Could not load images"),
         errorSource: "booru_search",
         context: { provider: search.booruProvider, ...describeSearchError(search.error) },
@@ -1326,13 +1781,43 @@ export function PromptGallery() {
     await copyToClipboardRef.current(content, postId, isPrompt, thumbnailUrl, format)
   }, [])
 
+  const recordPromptUseRef = useRef<(postId: number) => void>(() => {})
+  const stableRecordPromptUse = useCallback((postId: number) => recordPromptUseRef.current(postId), [])
+
   const stableDownloadImage = useCallback(async (post: BooruPost) => {
     return downloadImageRef.current(post)
   }, [])
 
+  // The bookkeeping of a use (History entry, support-prompt counter), shared by
+  // Copy and Send so both count the same. Does not touch the clipboard.
+  const recordPromptUse = useCallback((postId: number) => {
+    // Merge mode's combined prompt calls copyToClipboard with postId=0 (no
+    // single real post backs it) — skip history in that case since
+    // useHistoryPosts needs a real (provider, postId) pair to hydrate later.
+    if (postId) {
+      // Snapshot the post the user just copied so History can render it later
+      // with ZERO network hydration (immune to transient booru/API failures).
+      // The copied card is always present in one of the currently-visible,
+      // provider-scoped lists — find it there. If somehow absent, we still
+      // store the {postId, provider} pointer and fall back to network fetch.
+      const snapshot =
+        search.allPosts?.find(p => p.id === postId) ||
+        favs.favoritePosts?.find(p => p.id === postId) ||
+        historyPosts?.find(p => p.id === postId)
+      // Use the snapshot's OWN provider, not the currently-selected provider
+      // tab. They can differ (favorites/history views, merge mode, etc.), and
+      // getting this wrong permanently mislabels the post — e.g. a Gelbooru
+      // post copied while the AIbooru tab is active would otherwise be stored
+      // as an AIbooru post, so "View original post" later builds an
+      // aibooru.com/<gelbooru-id> link instead of the real gelbooru.com one.
+      addToHistory({ postId, provider: (snapshot?._provider as BooruProvider) || search.booruProvider, post: snapshot })
+    }
+    recordPromptCopy()
+  }, [addToHistory, search.booruProvider, search.allPosts, favs.favoritePosts, historyPosts])
+
   const copyToClipboard = useCallback(async (content: string, postId: number, isPrompt: boolean = false, thumbnailUrl?: string, format: PromptFormat = 'tags') => {
     try {
-      await navigator.clipboard.writeText(content)
+      await copyText(content)
 
       // PostHog Tracking
       track('prompt_copied', {
@@ -1344,51 +1829,20 @@ export function PromptGallery() {
 
       setCopiedId(postId)
 
-      // Merge mode's combined prompt calls copyToClipboard with postId=0 (no
-      // single real post backs it) — skip history in that case since
-      // useHistoryPosts needs a real (provider, postId) pair to hydrate later.
-      if (postId) {
-        // Snapshot the post the user just copied so History can render it later
-        // with ZERO network hydration (immune to transient booru/API failures).
-        // The copied card is always present in one of the currently-visible,
-        // provider-scoped lists — find it there. If somehow absent, we still
-        // store the {postId, provider} pointer and fall back to network fetch.
-        const snapshot =
-          search.allPosts?.find(p => p.id === postId) ||
-          favs.favoritePosts?.find(p => p.id === postId) ||
-          historyPosts?.find(p => p.id === postId)
-        // Use the snapshot's OWN provider, not the currently-selected provider
-        // tab. They can differ (favorites/history views, merge mode, etc.), and
-        // getting this wrong permanently mislabels the post — e.g. a Gelbooru
-        // post copied while the AIbooru tab is active would otherwise be stored
-        // as an AIbooru post, so "View original post" later builds an
-        // aibooru.com/<gelbooru-id> link instead of the real gelbooru.com one.
-        addToHistory({ postId, provider: (snapshot?._provider as BooruProvider) || search.booruProvider, post: snapshot })
-      }
+      recordPromptUse(postId)
 
       // On touch screens the card's own "Copied" overlay is the feedback; the
       // top toast only covered the next row of cards.
       if (!window.matchMedia("(pointer: coarse)").matches) {
-        toast({
-          title: "Copied!",
-          description: format !== 'tags'
-            ? `${PROMPT_FORMAT_INFO[format].label} prompt copied to clipboard`
-            : isPrompt ? "Prompt copied to clipboard" : "Tags copied to clipboard",
-        })
+        toastCopied(format !== 'tags' ? `${PROMPT_FORMAT_INFO[format].label} prompt` : isPrompt ? "Prompt" : "Tags")
       }
       setTimeout(() => setCopiedId(null), 2000)
-      recordPromptCopy()
       return true
     } catch (error) {
-      toastError({
-        title: "Error",
-        description: isPrompt ? "Could not copy prompt" : "Could not copy tags",
-        errorSource: "copy_to_clipboard",
-        context: { provider: search.booruProvider, postId, isPrompt },
-      })
+      toastCopyFailed("copy_to_clipboard", { provider: search.booruProvider, postId, isPrompt })
       return false
     }
-  }, [toast, addToHistory, search.booruProvider, search.allPosts, favs.favoritePosts, historyPosts, isAiConvertMode])
+  }, [toast, recordPromptUse, search.booruProvider, isAiConvertMode])
 
   const downloadImage = useCallback(async (post: BooruPost) => {
     try {
@@ -1425,7 +1879,7 @@ export function PromptGallery() {
         urlHasHost(imageUrl, 'rule34.xxx') ||
         urlHasHost(imageUrl, 'gelbooru.com') ||
         urlHasHost(imageUrl, 'e621.net') ||
-        urlHasHost(imageUrl, 'e6ai.net')
+        urlHasHost(imageUrl, 'floofgens.net')
 
       // Danbooru: prefer the CloudFront proxy (edge cache + CORS) when configured.
       const cdnUrl = getDanbooruCdnUrl(imageUrl)
@@ -1475,10 +1929,10 @@ export function PromptGallery() {
       toastError({
         title: "Download failed",
         description: isNetworkFailure
-          ? "Could not reach the image server. It may be blocked by an ad blocker/extension, or temporarily unreachable. Opening the image in a new tab instead."
-          : error instanceof Error ? error.message : "Error downloading image",
+          ? "Couldn't reach the image server. An ad blocker or extension may be blocking it. Opening the image in a new tab instead."
+          : "Try again in a moment.",
         errorSource: "download_image",
-        context: { provider: post._provider || search.booruProvider, postId: post.id, networkFailure: isNetworkFailure },
+        context: { provider: post._provider || search.booruProvider, postId: post.id, networkFailure: isNetworkFailure, message: error instanceof Error ? error.message : String(error) },
       })
 
       if (isNetworkFailure) {
@@ -1491,6 +1945,7 @@ export function PromptGallery() {
   // Sincronizar refs con los callbacks reales (asignación barata, sin efecto)
   useLayoutEffect(() => {
     copyToClipboardRef.current = copyToClipboard
+    recordPromptUseRef.current = recordPromptUse
     downloadImageRef.current = downloadImage
   })
 
@@ -1518,6 +1973,7 @@ export function PromptGallery() {
   const cardPrependAnimaArtist = useDeferredValue(prependAnimaArtist)
   const cardExperimentalPromptRules = useDeferredValue(experimentalPromptRules)
   const cardAutoAppendSearchTags = useDeferredValue(autoAppendSearchTags)
+  const cardFillMissingTags = useDeferredValue(fillMissingTags)
   const cardRemoveLoRaTags = useDeferredValue(search.removeLoRaTags)
   const cardRemoveQualityTags = useDeferredValue(search.removeQualityTags)
   const cardIsGlobalWeightsEnabled = useDeferredValue(isGlobalWeightsEnabled)
@@ -1640,10 +2096,12 @@ export function PromptGallery() {
       createFolder={favs.createFolder}
       downloadImage={stableDownloadImage}
       copyToClipboard={stableCopyToClipboard}
+      recordPromptUse={stableRecordPromptUse}
       excludeInput={debouncedExcludeInput}
       addInput={debouncedAddInput}
       searchTags={search.debouncedSearchTags}
       autoAppendSearchTags={cardAutoAppendSearchTags}
+      datasetTagsEnabled={cardFillMissingTags}
       findInput={debouncedFindInput}
       replaceInput={debouncedReplaceInput}
       tagAppendRules={tagAppendRules}
@@ -1672,7 +2130,8 @@ export function PromptGallery() {
       onTogglePart={mergeModeTogglePostPart}
       onMergeSelect={() => { }}
       isPackMode={packModeIsPackMode}
-      isPackBase={packMode.baseCard?.id === post.id}
+      // "In pack" for the pack of the builder in use only: the other builder's pack is not this one.
+      isPackBase={packBuilderKind === 'classic' ? packMode.baseCard?.id === post.id : packBriefCardId === post.id}
       onSetAsPackBase={handleSetAsPackBase}
       onMakePack={handleMakePack}
       onSkipAnimation={() => setCopiedId(null)}
@@ -1684,8 +2143,9 @@ export function PromptGallery() {
       isNaturalLanguageMode={isAiConvertMode}
       onSendToConvert={handleSendToConvert}
       showCategoryTagBadges={cardShowCategoryTagBadges}
+      comfyMode={comfyMode}
     />
-  }, [effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, outfitSettings, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase, handleMakePack])
+  }, [comfyMode, effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, cardFillMissingTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, stableRecordPromptUse, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, outfitSettings, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, packBriefCardId, packBuilderKind, handleSetAsPackBase, handleMakePack])
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
@@ -1701,7 +2161,8 @@ export function PromptGallery() {
       {search.searchTags?.trim() ? (
         <title>{`${search.searchTags.trim()} | Booru Prompt Gallery`}</title>
       ) : null}
-      <div className="relative min-h-screen bg-background">
+      <GalleryPausedContext value={galleryPaused}>
+      <div className="relative min-h-screen bg-background" inert={galleryPaused} data-gallery-paused={galleryPaused ? "" : undefined}>
         <SiteCornerMenu
           scaleValue={scaleValue}
           setScaleValue={setScaleValue}
@@ -1711,7 +2172,7 @@ export function PromptGallery() {
         {/* Tour steps point at the section headers, which are always visible. */}
         <MainTour runSignal={tourRunSignal} />
 
-        <FeatureIntro version={pkg.version} onTry={openOutfitSetting} />
+        <FeatureIntro version={pkg.version} onTry={handleFeatureIntroTry} />
 
         <main id="main-content" className={`container mx-auto px-4 py-4 sm:py-8 ${mergeMode.isMergeMode ? 'pb-[340px] sm:pb-[220px]' : isAiConvertMode ? 'pb-[220px] sm:pb-[200px]' : ''}`}>
           {/* Hero */}
@@ -1800,15 +2261,7 @@ export function PromptGallery() {
                     }}
                     isPackMode={packModeIsPackMode}
                     disablePackMode={packMode.disablePackMode}
-                    enablePackMode={() => {
-                      setIsAiConvertMode(false)
-                      if (mergeModeIsMergeMode) mergeModeDisableMergeMode()
-                      packMode.enablePackMode()
-                      if (!packMode.hasBase) {
-                        setPackEntryStartInPrompt(false)
-                        setPackEntryOpen(true)
-                      }
-                    }}
+                    enablePackMode={openPackScreen}
                     onOpenReverseParser={() => setIsReverseParserModalOpen(true)}
                     onOpenQuickTeach={() => setIsQuickTeachOpen(true)}
                     onModeIntent={preloadMode}
@@ -1856,7 +2309,7 @@ export function PromptGallery() {
                       globalWeightCount > 0 ? `${plural(globalWeightCount, "weight")}${isGlobalWeightsPaused ? " paused" : ""}` : null,
                       !isAibooruProvider && addedTagCount > 0 && !smartTagExclusion ? "keeps every added tag" : null,
                       !isAibooruProvider && !optimizeTags ? "no tag merging" : null,
-                      !autoAppendSearchTags ? "no search tags" : null,
+                      !autoAppendSearchTags ? "search tags not added" : null,
                       !isAibooruProvider && experimentalPromptRules ? "experimental rules" : null,
                       backgroundSummary[backgroundMode] ?? null,
                       !isAibooruProvider && outfitMode === "random" ? "random outfit" : null,
@@ -1929,6 +2382,7 @@ export function PromptGallery() {
                           open={promptOptionsOpen}
                           onOpenChange={setPromptOptionsOpen}
                           onIntent={preloadPromptSection}
+                          accessory={<ComfyStatusChip placement="section" />}
                           data-tour="customize-prompt"
                         >
                           {/* Two columns on desktop (Tags | Output) so the whole
@@ -1993,6 +2447,8 @@ export function PromptGallery() {
                                 setExperimentalPromptRules={setExperimentalPromptRules}
                                 autoAppendSearchTags={autoAppendSearchTags}
                                 setAutoAppendSearchTags={setAutoAppendSearchTags}
+                                fillMissingTags={fillMissingTags}
+                                setFillMissingTags={setFillMissingTags}
                                 removeLoRaTags={search.removeLoRaTags}
                                 setRemoveLoRaTags={search.setRemoveLoRaTags}
                                 removeQualityTags={search.removeQualityTags}
@@ -2050,7 +2506,7 @@ export function PromptGallery() {
               // Switch to the provider the artist was originally saved from
               // so results come from the correct source.
               if (provider) {
-                const normalized = provider.toLowerCase() as BooruProvider
+                const normalized = canonicalProvider(provider) as BooruProvider
                 if (normalized !== search.booruProvider) {
                   search.setBooruProvider(normalized)
                   trackProviderChange(normalized)
@@ -2224,6 +2680,7 @@ export function PromptGallery() {
         />
 
       </div>
+      </GalleryPausedContext>
 
       <GalleryModals
         onTeachSuccess={refreshOverrides}
@@ -2252,6 +2709,7 @@ export function PromptGallery() {
           }
         }}
       />
+      <div className="contents" inert={galleryPaused} data-gallery-paused={galleryPaused ? "" : undefined}>
       <StickyMiniControlPanel
         // Hidden while a control section is open, so it never sits on top of
         // the dropdown the user is working in.
@@ -2270,6 +2728,9 @@ export function PromptGallery() {
           }
         }}
       />
+      </div>
+      {/* Mounted with the mode off too: the release dialog's "Set up ComfyUI" opens it. */}
+      <ComfyUIPanelHost />
       {mergeFooterMounted && <MergeStickyFooter
         isOpen={mergeMode.isMergeMode}
         selectedPosts={mergeMode.selectedPosts}
@@ -2285,6 +2746,10 @@ export function PromptGallery() {
         onRandomize={() => mergeMode.setRandomSelection(finalPosts)}
         randomSettings={mergeMode.randomSettings}
         setRandomSettings={mergeMode.setRandomSettings}
+        minSharedPosts={mergeMode.minSharedPosts}
+        maxSharedPosts={mergeMode.maxSharedPosts}
+        onMinSharedPostsChange={mergeMode.setMinSharedPosts}
+        hiddenTagCount={mergeMode.hiddenByMinShared}
       />}
       <NaturalPromptStatus />
       {aiConvertFooterMounted && <AiConvertStickyFooter
@@ -2294,7 +2759,7 @@ export function PromptGallery() {
         meta={aiConvertMeta}
         onExit={() => setIsAiConvertMode(false)}
       />}
-      {packModeIsPackMode && packFetcherActive && (
+      {packModeIsPackMode && packFetcherActive && !packBriefOpen && (
         <PackSeedFetcher
           key={JSON.stringify(packSourceAnswers)}
           answers={packSourceAnswers}
@@ -2306,9 +2771,17 @@ export function PromptGallery() {
         isOpen={packEntryOpen}
         initialPrompt={packMode.basePrompt || userPreferences.getLastPackBasePrompt()}
         startInPromptView={packEntryStartInPrompt}
-        onChooseCard={() => setPackEntryOpen(false)}
+        onChooseCard={handlePackEntryChooseCard}
         onSubmitPrompt={handleSubmitPackPrompt}
         onCancel={handlePackEntryCancel}
+        searchCharacter={packSearchCharacter}
+        searchTags={packSearchTags}
+        onChooseSearch={handleStartFromSearch}
+        onSubmitCharacters={handleStartFromCharacters}
+        onSubmitCast={handleStartFromCast}
+        provider={search.booruProvider}
+        classic={packEntryClassic}
+        onClassicChange={setPackEntryClassic}
       />}
       {packSourceMounted && <PackSourceModal
         open={packSourceShown}
@@ -2319,8 +2792,67 @@ export function PromptGallery() {
         postCount={packSeedSnapshot?.postCount ?? 0}
         ratingBreakdown={packSeedSnapshot?.ratings}
       />}
-      {packBuilderMounted && <PackBuilderStickyFooter
-        isOpen={packModeIsPackMode}
+      {packModeIsPackMode && packBuilderKind === 'classic' && packBuilderHidden && packMode.hasBase && (
+        <div
+          role="status"
+          className="fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-lg rounded-2xl border shadow-2xl bg-background/95 backdrop-blur-xl p-4 flex items-center gap-3"
+        >
+          <Package className="w-5 h-5 text-mode-pack-text flex-shrink-0" aria-hidden="true" />
+          <p className="text-sm text-muted-foreground min-w-0 flex-1">
+            {keptPackMessage(packUsesScenes ? packScenes.prompts.length : packMode.generatedPrompts.length)}
+          </p>
+          <Button variant="ghost" size="sm" onClick={handleDiscardKeptPack} className="h-9 pointer-coarse:h-11 flex-shrink-0 text-muted-foreground hover:text-foreground">
+            Discard
+          </Button>
+          <Button size="sm" onClick={handleShowPackBuilder} className="h-9 pointer-coarse:h-11 flex-shrink-0 bg-mode-pack hover:bg-mode-pack/90 text-mode-pack-foreground">
+            Open pack
+          </Button>
+        </div>
+      )}
+      {packBrief && (
+        <PackBriefBuilder
+          key={packBrief.key}
+          start={packBrief.start}
+          open={packBriefOpen}
+          onNewPack={handleNewPackBrief}
+          tagOverrides={tagOverrides}
+          provider={search.booruProvider}
+          initialRating={packSourceAnswers.ratingMode}
+          onRatingChange={handlePackBriefRating}
+          gallerySearch={search.searchTags}
+          onExit={handleExitPackBrief}
+          onOpenClassic={stableOpenClassicBuilder}
+        />
+      )}
+      <PackReplaceDialog open={!!packReplaceCard} onOpenChange={(open) => { if (!open) setPackReplaceCard(null) }}>
+        <PackReplaceContent>
+          <PackReplaceHeader>
+            <PackReplaceTitle>{BUILDER_SWITCH_TEXT.replaceTitle}</PackReplaceTitle>
+            <PackReplaceDescription>{BUILDER_SWITCH_TEXT.replaceBody(packReplaceCard?.prompts ?? 0)}</PackReplaceDescription>
+          </PackReplaceHeader>
+          <PackReplaceFooter>
+            <PackReplaceCancel>{BUILDER_SWITCH_TEXT.replaceKeep}</PackReplaceCancel>
+            <PackReplaceAction onClick={handleConfirmPackReplace}>{BUILDER_SWITCH_TEXT.replaceStart}</PackReplaceAction>
+          </PackReplaceFooter>
+        </PackReplaceContent>
+      </PackReplaceDialog>
+      {/* The new builder's own hint while a card is picked for it. */}
+      {packModeIsPackMode && packBuilderKind === 'brief' && packPickingCard && (
+        <div
+          role="status"
+          className="fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-lg rounded-2xl border shadow-2xl bg-background/95 backdrop-blur-xl p-4 flex items-center gap-3"
+        >
+          <Package className="w-5 h-5 text-mode-pack-text flex-shrink-0" aria-hidden="true" />
+          <p className="text-sm text-muted-foreground min-w-0 flex-1">{BUILDER_SWITCH_TEXT.pickCard}</p>
+          <Button variant="ghost" size="sm" onClick={handleCancelPickCard} className="h-9 pointer-coarse:h-11 flex-shrink-0 text-muted-foreground hover:text-foreground">
+            {packBrief ? BUILDER_SWITCH_TEXT.backToPack : 'Cancel'}
+          </Button>
+        </div>
+      )}
+      {packBuilderMounted && packBuilderKind === 'classic' && <PackBuilderStickyFooter
+        onOpenNewBuilder={handleOpenNewBuilder}
+        isOpen={packModeIsPackMode && !packBuilderHidden}
+        onHide={handleHidePackBuilder}
         baseCard={packMode.baseCard}
         basePrompt={packMode.basePrompt}
         onEditBasePrompt={handleEditBasePrompt}
@@ -2342,7 +2874,7 @@ export function PromptGallery() {
         axisMaxPerPrompt={packMode.axisMaxPerPrompt}
         tagOverrides={packMode.effectiveTagOverrides}
         baseClassified={packMode.baseClassified}
-        lockedTags={packMode.lockedTags}
+        lockedTags={packUsesScenes ? packScenes.pinnedTags : packMode.lockedTags}
         axisValues={packMode.axisValues}
         onAddAxisValue={packMode.addAxisValue}
         onRemoveAxisValue={handlePackRemoveAxisValue}
@@ -2360,6 +2892,8 @@ export function PromptGallery() {
         isSeeding={packSeed.isSeeding}
         seedProgress={packSeed.seedProgress}
         loadedPostCount={packSeedSnapshot?.postCount ?? 0}
+        postsFailed={!!packSeedSnapshot?.failed}
+        onRetryPosts={handleRetryPackPosts}
         // No snapshot yet = the first page is still on its way, so more can load.
         canLoadMorePosts={packSeedSnapshot?.canLoadMore ?? true}
         onLoadMorePosts={handleLoadMorePacks}
@@ -2376,24 +2910,28 @@ export function PromptGallery() {
         promptCount={packMode.promptCount}
         setPromptCount={packMode.setPromptCount}
         onRegenerate={handlePackRegenerate}
-        onRerollPrompt={packMode.rerollPrompt}
-        onClearBase={() => {
-          packMode.setBaseCard(null)
-          packMode.setBasePrompt('')
-          // Keep the fetched posts: the next base on this source reuses them.
-          hasSeededRef.current = false
-        }}
+        onRerollPrompt={packUsesScenes ? packScenes.reroll : packMode.rerollPrompt}
+        onClearBase={handleDiscardKeptPack}
+        onChangeBase={handleChangePackBase}
+        baseFromCharacter={packMode.baseFromCharacter}
+        baseLook={packMode.baseLook}
+        onSetBaseLook={packMode.setBaseLook}
+        typicalLookAvailable={packMode.typicalLookAvailable}
         onExit={() => {
           packMode.disablePackMode()
           packMode.setBaseCard(null)
           packMode.setBasePrompt('')
           resetPackSeeding()
           setPackFetcherActive(false)
+          setPackBuilderHidden(false)
+          // The new builder is the one that opens next time.
+          packClassicFromBriefRef.current = false
+          setPackBuilderKind('brief')
         }}
         savedPostCount={packSeedSnapshot?.savedCount ?? 0}
         onClearSavedPosts={handleClearSavedPackPosts}
-        prompts={packMode.generatedPrompts}
-        naturalSourceOf={packMode.naturalSourceOf}
+        prompts={packUsesScenes ? packScenes.prompts : packMode.generatedPrompts}
+        naturalSourceOf={packUsesScenes ? packScenes.naturalSourceOf : packMode.naturalSourceOf}
         onCopyPrompt={async (prompt, text, format) => {
           const copied = await copyToClipboard(text, 0, true, undefined, format)
           if (copied) packMode.recordPromptCopied(prompt)
@@ -2401,35 +2939,25 @@ export function PromptGallery() {
         }}
         onCopyAll={(text, format) => copyToClipboard(text, 0, true, undefined, format)}
         onResetLearning={packMode.resetLearning}
+        engine={packEngine}
+        onSetEngine={packMode.setEngine}
+        scenes={packScenes}
+        sceneSettings={packMode.sceneSettings}
+        onSceneSettingsChange={packMode.setSceneSettings}
+        neverIncludeText={packMode.neverIncludeText}
+        classicChips={packMode.classicChips}
+        sceneIdeas={packMode.sceneIdeas}
+        contentRating={packMode.contentRating}
+        onNeverIncludeTextChange={packMode.setNeverIncludeText}
+        cast={packSceneCast}
+        onAddCastMember={packMode.addCastMember}
+        onRemoveCastMember={packMode.removeCastMember}
+        onSetCastRole={packMode.setCastRole}
+        compositionSearch={packSourceIsCastSearch ? null : packCastSearch}
+        castSourceQuery={packSourceIsCastSearch ? packSourceAnswers.searchTags : null}
+        castSourceAuto={packSourceIsCastSearch && !!packSourceAnswers.fromCharacter}
+        onUseCompositionSearch={handleUseCompositionSearch}
       />}
-
-      <GalleryModals
-        onTeachSuccess={refreshOverrides}
-        isQuickTeachOpen={isQuickTeachOpen}
-        setIsQuickTeachOpen={setIsQuickTeachOpen}
-        isGlobalWeightsEnabled={isGlobalWeightsEnabled}
-        tagOverrides={tagOverrides}
-        isGlobalWeightsModalOpen={isGlobalWeightsModalOpen}
-        setIsGlobalWeightsModalOpen={setIsGlobalWeightsModalOpen}
-        globalWeights={globalWeights}
-        onRemoveGlobalWeight={handleRemoveGlobalWeight}
-        onClearGlobalWeights={handleClearGlobalWeights}
-        onGlobalWeightsEnabledChange={setIsGlobalWeightsEnabled}
-        onGlobalWeightChange={handleGlobalWeightChange}
-        isReverseParserModalOpen={isReverseParserModalOpen}
-        setIsReverseParserModalOpen={setIsReverseParserModalOpen}
-        onImportRawPrompt={handleImportRawPrompt}
-        folderToDelete={folderToDelete}
-        setFolderToDelete={setFolderToDelete}
-        onConfirmDeleteFolder={() => {
-          if (folderToDelete) {
-            favs.deleteFolder(folderToDelete.id)
-            if (activeFavoriteFolder === folderToDelete.id) {
-              setActiveFavoriteFolder('all')
-            }
-          }
-        }}
-      />
     </TooltipProvider>
   )
 }

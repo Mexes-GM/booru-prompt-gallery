@@ -29,6 +29,7 @@ import { liveOutfitDescription, pickOutfit, swapOutfit, type OutfitSettings } fr
 import { classifyTag } from "@/lib/tag-classifier"
 import { applyWeights } from "@/lib/weight-utils"
 import { resolveTagConflicts } from "@/lib/tag-conflicts"
+import { relationRatingOf } from "@/lib/tag-relations"
 import { splitCommaSeparatedTags } from "@/lib/utils/tag-utils"
 
 export interface DerivePostPromptOptions {
@@ -69,6 +70,14 @@ export interface DerivePostPromptOptions {
   tagOverrides?: Record<string, string>
   globalWeights?: Record<string, number>
   isGlobalWeightsEnabled?: boolean
+  /**
+   * Tags the post's image shows but the post isn't tagged with (underscore
+   * names, from the added-tags dataset, see lib/added-tags.ts). They join the
+   * post's general tags before cleaning, so exclusions, Find & Replace,
+   * merging and background/outfit options treat them like any other tag.
+   * Ignored on hand-written AI prompts.
+   */
+  datasetTags?: readonly string[]
 }
 
 export interface DerivePostPromptResult {
@@ -89,6 +98,36 @@ export interface DerivePostPromptResult {
   appendedTags: AppliedTagAppend[]
   hasAppends: boolean
   conflictingTags: { tag: string; reason: string }[]
+  /** The dataset tags that made it into the final prompt, as they appear there (normalized, spaces). */
+  datasetAddedTags: string[]
+}
+
+/**
+ * The dataset tags worth adding to a post: not already on it, not excluded,
+ * not typed by the user, and (with Smart Tag Exclusion) not contradicting the
+ * post or the user's added tags. Returned as underscore names, the raw
+ * tag_string format they're appended in.
+ */
+export function selectDatasetTags(
+  post: Pick<BooruPost, "tag_string" | "rating">,
+  datasetTags: readonly string[] | undefined,
+  { exclude, userTags, smartTagExclusion, experimental }: { exclude: Set<string>; userTags: string[]; smartTagExclusion: boolean; experimental: boolean },
+): string[] {
+  if (!datasetTags || datasetTags.length === 0) return []
+  const postTags = (post.tag_string || "").split(/\s+/).map((t) => normalize(t)).filter(Boolean)
+  const taken = new Set([...postTags, ...userTags])
+  const candidates: string[] = []
+  for (const raw of datasetTags) {
+    const norm = normalize(raw)
+    if (!norm || taken.has(norm) || exclude.has(norm)) continue
+    taken.add(norm)
+    candidates.push(norm)
+  }
+  if (candidates.length === 0) return []
+  const kept = smartTagExclusion
+    ? resolveTagConflicts([...postTags, ...userTags], candidates, { experimental, rating: relationRatingOf(post.rating) }).validTags
+    : candidates
+  return kept.map((t) => t.replace(/ /g, "_"))
 }
 
 function buildWordReplacements(findInput: string, replaceInput: string): WordReplacementRule[] {
@@ -172,6 +211,7 @@ export function derivePostPrompt(
     tagOverrides,
     globalWeights = {},
     isGlobalWeightsEnabled = false,
+    datasetTags,
   } = options
 
   const excludeList = splitCommaSeparatedTags(excludeInput)
@@ -199,6 +239,18 @@ export function derivePostPrompt(
   const effectivePrependAnimaArtist = isAiPost ? false : prependAnimaArtist
   const effectiveExperimental = isAiPost ? false : experimentalPromptRules
 
+  const normTag = (t: string) => normalize(t.replace(/\\/g, ""))
+  const excludeListSet = new Set(excludeList.map(normTag).filter(Boolean))
+  // Dataset tags join the post's own general tags, so every cleaning rule below applies to them.
+  const datasetExtra = isAiPost ? [] : selectDatasetTags(post, datasetTags, {
+    exclude: excludeListSet,
+    userTags: [...addList, ...searchPromptTags].map(normTag).filter(Boolean),
+    smartTagExclusion: effectiveSmartTagExclusion,
+    experimental: effectiveExperimental,
+  })
+  const tagString = datasetExtra.length > 0 ? `${post.tag_string} ${datasetExtra.join(" ")}` : post.tag_string
+  const datasetSet = new Set(datasetExtra.map((t) => normalize(t)))
+
   // sharedCleaned: base pipeline with 'keep' background, no added tags — used
   // to resolve conflicts against the tags the user wants to add.
   const sharedOpts = {
@@ -212,7 +264,7 @@ export function derivePostPrompt(
   }
   const sharedCleaned = aiPrompt
     ? cleanPrompt(aiPrompt, "", "", "", sharedOpts)
-    : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, sharedOpts)
+    : cleanPrompt(tagString, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, sharedOpts)
 
   // Scene context for Detailed Random, derived ONCE here and shared by both
   // pipelines below. sharedCleaned is the right source: it still carries the
@@ -257,7 +309,6 @@ export function derivePostPrompt(
     : []
   const pureContentSet = new Set(pureContentTags)
   const addListSet = new Set(addList.map((t) => normalize(t.replace(/\\/g, ""))).filter(Boolean))
-  const excludeListSet = new Set(excludeList.map((t) => normalize(t.replace(/\\/g, ""))).filter(Boolean))
 
   const missingSearchTags: string[] = []
   for (const searchedTag of searchPromptTags) {
@@ -276,7 +327,8 @@ export function derivePostPrompt(
 
   const conflictResolution = (!pureContent || effectiveAddedTags.length === 0 || !effectiveSmartTagExclusion)
     ? { validTags: effectiveAddedTags, conflictingTags: [] }
-    : resolveTagConflicts(pureContent.split(",").map((t) => t.trim()), effectiveAddedTags, { experimental: effectiveExperimental })
+    // Checked against the post's own tags: a dataset guess never blocks a tag the user asked for.
+    : resolveTagConflicts(pureContent.split(",").map((t) => t.trim()).filter((t) => !datasetSet.has(normalize(t))), effectiveAddedTags, { experimental: effectiveExperimental, rating: relationRatingOf(post.rating) })
 
   const firstArtistTag = (() => {
     if (!effectivePrependAnimaArtist) return undefined
@@ -305,7 +357,7 @@ export function derivePostPrompt(
   }
   const baseContent = aiPrompt
     ? cleanPrompt(aiPrompt, "", "", "", opts)
-    : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, opts)
+    : cleanPrompt(tagString, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, opts)
 
   const displayContent = isGlobalWeightsEnabled && baseContent
     ? applyWeights(baseContent, globalWeights)
@@ -315,7 +367,12 @@ export function derivePostPrompt(
     ? applyWeights(pureContent, globalWeights)
     : pureContent
 
+  const datasetAddedTags = datasetSet.size === 0 || !baseContent
+    ? []
+    : baseContent.split(",").map(normTag).filter((t) => datasetSet.has(t))
+
   return {
+    datasetAddedTags,
     displayContent,
     pureDisplayContent,
     baseContent,

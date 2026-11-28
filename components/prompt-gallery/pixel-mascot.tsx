@@ -3,6 +3,7 @@
 import { memo, useEffect, useState } from "react"
 import { useReducedMotion } from "framer-motion"
 import { cn } from "@/lib/utils"
+import { useGalleryPaused } from "@/components/prompt-gallery/gallery-paused"
 
 // 16×22 sprite, one char per pixel ("." = transparent). A full-body chibi
 // girl in the usual pixel-chibi proportions: oversized head, big low-set eyes
@@ -116,9 +117,11 @@ interface PixelMascotProps {
 export const PixelMascot = memo(function PixelMascot({ scale = 2, alert = false, className }: PixelMascotProps) {
   const reduceMotion = useReducedMotion()
   const [blink, setBlink] = useState(false)
+  // Holds still while a layer over the gallery (the pack builder) has it paused.
+  const galleryPaused = useGalleryPaused()
 
   useEffect(() => {
-    if (reduceMotion) return
+    if (reduceMotion || galleryPaused) return
     let closeTimer: ReturnType<typeof setTimeout>
     let openTimer: ReturnType<typeof setTimeout>
     const schedule = () => {
@@ -134,8 +137,9 @@ export const PixelMascot = memo(function PixelMascot({ scale = 2, alert = false,
     return () => {
       clearTimeout(closeTimer)
       clearTimeout(openTimer)
+      setBlink(false)
     }
-  }, [reduceMotion])
+  }, [reduceMotion, galleryPaused])
 
   const rects = blink ? BLINK_RECTS : OPEN_RECTS
 

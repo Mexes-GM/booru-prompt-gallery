@@ -1,4 +1,6 @@
-import { useEffect, useState, memo, useRef } from 'react'
+import { copyText } from "@/lib/clipboard"
+import { toastCopied, toastCopyFailed } from "@/lib/copy-toast"
+import { useCallback, useEffect, useState, memo, useRef } from 'react'
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetDescription } from "@/components/ui/sheet"
@@ -7,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { X, Copy, Check, Sparkles, Settings2, Loader2, RefreshCw, AlertCircle, History, Trash2 } from "lucide-react"
+import { X, Copy, Check, Sparkles, Settings2, Loader2, RefreshCw, AlertCircle, History, Trash2, Send } from "lucide-react"
 import { useLLMSettings, LLMProvider } from '@/hooks/use-llm-settings'
 import { apiUrl } from '@/lib/api-client'
 import { Turnstile, isTurnstileEnabled } from "@/components/turnstile"
@@ -15,6 +17,9 @@ import { toast } from '@/hooks/use-toast'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useLowMotion } from '@/hooks/use-low-motion'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
+import { useComfySend } from '@/hooks/use-comfyui-send'
+import { ComfyInlineJob, ComfyInlineJobPresence } from './comfyui-inline-job'
+import { SendGlyph } from './comfyui-motion'
 import { cn } from '@/lib/utils'
 import { OpenAIIcon, AnthropicIcon, GoogleIcon, DeepSeekIcon, OpenRouterIcon, CloudflareIcon } from "@/components/icons/brand-icons"
 import { track } from '@/lib/analytics'
@@ -107,6 +112,9 @@ const AiConvertStickyFooterComponent = ({
   const [hasConverted, setHasConverted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isCopied, triggerCopyFeedback, resetCopyFeedback] = useCopyFeedback()
+  const comfy = useComfySend()
+  const sendRef = useRef<HTMLButtonElement>(null)
+  const focusSend = useCallback(() => sendRef.current?.focus(), [])
   const [isPulseActive, setIsPulseActive] = useState(false)
   const [dailyRemaining, setDailyRemaining] = useState<number | null>(null)
   // Turnstile token for the free AI tier. Stays null
@@ -154,12 +162,20 @@ const AiConvertStickyFooterComponent = ({
     localStorage.removeItem('ai-convert-history')
   }
 
-  const copyHistoryItem = (text: string) => {
-    navigator.clipboard.writeText(text)
-    toast({
-      title: 'Copied!',
-      description: 'The natural language prompt has been copied to your clipboard.',
-    })
+  const copyHistoryItem = async (text: string) => {
+    try {
+      await copyText(text)
+      toastCopied()
+    } catch {
+      toastCopyFailed('copy_ai_convert')
+    }
+  }
+
+  // ComfyUI mode: history items send instead of copying; progress shows in the footer.
+  const sendHistoryItem = async (text: string) => {
+    if (await comfy.send(text, () => copyHistoryItem(text))) {
+      toast({ title: 'Sent to ComfyUI', description: 'Its progress shows below the converted prompt.' })
+    }
   }
 
   // Local state for settings form
@@ -236,14 +252,14 @@ const AiConvertStickyFooterComponent = ({
           const limitType = res.headers.get('X-RateLimit-Type')
           if (limitType === 'daily') {
             setDailyRemaining(0)
-            throw new Error(data.error || 'Daily limit reached. Come back tomorrow or add your own API key in ⚙️ Settings.')
+            throw new Error(data.error || "You've reached today's free limit. Come back tomorrow, or add your own API key in ⚙️ Settings.")
           }
-          throw new Error(data.error || 'Too many requests. Please wait a moment before trying again.')
+          throw new Error(data.error || 'Too many conversions at once. Wait a moment and try again.')
         }
         if (res.status === 503) {
-          throw new Error(data.error || 'Cloudflare AI quota exhausted for today. Add your own API key in ⚙️ Settings to continue.')
+          throw new Error(data.error || 'The free converter is out of uses for today. Add your own API key in ⚙️ Settings to keep going.')
         }
-        throw new Error(data.error || 'Failed to convert prompt')
+        throw new Error(data.error || "Couldn't convert the prompt. Try again.")
       }
 
       setResult(data.result)
@@ -286,7 +302,7 @@ const AiConvertStickyFooterComponent = ({
   const handleSaveSettings = () => {
     saveSettings({ provider: tempProvider, apiKey: tempApiKey, customModel: tempCustomModel, remember: tempRemember })
     toast({
-      title: 'Settings Saved',
+      title: 'Settings saved',
       description: tempRemember
         ? 'Your API key will be remembered until you clear it.'
         : 'Your API key will be cleared when you close this tab.',
@@ -294,14 +310,15 @@ const AiConvertStickyFooterComponent = ({
     setSettingsOpen(false)
   }
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (!result) return
-    navigator.clipboard.writeText(result)
-    triggerCopyFeedback()
-    toast({
-      title: 'Copied!',
-      description: 'The natural language prompt has been copied to your clipboard.',
-    })
+    try {
+      await copyText(result)
+      triggerCopyFeedback()
+      toastCopied()
+    } catch {
+      toastCopyFailed('copy_ai_convert')
+    }
   }
 
   return (
@@ -310,7 +327,9 @@ const AiConvertStickyFooterComponent = ({
         <motion.div
           key="ai-convert-footer"
           initial={shouldReduceMotion ? { opacity: 0 } : { y: 200, opacity: 0, scale: 0.95 }}
-          animate={shouldReduceMotion ? { opacity: 1 } : { y: 0, opacity: 1, scale: 1 }}
+          // Always settle y and scale: shouldReduceMotion can turn on after the first frame (it reads
+          // the viewport in an effect), and an opacity-only target would leave the footer half off-screen.
+          animate={{ y: 0, opacity: 1, scale: 1 }}
           exit={shouldReduceMotion ? { opacity: 0 } : { y: 200, opacity: 0, scale: 0.95 }}
           transition={shouldReduceMotion ? { duration: 0.15 } : {
             type: "spring",
@@ -391,8 +410,8 @@ const AiConvertStickyFooterComponent = ({
                       variant="outline"
                       size="sm"
                       className="h-8 px-2.5 rounded-lg hover:bg-secondary border-border/60 transition-colors text-xs font-semibold"
-                      aria-label="View History"
-                      title="View History"
+                      aria-label="View history"
+                      title="View history"
                     >
                       <History className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" />
                       History
@@ -433,7 +452,7 @@ const AiConvertStickyFooterComponent = ({
                         history.map((item) => (
                           <div key={item.id} className="relative rounded-xl border border-border/60 bg-secondary/15 p-4 flex flex-col gap-3 group transition-colors hover:border-primary/30 hover:bg-secondary/30">
                             <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider truncate flex justify-between items-center">
-                              <span>Original Tags</span>
+                              <span>Original tags</span>
                               <span><ClientFormattedDate timestamp={item.timestamp} /></span>
                             </div>
                             <p className="text-xs text-muted-foreground line-clamp-2" title={item.tags}>
@@ -444,6 +463,19 @@ const AiConvertStickyFooterComponent = ({
                               {item.result}
                             </p>
                             <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                              {comfy.enabled ? (
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  className="h-7 px-2 text-xs"
+                                  onClick={() => void sendHistoryItem(item.result)}
+                                  disabled={comfy.sending}
+                                  aria-label="Send this prompt to ComfyUI"
+                                >
+                                  <Send className="w-3 h-3 mr-1" aria-hidden="true" />
+                                  Send
+                                </Button>
+                              ) : (
                               <Button
                                 size="sm"
                                 variant="secondary"
@@ -453,6 +485,7 @@ const AiConvertStickyFooterComponent = ({
                                 <Copy className="w-3 h-3 mr-1" />
                                 Copy
                               </Button>
+                              )}
                             </div>
                           </div>
                         ))
@@ -611,7 +644,7 @@ const AiConvertStickyFooterComponent = ({
                             <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" aria-hidden="true" />
                             Saving…
                           </>
-                        ) : 'Save Configuration'}
+                        ) : 'Save settings'}
                       </Button>
                     </div>
                   </PopoverContent>
@@ -664,7 +697,7 @@ const AiConvertStickyFooterComponent = ({
                       className="h-6 w-6 text-primary-text/30 mb-1.5"
                       aria-hidden="true"
                     />
-                    <p className="text-xs italic">Waiting for input… click Convert on any card to get started</p>
+                    <p className="text-xs italic">Nothing to convert yet. Press Convert on any card.</p>
                   </div>
                 )}
               </div>
@@ -672,6 +705,15 @@ const AiConvertStickyFooterComponent = ({
               {/* Action buttons row — pinned at bottom, never overlapping text */}
               {(hasConverted || error) && !isLoading && (
                 <div className="flex justify-end gap-2 px-3 pb-3 pt-1 shrink-0">
+                  <ComfyInlineJobPresence show={comfy.enabled && (comfy.job !== null || comfy.sending)}>
+                    <ComfyInlineJob
+                      jobId={comfy.job?.jobId ?? null}
+                      api={comfy.job?.api ?? null}
+                      launching={comfy.sending}
+                      onDismiss={comfy.dismiss}
+                      returnFocus={focusSend}
+                    />
+                  </ComfyInlineJobPresence>
                   <Button
                     variant="outline"
                     size="sm"
@@ -683,7 +725,21 @@ const AiConvertStickyFooterComponent = ({
                     <RefreshCw className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" />
                     Regenerate
                   </Button>
-                  {!error && (
+                  {!error && comfy.enabled && (
+                    <Button
+                      ref={sendRef}
+                      size="sm"
+                      onClick={() => void comfy.send(result, handleCopy)}
+                      disabled={!result}
+                      aria-busy={comfy.sending || undefined}
+                      aria-label="Send prompt to ComfyUI"
+                      className="h-8 px-3 rounded-lg text-xs font-bold transition-colors shadow-sm bg-primary hover:bg-primary/90 text-primary-foreground"
+                    >
+                      <SendGlyph sending={comfy.sending} className="w-3.5 h-3.5 mr-1 [&_svg]:size-full!" />
+                      Send
+                    </Button>
+                  )}
+                  {!error && !comfy.enabled && (
                     <Button
                       size="sm"
                       onClick={handleCopy}

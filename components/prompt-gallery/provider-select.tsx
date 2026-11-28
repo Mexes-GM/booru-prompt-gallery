@@ -26,15 +26,16 @@ import { userPreferences } from "@/lib/storage"
 import { shouldConfirmProvider, ADULT_ONLY_PROVIDER } from "@/lib/nsfw-consent"
 import { cn } from "@/lib/utils"
 
-const PROVIDERS = ['danbooru', 'gelbooru', 'aibooru', 'rule34', 'e621', 'e6ai'] as const
+/** The boorus the gallery searches, in the order its menu lists them. */
+export const PROVIDERS = ['danbooru', 'gelbooru', 'aibooru', 'rule34', 'e621', 'floofgens'] as const
 
-const PROVIDER_LABELS: Record<typeof PROVIDERS[number], string> = {
+export const PROVIDER_LABELS: Record<typeof PROVIDERS[number], string> = {
   danbooru: 'Danbooru',
   gelbooru: 'Gelbooru',
   aibooru: 'Aibooru',
   rule34: 'Rule34',
   e621: 'e621',
-  e6ai: 'e6AI',
+  floofgens: 'Floofgens',
 }
 
 interface ProviderSelectProps {
@@ -113,11 +114,9 @@ export function ProviderSelect({ booruProvider, setBooruProvider, onProviderChan
           <AlertDialogHeader>
             <AlertDialogTitle>Switch to Rule34?</AlertDialogTitle>
             <AlertDialogDescription>
-              Rule34 hosts exclusively explicit / adult (18+) content and, unlike
-              the other providers, its results cannot be filtered to Safe — the
-              Safe/NSFW toggle is disabled while it&apos;s selected. Only continue
-              if you are of legal age and want to see this material. You can switch
-              back to another provider at any time.
+              Rule34 only has explicit adult (18+) content, so Safe mode is off
+              while it&apos;s selected. Only continue if you&apos;re of legal age.
+              You can switch to another source at any time.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -18,8 +18,9 @@
  *      cap, deterministic when a seeded rng is supplied.
  */
 import { BooruPost } from "../booru/types"
-import { TagCategory, classifyTags } from "../tag-classifier"
-import { resolveTagConflicts } from "../tag-conflicts"
+import { TagCategory, classifyTag, classifyTags } from "../tag-classifier"
+import { ExclusionSet, excludes, loadedTagRelations, needsCompany, requiredBy, type RelationRating, type TagRelations } from "../tag-relations"
+import { ConflictChecker, resolveTagConflicts } from "../tag-conflicts"
 import { conflictsWithBackground } from "./background-coherence"
 import { applyWeights } from "../weight-utils"
 import { normalize, buildPostMetaTagSet, isMetaTag } from "../cleanPrompt"
@@ -646,6 +647,99 @@ export interface GeneratePackPromptsArgs {
    * (`lockedTags`) is left alone — it is the user's own choice.
    */
   forbiddenTag?: (tag: string) => boolean
+  /**
+   * Measured tag relations (lib/tag-relations.ts); defaults to the loaded ones. With
+   * them, each axis only draws values that don't contradict the base or what is
+   * already drawn, and a value that requires a tag brings it along (or isn't drawn
+   * when that tag can't be added). Without them, sampling is as before and the
+   * conflict resolver cleans up after.
+   */
+  relations?: TagRelations | null
+  /** The pack's content rating, for the measured exclusions. */
+  rating?: RelationRating | null
+  /** Categories set to Off: a value that requires a tag of one of these isn't drawn. */
+  offCategories?: readonly TagCategory[]
+  /** Tags the user excluded: a value that requires one isn't drawn. */
+  userExcluded?: (tag: string) => boolean
+  /** Most milliseconds of work (default DEFAULT_GENERATION_BUDGET_MS): the prompts made by then are returned. */
+  budgetMs?: number
+}
+
+/** Work budget of one generatePackPrompts call: a pathological setup returns what it has instead of freezing the page. */
+export const DEFAULT_GENERATION_BUDGET_MS = 4000
+/** Values an axis looks at per place before leaving it empty. */
+const MAX_CANDIDATES_PER_PICK = 60
+
+/** What compatible sampling checks a candidate against. */
+interface Compatibility {
+  relations: TagRelations
+  context: { people: number; rating?: RelationRating | null }
+  /** The base says the picture is of one person alone ("solo"): tags that need company aren't drawn. */
+  onePerson: boolean
+  off: ReadonlySet<TagCategory>
+  userExcluded: (tag: string) => boolean
+  overrides?: Record<string, string>
+}
+
+const tagsOfValue = (value: string): string[] =>
+  (value.includes(",") ? splitCommaSeparatedTags(value) : [value]).map(normalizeTagForPack).filter(Boolean)
+
+const PEOPLE_RE = /^(\d+)\+?(girl|boy|other)s?$/
+function peopleIn(tags: readonly string[]): number {
+  let n = 0
+  for (const tag of tags) {
+    const m = PEOPLE_RE.exec(tag.replace(/ /g, ""))
+    if (m) n += Number(m[1])
+    else if (/^multiple (girls|boys|others)$/.test(tag)) n += 2
+  }
+  return n
+}
+
+/** True when a tag of `tags` and one of `chosen` (almost) never meet. */
+function clashes(c: Compatibility, tags: readonly string[], chosen: readonly string[]): boolean {
+  return tags.some((tag) => chosen.some((other) => excludes(c.relations, other, tag, c.context)))
+}
+
+/** The exclusions of `tags`, kept up to date as more are chosen. */
+function exclusionsOf(c: Compatibility, tags: readonly string[]): ExclusionSet {
+  const set = new ExclusionSet(c.relations, c.context)
+  tags.forEach((tag) => set.add(tag))
+  return set
+}
+
+/** "pleated skirt" names a skirt: a requirement counts as met when a tag ends with it. */
+const names = (present: readonly string[], tag: string) => present.some((p) => p === tag || p.endsWith(` ${tag}`))
+
+/**
+ * Tags `tags` require that `present` lacks, to add with them; null when one can't be
+ * added (its category is Off, the user excluded it, it contradicts what's there, or its
+ * slot is already full). What a full set requires ("multiple boys" for its "gangbang")
+ * comes with it like the set's own tags: no slot limit (`slotLimits` false).
+ */
+function requirements(c: Compatibility, tags: readonly string[], present: readonly string[], slotLimits = true): string[] | null {
+  const added: string[] = []
+  for (const tag of tags) {
+    for (const needed of requiredBy(c.relations, tag)) {
+      if (names(present, needed) || names(tags, needed) || added.includes(needed)) continue
+      if (c.userExcluded(needed) || c.off.has(classifyTag(needed, c.overrides))) return null
+      const around = [...present, ...tags, ...added]
+      if (clashes(c, [needed], around) || (slotLimits && !checkSlotConstraints(needed, around, c.overrides))) return null
+      added.push(needed)
+    }
+  }
+  return added
+}
+
+/** All of `values` in a weighted random order (the keys of sampleWeightedCombination). */
+function weightedOrder<T>(values: T[], weights: number[] | undefined, rng: () => number): T[] {
+  const usable = !!weights && weights.length === values.length && weights.some((w) => w > 0)
+  return values
+    .map((value, i) => {
+      const w = usable && Number.isFinite(weights![i]) && weights![i] > 0 ? weights![i] : usable ? 1e-9 : 1
+      return { value, key: Math.pow(Math.max(rng(), Number.EPSILON), 1 / w) }
+    })
+    .sort((a, b) => b.key - a.key)
+    .map((entry) => entry.value)
 }
 
 export interface PackPrompt {
@@ -660,6 +754,15 @@ export interface PackPrompt {
   height?: number
   /** Id of the library outfit the clothing came from (Pack Mode's "From the outfit library"). */
   outfitId?: number
+  /**
+   * Scenes engine: the post whose scene the prompt was built on, its situation, and every post a part came from.
+   * `invented`: that scene was written by the scene model (no post, no image).
+   */
+  scene?: { postId: number; preview?: string; situation?: string; donors?: number[]; invented?: boolean }
+  /** Scenes engine: the rating of the scene the prompt was built on (the highest of the posts it took parts from). */
+  sceneRating?: 'g' | 's' | 'q' | 'e'
+  /** One character per prompt (lib/pack/cast-turns.ts): the character tag this prompt is for. */
+  character?: string
 }
 
 /**
@@ -786,22 +889,9 @@ export function groupValuesBySlot(
   return Array.from(bySlot, ([slot, vals]) => ({ slot, values: vals })).sort((a, b) => rank(a.slot) - rank(b.slot))
 }
 
-/**
- * Most distinct values one prompt can actually take from these groups once
- * SLOT_CONSTRAINTS / SLOT_GROUP_CONSTRAINTS apply. Unslotted values carry no
- * constraint, so they count in full. This is what the "Min tags" slider tops
- * out at: asking for more would just be dropped by the constraint checks.
- */
-export function maxValuesPerPrompt(groups: SlotGroup[]): number {
-  const perSlot = new Map<string, number>()
+/** Distinct values per prompt each slot allows, with the shared budgets (SLOT_GROUP_CONSTRAINTS). */
+function budgetedTotal(perSlot: ReadonlyMap<string, number>): number {
   let total = 0
-  for (const { slot, values } of groups) {
-    if (slot === null) {
-      total += values.length
-      continue
-    }
-    perSlot.set(slot, Math.min(values.length, SLOT_CONSTRAINTS[slot]?.maxCount ?? values.length))
-  }
   const budgeted = new Set<string>()
   for (const group of Object.values(SLOT_GROUP_CONSTRAINTS)) {
     let sum = 0
@@ -815,6 +905,39 @@ export function maxValuesPerPrompt(groups: SlotGroup[]): number {
     if (!budgeted.has(slot)) total += n
   })
   return total
+}
+
+/** Most values one prompt can take from a category whose every slot is full. */
+export function categoryCapacity(category: TagCategory): number {
+  const perSlot = new Map<string, number>()
+  for (const slot of slotsOf(category)) perSlot.set(slot, SLOT_CONSTRAINTS[slot]?.maxCount ?? 1)
+  return budgetedTotal(perSlot)
+}
+
+/**
+ * Most distinct values one prompt can actually take from these groups once
+ * SLOT_CONSTRAINTS / SLOT_GROUP_CONSTRAINTS apply. This is what the "Min tags"
+ * slider and the Chaotic preset top out at: asking for more would just be
+ * dropped by the constraint checks.
+ *
+ * An unslotted value belongs to some slot of the category the taxonomy doesn't
+ * know (yet: slots load after the posts), so unslotted values fill at most the
+ * room the category has left. Counting them in full made a pool whose slots
+ * hadn't loaded ask for hundreds of tags per prompt.
+ */
+export function maxValuesPerPrompt(groups: SlotGroup[], category?: TagCategory): number {
+  const perSlot = new Map<string, number>()
+  let unslotted = 0
+  for (const { slot, values } of groups) {
+    if (slot === null) {
+      unslotted += values.length
+      continue
+    }
+    perSlot.set(slot, Math.min(values.length, SLOT_CONSTRAINTS[slot]?.maxCount ?? values.length))
+  }
+  const slotted = budgetedTotal(perSlot)
+  const room = category ? Math.max(0, categoryCapacity(category) - slotted) : unslotted
+  return slotted + Math.min(unslotted, room)
 }
 
 /**
@@ -843,6 +966,42 @@ export function withoutForbiddenTags(values: string[], forbidden: (tag: string) 
  * exhaustive and stable; otherwise values are sampled randomly.
  */
 export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[] {
+  // Never longer than the work budget, however the pools and minimums are set.
+  const deadline = Date.now() + (args.budgetMs ?? DEFAULT_GENERATION_BUDGET_MS)
+  const steps = packPromptSteps(args, () => Date.now() > deadline)
+  for (;;) {
+    const step = steps.next()
+    if (step.done) return step.value
+  }
+}
+
+/**
+ * `generatePackPrompts` in slices: pauses between attempts so the page keeps
+ * responding, stops at the work budget, and resolves to null when cancelled.
+ */
+export async function generatePackPromptsAsync(
+  args: GeneratePackPromptsArgs,
+  control: { pause: () => Promise<void>; cancelled: () => boolean; slice?: number }
+): Promise<PackPrompt[] | null> {
+  const budget = args.budgetMs ?? DEFAULT_GENERATION_BUDGET_MS
+  let worked = 0
+  let started = Date.now()
+  // Only time spent working counts against the budget, not time paused for the page.
+  const steps = packPromptSteps(args, () => worked + (Date.now() - started) > budget)
+  const slice = control.slice ?? 12
+  for (;;) {
+    const step = steps.next()
+    if (step.done) return step.value
+    if (Date.now() - started >= slice) {
+      worked += Date.now() - started
+      await control.pause()
+      if (control.cancelled()) return null
+      started = Date.now()
+    }
+  }
+}
+
+function* packPromptSteps(args: GeneratePackPromptsArgs, stop: () => boolean): Generator<void, PackPrompt[], void> {
   const {
     lockedTags,
     axes,
@@ -857,6 +1016,10 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
     tagOverrides,
     requiredTag,
     forbiddenTag,
+    relations = loadedTagRelations(),
+    rating,
+    offCategories = [],
+    userExcluded = () => false,
   } = args
 
   const normalizedLocked = Array.from(
@@ -904,13 +1067,26 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
       axis !== null
   )
 
+  const compat: Compatibility | null = relations
+    ? {
+        relations,
+        context: { people: peopleIn(normalizedLocked) >= 2 ? 2 : 1, rating },
+        // "1girl" says one girl, not that she's alone: with "1boy", or a pool of group
+        // scenes, she isn't. Only "solo", with no head count of more than one, does.
+        onePerson: normalizedLocked.includes("solo") && peopleIn(normalizedLocked) <= 1,
+        off: new Set(offCategories),
+        userExcluded,
+        overrides: tagOverrides,
+      }
+    : null
+
   const targetCap = Math.max(0, Math.min(count, maxPrompts))
   if (targetCap === 0) return []
 
   // No axes to vary → a single prompt of just the base (if any).
   if (activeAxes.length === 0) {
     if (normalizedLocked.length === 0) return []
-    const built = buildPrompt(normalizedLocked, [], globalWeights, isGlobalWeightsEnabled, tagOverrides)
+    const built = buildPrompt(normalizedLocked, [], globalWeights, isGlobalWeightsEnabled, tagOverrides, rating)
     return built ? [built] : []
   }
 
@@ -961,6 +1137,18 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
     } else {
       selections = shuffle(cartesian(pools), rng)
     }
+    // Measured relations: leave out selections whose values contradict the base or each other.
+    if (compat) {
+      const coherent = selections.filter((picked) => {
+        const chosen = exclusionsOf(compat, normalizedLocked)
+        for (const tags of picked.flat().map(tagsOfValue)) {
+          if (tags.some((tag) => chosen.blocks(tag) || (compat.onePerson && needsCompany(compat.relations, tag)))) return false
+          tags.forEach((tag) => chosen.add(tag))
+        }
+        return true
+      })
+      if (coherent.length > 0) selections = coherent
+    }
   } else {
     // Huge space: sample selections lazily below.
     selections = []
@@ -999,8 +1187,21 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
   const trySelection = (rawPicked: string[][]) => {
     const picked = requiredSources.length > 0 ? withRequiredTag(rawPicked) : rawPicked
     if (!picked) return
-    const flatValues = picked.flat()
-    const built = buildPrompt(normalizedLocked, flatValues, globalWeights, isGlobalWeightsEnabled, tagOverrides)
+    let flatValues = picked.flat()
+    let withSets: string[] = []
+    if (compat) {
+      // What the picks require comes with them; a pick whose requirement can't come isn't used.
+      // A full set's requirements come like its own tags (see requirements).
+      const looseTags = flatValues.filter((v) => !v.includes(",")).flatMap(tagsOfValue)
+      const setTags = flatValues.filter((v) => v.includes(",")).flatMap(tagsOfValue)
+      const needed = requirements(compat, looseTags, [...normalizedLocked, ...setTags])
+      if (!needed) return
+      const setNeeds = requirements(compat, setTags, [...normalizedLocked, ...looseTags, ...needed], false)
+      if (!setNeeds) return
+      withSets = setNeeds
+      flatValues = [...flatValues, ...needed, ...withSets]
+    }
+    const built = buildPrompt(normalizedLocked, flatValues, globalWeights, isGlobalWeightsEnabled, tagOverrides, rating, new Set(withSets))
     if (!built) return
     // Conflict resolution can still drop the swapped-in value.
     if (requiredSources.length > 0 && !passes(built.prompt.split(','))) return
@@ -1009,10 +1210,35 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
     results.push(built)
   }
 
+  // Measured relations: each axis draws, in weighted random order, only values that neither
+  // contradict the base and the values drawn so far nor require a tag that can't be added.
+  // An axis where nothing fits falls back to a plain draw (the resolver cleans it up).
+  // Each check is one lookup in the exclusions of what's chosen; an axis looks at
+  // MAX_CANDIDATES_PER_PICK values per place at most, and a place where nothing fits stays empty.
+  const sampleCompatible = (c: Compatibility): string[][] => {
+    const chosen = [...normalizedLocked]
+    const blocked = exclusionsOf(c, normalizedLocked)
+    return activeAxes.map((axis) => {
+      const take: string[] = []
+      let looked = 0
+      for (const value of weightedOrder(axis.vals, axis.weights, rng)) {
+        if (take.length >= axis.k || looked >= MAX_CANDIDATES_PER_PICK * axis.k) break
+        looked++
+        const tags = tagsOfValue(value)
+        if (tags.some((tag) => blocked.blocks(tag) || (c.onePerson && needsCompany(c.relations, tag))) || !requirements(c, tags, chosen, !value.includes(","))) continue
+        take.push(value)
+        chosen.push(...tags)
+        tags.forEach((tag) => blocked.add(tag))
+      }
+      return take
+    })
+  }
+
   if (selections.length > 0) {
     for (const picked of selections) {
-      if (results.length >= target) break
+      if (results.length >= target || stop()) break
       trySelection(picked)
+      yield
     }
   } else {
     // Random sampling for very large spaces — draw a random k-subset per axis
@@ -1021,10 +1247,13 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
     // falls back to sampleCombination internally when weights is undefined).
     const maxTries = target * 40
     let tries = 0
-    while (results.length < target && tries < maxTries) {
+    while (results.length < target && tries < maxTries && !stop()) {
       tries++
-      const picked = activeAxes.map((axis) => sampleWeightedCombination(axis.vals, axis.k, axis.weights, rng))
+      const picked = compat
+        ? sampleCompatible(compat)
+        : activeAxes.map((axis) => sampleWeightedCombination(axis.vals, axis.k, axis.weights, rng))
       trySelection(picked)
+      yield
     }
   }
 
@@ -1042,7 +1271,10 @@ function buildPrompt(
   pickedValues: string[],
   globalWeights: Record<string, number>,
   isGlobalWeightsEnabled: boolean,
-  tagOverrides?: Record<string, string>
+  tagOverrides?: Record<string, string>,
+  rating?: RelationRating | null,
+  /** Tags a full set brought along (its requirements): free of the slot limits, like the set's own. */
+  setRequirements: ReadonlySet<string> = new Set()
 ): PackPrompt | null {
   const lockedSet = new Set(lockedTags.map(normalize))
 
@@ -1066,22 +1298,63 @@ function buildPrompt(
   }
 
   // Pass 1: Smart Tag Exclusion: drop values that contradict the locked base.
-  const { validTags: validAgainstBase } = resolveTagConflicts(lockedTags, flatPickedTags)
+  const { validTags: validAgainstBase } = resolveTagConflicts(lockedTags, flatPickedTags, { rating })
+
+  // Full sets each picked tag came from. Tags of one set appeared together on a real
+  // post, so they are never checked against each other, and the slot limits (a guess
+  // for mixing loose tags that never met: one expression, one sex act...) don't apply
+  // to them. The measured relations and hand rules still check them against the base
+  // and the other values: "sex" in the base doesn't take "anal" out of a set.
+  const setsOf = new Map<string, Set<string>>()
+  for (const [item, tags] of itemToTags) {
+    if (!item.includes(",")) continue
+    for (const t of tags) {
+      const sets = setsOf.get(t) ?? new Set<string>()
+      sets.add(item)
+      setsOf.set(t, sets)
+    }
+  }
+  const shareSet = (a: string, b: string) => {
+    const setsA = setsOf.get(a)
+    const setsB = setsOf.get(b)
+    if (!setsA || !setsB) return false
+    for (const item of setsA) if (setsB.has(item)) return true
+    return false
+  }
 
   // Pass 2: Smart Tag Exclusion, pass 2: incremental contradiction check
   // across remaining tags so mutually contradictory picks don't co-exist,
-  // augmented with physical slot constraint checking.
+  // augmented with physical slot constraint checking for loose tags.
   const validTags: string[] = []
-  let contextTags = lockedTags
+  const contextTags = [...lockedTags]
+  // One checker for the whole prompt, and one per full set holding everything but that
+  // set's own tags: each kept tag joins them, so a candidate is checked against what the
+  // prompt holds without re-reading every rule and tag each time.
+  const checker = new ConflictChecker(lockedTags, { rating })
+  const checkerOutside = new Map<string, ConflictChecker>()
+  for (const item of itemToTags.keys()) if (item.includes(",")) checkerOutside.set(item, new ConflictChecker(lockedTags, { rating }))
   for (const candidate of validAgainstBase) {
-    const { validTags: stillValid } = resolveTagConflicts(contextTags, [candidate])
+    const sets = setsOf.get(candidate)
+    let conflict: string | null
+    let around: string[] = contextTags
+    if (!sets) {
+      conflict = checker.check(candidate)
+    } else {
+      around = contextTags.filter((t) => !shareSet(t, candidate))
+      // A tag in two picked sets ("blush" in both) is checked against what is outside both.
+      const [only] = sets
+      const outside = sets.size === 1 ? checkerOutside.get(only) : undefined
+      conflict = (outside ?? new ConflictChecker(around, { rating })).check(candidate)
+    }
     if (
-      stillValid.length > 0 &&
-      checkSlotConstraints(candidate, contextTags, tagOverrides) &&
-      !conflictsWithBackground(candidate, contextTags, tagOverrides)
+      conflict === null &&
+      (!!sets || setRequirements.has(candidate) || checkSlotConstraints(candidate, contextTags, tagOverrides)) &&
+      !conflictsWithBackground(candidate, around, tagOverrides)
     ) {
       validTags.push(candidate)
-      contextTags = [...contextTags, candidate]
+      contextTags.push(candidate)
+      checker.add(candidate)
+      for (const [item, outside] of checkerOutside) if (!sets?.has(item)) outside.add(candidate)
     }
   }
 

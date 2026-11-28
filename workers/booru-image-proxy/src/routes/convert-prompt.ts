@@ -157,12 +157,14 @@ function isValidApiKey(provider: string, key: string): boolean {
   // Reject keys with control chars, newlines, or null bytes (injection attempt)
   if (/[\x00-\x1f\x7f]/.test(key)) return false
 
+  // Only the prefix is checked: current keys carry more dashes and underscores
+  // ("sk-proj-…", "sk-ant-api03-…", "sk-or-v1-…"); the provider rejects bad ones.
   switch (provider) {
-    case 'openai':     return /^sk-[a-zA-Z0-9]{20,}$/.test(key)
-    case 'gemini':     return /^AIza[a-zA-Z0-9_-]{30,}$/.test(key)
-    case 'claude':     return /^sk-ant-[a-zA-Z0-9-]{20,}$/.test(key)
-    case 'deepseek':   return /^sk-[a-zA-Z0-9]{20,}$/.test(key)
-    case 'openrouter': return /^sk-or-[a-zA-Z0-9]{20,}$/.test(key)
+    case 'openai':     return /^sk-[A-Za-z0-9_-]{20,}$/.test(key)
+    case 'gemini':     return /^AIza[A-Za-z0-9_-]{30,}$/.test(key)
+    case 'claude':     return /^sk-ant-[A-Za-z0-9_-]{20,}$/.test(key)
+    case 'deepseek':   return /^sk-[A-Za-z0-9_-]{20,}$/.test(key)
+    case 'openrouter': return /^sk-or-[A-Za-z0-9_-]{20,}$/.test(key)
     default:           return false
   }
 }
@@ -172,12 +174,14 @@ function isValidProvider(provider: string): boolean {
   return ['cloudflare', 'openai', 'gemini', 'claude', 'deepseek', 'openrouter'].includes(provider)
 }
 
-/** Validate model ID format. Only allow alphanumeric, hyphens, underscores, dots, slashes. */
+/**
+ * Validate model ID format: alphanumerics, hyphens, underscores, dots, slashes
+ * ("google/gemini-pro") and colons for OpenRouter variants ("…:free", "…:beta").
+ */
 function isValidModelId(model: string): boolean {
   if (!model || typeof model !== 'string') return false
   if (model.length > 100) return false
-  // Allow: alphanumeric, hyphens, underscores, dots, slashes (for openrouter format like "google/gemini-pro")
-  return /^[a-zA-Z0-9._\-\/]+$/.test(model)
+  return /^[a-zA-Z0-9._\-\/:]+$/.test(model)
 }
 
 /**
@@ -371,7 +375,10 @@ export async function convertPromptHandler(
 
   try {
     const body = (await request.json()) as { tags?: string, provider?: string, apiKey?: string, image?: string, model?: string, turnstile_token?: string, meta?: { characters?: string, series?: string, artist?: string } }
-    const { tags, provider = 'cloudflare', apiKey, image, model: customModel, turnstile_token, meta: rawMeta } = body
+    const { tags, provider = 'cloudflare', image, turnstile_token, meta: rawMeta } = body
+    // Pasted keys and model ids often carry a stray space or newline.
+    const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : body.apiKey
+    const customModel = typeof body.model === 'string' ? body.model.trim() : body.model
 
     // ── Input Validation ──────────────────────────────────────────────────────
     // Validate provider early
@@ -391,7 +398,7 @@ export async function convertPromptHandler(
 
     // Validate custom model ID format
     if (customModel && !isValidModelId(customModel)) {
-      return errorResponse('Invalid model ID format. Only alphanumeric characters, hyphens, underscores, dots, and slashes allowed.', 400)
+      return errorResponse('Invalid model ID format. Only letters, numbers, hyphens, underscores, dots, slashes and colons are allowed.', 400)
     }
 
     if (!tags && !image) {

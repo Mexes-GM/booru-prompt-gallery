@@ -1523,11 +1523,15 @@
  },
  "after cunnilingus": {
   "kind": "is",
-  "text": "after oral sex"
+  "text": "just after licking a woman's pussy",
+  "who": "doer",
+  "partner": "female"
  },
  "after deepthroat": {
   "kind": "is",
-  "text": "having just had deepthroat oral sex"
+  "text": "just after deepthroating a penis",
+  "who": "doer",
+  "partner": "male"
  },
  "after double penetration": {
   "kind": "is",
@@ -1553,7 +1557,7 @@
  },
  "after fellatio": {
   "kind": "with",
-  "text": "semen around {pos} mouth after oral sex",
+  "text": "semen around {pos} mouth after sucking a penis",
   "who": "receiver",
   "partner": "male"
  },
@@ -3464,7 +3468,7 @@
  },
  "angry fellatio": {
   "kind": "is",
-  "text": "performing oral sex with an angry expression",
+  "text": "sucking a penis with an angry expression",
   "who": "doer",
   "partner": "male"
  },
@@ -6820,7 +6824,9 @@
  },
  "assisted deepthroat": {
   "kind": "is",
-  "text": "having deepthroat oral sex with the head held down by a partner",
+  "text": "deepthroating a penis with {pos} head held down by a partner",
+  "who": "doer",
+  "partner": "male",
   "slot": "pose:physiological"
  },
  "assisted exposure": {
@@ -10007,7 +10013,9 @@
  },
  "before blowjob": {
   "kind": "is",
-  "text": "about to perform oral sex"
+  "text": "about to suck a penis",
+  "who": "doer",
+  "partner": "male"
  },
  "before feminization": {
   "kind": "none",
@@ -11902,9 +11910,9 @@
  },
  "bj": {
   "kind": "is",
-  "text": "performing oral sex",
+  "text": "sucking a penis",
   "who": "doer",
-  "partner": "anyone"
+  "partner": "male"
  },
  "black and white fur": {
   "kind": "has",
@@ -12324,7 +12332,9 @@
  },
  "black lipstick blowjob": {
   "kind": "is",
-  "text": "performing oral sex with black lipstick on",
+  "text": "sucking a penis while wearing black lipstick",
+  "who": "doer",
+  "partner": "male",
   "slot": "pose:physiological"
  },
  "black lipstick mark": {
@@ -13442,11 +13452,13 @@
  },
  "blowjob focus": {
   "kind": "is",
-  "text": "having oral sex with the focus on it"
+  "text": "a close-up of a penis being sucked"
  },
  "blowjob from behind": {
   "kind": "is",
-  "text": "having oral sex performed on a man, seen from behind",
+  "text": "sucking a man's penis, seen from behind",
+  "who": "doer",
+  "partner": "male",
   "slot": "pose:physiological"
  },
  "blowjob gesture": {
@@ -13456,7 +13468,9 @@
  },
  "blowjob in car": {
   "kind": "is",
-  "text": "performing oral sex in a car",
+  "text": "sucking a penis in a car",
+  "who": "doer",
+  "partner": "male",
   "slot": "pose:physiological"
  },
  "blowjob only": {
@@ -13465,12 +13479,14 @@
  },
  "blowjob pov": {
   "kind": "framing",
-  "text": "a point-of-view shot of oral sex",
+  "text": "a point-of-view shot of a penis being sucked",
   "slot": "pose:camera"
  },
  "blowjob under mask": {
   "kind": "is",
-  "text": "performing oral sex beneath a mask",
+  "text": "sucking a penis beneath a mask",
+  "who": "doer",
+  "partner": "male",
   "slot": "pose:physiological"
  },
  "blowjob under table": {
@@ -29120,7 +29136,7 @@
  },
  "cunnilingus": {
   "kind": "is",
-  "text": "performing oral sex on a woman",
+  "text": "licking a woman's pussy",
   "who": "doer",
   "partner": "female"
  },
@@ -29140,7 +29156,7 @@
  },
  "cunnilingus through clothes": {
   "kind": "is",
-  "text": "receiving oral sex through clothing",
+  "text": "having {pos} pussy licked through clothing",
   "who": "female",
   "partner": "anyone"
  },
@@ -30716,12 +30732,16 @@
  },
  "deepthroat fishhooking": {
   "kind": "is",
-  "text": "having deepthroat oral sex while a finger hooks the cheek",
+  "text": "deepthroating a penis while a finger hooks {pos} cheek",
+  "who": "doer",
+  "partner": "male",
   "slot": "pose:physiological"
  },
  "deepthroat focus": {
   "kind": "is",
-  "text": "performing deepthroat oral sex",
+  "text": "taking a penis deep into {pos} throat",
+  "who": "doer",
+  "partner": "male",
   "slot": "pose:physiological"
  },
  "deepthroat gag": {
@@ -33194,7 +33214,7 @@
  },
  "double barrel blowjob": {
   "kind": "is",
-  "text": "giving oral sex to two partners at once",
+  "text": "sucking two penises at once",
   "who": "doer",
   "partner": "male"
  },
@@ -35106,7 +35126,7 @@
  },
  "eating out": {
   "kind": "is",
-  "text": "performing oral sex on a partner's genitals",
+  "text": "licking a partner's pussy",
   "who": "doer",
   "partner": "anyone"
  },
@@ -37485,7 +37505,9 @@
  },
  "extreme deepthroat": {
   "kind": "is",
-  "text": "performing deep-throat oral sex",
+  "text": "taking a penis extremely deep into {pos} throat",
+  "who": "doer",
+  "partner": "male",
   "slot": "pose:physiological"
  },
  "extreme engrish": {
@@ -39772,7 +39794,9 @@
  },
  "fellatio domination": {
   "kind": "is",
-  "text": "performing oral sex on a partner while dominating them"
+  "text": "dominantly sucking a partner's penis",
+  "who": "doer",
+  "partner": "male"
  },
  "fellatio face": {
   "kind": "is",
@@ -39795,16 +39819,18 @@
  },
  "fellatio hug": {
   "kind": "is",
-  "text": "hugging while performing oral sex",
+  "text": "hugging a partner's hips while sucking a penis",
+  "who": "doer",
+  "partner": "male",
   "slot": "pose:interaction"
  },
  "fellatio monster": {
   "kind": "is",
-  "text": "performing oral sex on a monstrous creature"
+  "text": "sucking a monster's penis"
  },
  "fellatio pov": {
   "kind": "framing",
-  "text": "a point-of-view shot of oral sex",
+  "text": "a point-of-view shot of a penis being sucked",
   "slot": "pose:camera"
  },
  "fellatio through another's paizuri": {
@@ -39813,7 +39839,9 @@
  },
  "fellatio through clothes": {
   "kind": "is",
-  "text": "performing oral sex through clothing"
+  "text": "sucking a penis through clothing",
+  "who": "doer",
+  "partner": "male"
  },
  "fellatio under mask": {
   "kind": "is",
@@ -39821,7 +39849,9 @@
  },
  "fellatio under table": {
   "kind": "is",
-  "text": "performing oral sex under a table",
+  "text": "sucking a penis under a table",
+  "who": "doer",
+  "partner": "male",
   "slot": "pose:physiological"
  },
  "fellatio under veil": {
@@ -43808,7 +43838,7 @@
  },
  "forced blowjob": {
   "kind": "is",
-  "text": "being forced into oral sex",
+  "text": "being forced to suck a penis",
   "who": "receiver",
   "partner": "male"
  },
@@ -46175,7 +46205,7 @@
  },
  "futanari": {
   "kind": "is",
-  "text": "a futanari, with female and male genitalia"
+  "text": "a futanari with a penis"
  },
  "futanari masturbation": {
   "kind": "is",
@@ -46739,7 +46769,7 @@
  },
  "gay blowjob": {
   "kind": "is",
-  "text": "performing oral sex on a man",
+  "text": "sucking a man's penis",
   "who": "doer",
   "partner": "male"
  },
@@ -47764,7 +47794,7 @@
  },
  "giving head": {
   "kind": "is",
-  "text": "performing oral sex",
+  "text": "sucking a penis",
   "who": "doer",
   "partner": "male"
  },
@@ -54681,7 +54711,7 @@
  },
  "head between thighs": {
   "kind": "with",
-  "text": "{pos} head between {pos} thighs"
+  "text": "{pos} head between another person's thighs"
  },
  "head bow": {
   "kind": "with",
@@ -60603,7 +60633,7 @@
  },
  "imminent blowjob": {
   "kind": "is",
-  "text": "about to perform oral sex",
+  "text": "about to suck a penis",
   "who": "doer",
   "partner": "male"
  },
@@ -60776,7 +60806,9 @@
  },
  "imminent irrumatio": {
   "kind": "is",
-  "text": "about to perform oral sex on a man"
+  "text": "about to have a man's penis thrust into {pos} mouth",
+  "who": "doer",
+  "partner": "male"
  },
  "imminent kick": {
   "kind": "is",
@@ -61135,7 +61167,7 @@
  },
  "implied blowjob": {
   "kind": "is",
-  "text": "implied oral sex",
+  "text": "implied to be sucking a penis",
   "who": "doer",
   "partner": "male"
  },
@@ -61176,7 +61208,9 @@
  },
  "implied cunnilingus": {
   "kind": "is",
-  "text": "implied to be receiving oral sex"
+  "text": "implied to be having {pos} pussy licked",
+  "who": "receiver",
+  "partner": "anyone"
  },
  "implied death": {
   "kind": "none",
@@ -61184,7 +61218,9 @@
  },
  "implied deepthroat": {
   "kind": "is",
-  "text": "performing oral sex"
+  "text": "implied to be deepthroating a penis",
+  "who": "doer",
+  "partner": "male"
  },
  "implied double penetration": {
   "kind": "is",
@@ -61208,7 +61244,9 @@
  },
  "implied fellatio": {
   "kind": "is",
-  "text": "performing oral sex on a partner"
+  "text": "implied to be sucking a partner's penis",
+  "who": "doer",
+  "partner": "male"
  },
  "implied fingering": {
   "kind": "is",
@@ -63033,7 +63071,9 @@
  },
  "irrumatio": {
   "kind": "is",
-  "text": "having a penis forced into the mouth"
+  "text": "having a penis forced into {pos} mouth",
+  "who": "doer",
+  "partner": "male"
  },
  "irys (hololive) (cosplay)": {
   "kind": "keep",
@@ -72447,11 +72487,11 @@
  },
  "male sucking femboy": {
   "kind": "is",
-  "text": "a man performing oral sex on a femboy"
+  "text": "a man sucking a femboy's penis"
  },
  "male sucking futa": {
   "kind": "is",
-  "text": "a man performing oral sex on a futanari",
+  "text": "a man sucking a futanari's penis",
   "who": "doer",
   "partner": "male"
  },
@@ -84240,7 +84280,7 @@
  },
  "orgasm from blowjob": {
   "kind": "is",
-  "text": "climaxing during oral sex",
+  "text": "climaxing while having {pos} penis sucked",
   "who": "male",
   "partner": "anyone"
  },
@@ -85210,7 +85250,7 @@
  },
  "paizuri fellatio": {
   "kind": "is",
-  "text": "giving a breast-pressed oral sex act to a penis",
+  "text": "pressing {pos} breasts around a penis while sucking it",
   "who": "female",
   "partner": "male"
  },
@@ -91706,7 +91746,7 @@
  },
  "post orgasm paizuri": {
   "kind": "is",
-  "text": "giving a breast-pressing sexual act after orgasm",
+  "text": "pressing {pos} breasts around a penis after orgasm",
   "who": "female",
   "partner": "male"
  },
@@ -97811,7 +97851,9 @@
  },
  "reverse deepthroat": {
   "kind": "is",
-  "text": "performing oral sex with the partner reversed"
+  "text": "deepthroating a penis with {pos} head hanging upside down",
+  "who": "doer",
+  "partner": "male"
  },
  "reverse doggy style": {
   "kind": "is",
@@ -97825,7 +97867,9 @@
  },
  "reverse fellatio": {
   "kind": "is",
-  "text": "performing oral sex on a partner while lying on {pos} back"
+  "text": "sucking a partner's penis while lying on {pos} back",
+  "who": "doer",
+  "partner": "male"
  },
  "reverse forced cunnilingus": {
   "kind": "is",
@@ -98702,7 +98746,7 @@
  },
  "road head": {
   "kind": "is",
-  "text": "performing oral sex on a driver",
+  "text": "sucking a driver's penis",
   "who": "doer",
   "partner": "male"
  },
@@ -102040,7 +102084,7 @@
  },
  "servicing from below": {
   "kind": "is",
-  "text": "performing oral sex from below",
+  "text": "sucking a penis from below",
   "who": "doer",
   "partner": "male"
  },
@@ -106680,7 +106724,9 @@
  },
  "sleep blowjob": {
   "kind": "is",
-  "text": "performing oral sex on someone asleep",
+  "text": "sucking a penis while the partner sleeps",
+  "who": "doer",
+  "partner": "male",
   "slot": "pose:physiological"
  },
  "sleep bubble": {
@@ -110330,7 +110376,7 @@
  },
  "squatting blowjob": {
   "kind": "is",
-  "text": "squatting while performing oral sex",
+  "text": "squatting while sucking a penis",
   "who": "doer",
   "partner": "male"
  },
@@ -110797,7 +110843,7 @@
  },
  "standing fellatio": {
   "kind": "is",
-  "text": "standing while performing oral sex on a man",
+  "text": "standing while sucking a man's penis",
   "who": "doer",
   "partner": "male"
  },
@@ -111362,7 +111408,9 @@
  },
  "stealth blowjob": {
   "kind": "is",
-  "text": "performing oral sex secretly",
+  "text": "secretly sucking a penis",
+  "who": "doer",
+  "partner": "male",
   "slot": "pose:physiological"
  },
  "stealth bondage": {
@@ -112187,7 +112235,9 @@
  },
  "straddling fellatio": {
   "kind": "is",
-  "text": "straddling while performing oral sex",
+  "text": "straddling a partner while sucking a penis",
+  "who": "doer",
+  "partner": "male",
   "slot": "pose:physiological"
  },
  "straddling lap": {
@@ -113662,7 +113712,9 @@
  },
  "suck and fuck": {
   "kind": "is",
-  "text": "performing oral sex and then having vaginal sex"
+  "text": "sucking a penis and then having vaginal sex",
+  "who": "doer",
+  "partner": "male"
  },
  "suck the tip": {
   "kind": "is",
@@ -114403,7 +114455,9 @@
  },
  "surprise deepthroat": {
   "kind": "is",
-  "text": "having deepthroat oral sex unexpectedly"
+  "text": "unexpectedly deepthroating a penis",
+  "who": "doer",
+  "partner": "male"
  },
  "surprise hug": {
   "kind": "is",
@@ -114537,7 +114591,9 @@
  },
  "suspended fellatio": {
   "kind": "is",
-  "text": "performing oral sex while suspended",
+  "text": "sucking a penis while suspended",
+  "who": "doer",
+  "partner": "male",
   "slot": "pose:physiological"
  },
  "suspended in midair": {
@@ -121923,7 +121979,9 @@
  },
  "tricked into blowjob": {
   "kind": "is",
-  "text": "giving oral sex"
+  "text": "tricked into sucking a penis",
+  "who": "doer",
+  "partner": "male"
  },
  "tricked into sex": {
   "kind": "none",

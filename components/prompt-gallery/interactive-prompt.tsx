@@ -1,17 +1,17 @@
 "use client"
 
-import React, { useState, useEffect, useCallback, useRef } from "react"
+import { copyText } from "@/lib/clipboard"
+import { toastCopied, toastCopyFailed } from "@/lib/copy-toast"
+import React, { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
 import { motion, AnimatePresence } from "framer-motion"
-import { Plus, Minus, RotateCcw, Globe, Search, AlertCircle, Copy, Check } from "lucide-react"
+import { Plus, Minus, RotateCcw, Globe, Search, AlertCircle, Copy, Check, ImagePlus } from "lucide-react"
 import { track } from '@/lib/analytics'
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { parseTagString } from "@/lib/weight-utils"
-import { useToast } from "@/hooks/use-toast"
-import { toastError } from "@/lib/toast-error"
 
 interface TagData {
   id: string
@@ -28,7 +28,26 @@ interface InteractivePromptProps {
   globalWeights?: Record<string, number>
   onSearch?: (tag: string) => void
   conflictingTags?: { tag: string; reason: string }[]
+  /** Tags added from the image (the added-tags dataset), normalized; shown as added. */
+  imageTags?: readonly string[]
 }
+
+/** Hint on tags that the added-tags dataset put in the prompt. */
+export const IMAGE_TAG_HINT = "Added from the image, not on the original post"
+
+const matchKey = (text: string) => text.replace(/\\/g, "").replace(/_/g, " ").toLowerCase().trim()
+
+// Right-click to copy only exists with a mouse, so the hint is offered (as a
+// description, not part of the tag's name) on fine-pointer devices only.
+// One shared media query for every tag on the page.
+const FINE_POINTER_QUERY = "(hover: hover) and (pointer: fine)"
+const subscribeFinePointer = (onChange: () => void) => {
+  const mq = window.matchMedia(FINE_POINTER_QUERY)
+  mq.addEventListener("change", onChange)
+  return () => mq.removeEventListener("change", onChange)
+}
+const getFinePointer = () => window.matchMedia(FINE_POINTER_QUERY).matches
+const getFinePointerServer = () => false
 
 const buildPrompt = (tags: TagData[]): string => {
   return tags.map(tag => {
@@ -45,9 +64,11 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
   onPromoteToGlobal,
   globalWeights = {},
   onSearch,
-  conflictingTags = []
+  conflictingTags = [],
+  imageTags,
 }: InteractivePromptProps) {
   const [tags, setTags] = useState<TagData[]>([])
+  const imageTagSet = useMemo(() => new Set((imageTags ?? []).map(matchKey)), [imageTags])
 
   useEffect(() => {
     if (!initialPrompt) {
@@ -148,6 +169,7 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
                 onCommit={handleCommit}
                 isEditable={isEditable}
                 isGlobal={isGlobal}
+                fromImage={imageTagSet.size > 0 && imageTagSet.has(matchKey(tag.text))}
                 onPromoteTag={onPromoteToGlobal ? handlePromoteTag : undefined}
                 canPromote={!!onPromoteToGlobal}
                 onSearchTag={onSearch ? handleSearchTag : undefined}
@@ -189,19 +211,21 @@ interface PromptTagProps {
   onCommit: (id: string, weight: number) => void
   isEditable: boolean
   isGlobal: boolean
+  /** Added from the image by the added-tags dataset. */
+  fromImage?: boolean
   onPromoteTag?: (text: string, weight: number) => void
   canPromote?: boolean
   onSearchTag?: (text: string) => void
 }
 
-const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocusTag, onCommit, isEditable, isGlobal, onPromoteTag, canPromote, onSearchTag }: PromptTagProps) {
+const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocusTag, onCommit, isEditable, isGlobal, fromImage = false, onPromoteTag, canPromote, onSearchTag }: PromptTagProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [draftWeight, setDraftWeight] = useState(tag.weight)
   const [justCopied, setJustCopied] = useState(false)
   const [badgePos, setBadgePos] = useState<{ top: number; left: number } | null>(null)
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const triggerRef = useRef<HTMLSpanElement | null>(null)
-  const { toast } = useToast()
+  const finePointer = useSyncExternalStore(subscribeFinePointer, getFinePointer, getFinePointerServer)
 
   useEffect(() => {
     return () => {
@@ -211,7 +235,7 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
 
   const copyTag = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(tag.text)
+      await copyText(tag.text)
       
       track('dynamic_tag_copied')
 
@@ -225,19 +249,11 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
       setJustCopied(true)
       if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current)
       copyTimeoutRef.current = setTimeout(() => setJustCopied(false), 1200)
-      toast({
-        title: "Tag copied",
-        description: tag.text,
-      })
+      toastCopied(tag.text)
     } catch {
-      toastError({
-        title: "Copy failed",
-        description: "Could not copy tag to clipboard",
-        errorSource: "copy_tag_to_clipboard",
-        context: { tag: tag.text },
-      })
+      toastCopyFailed("copy_tag_to_clipboard", { tag: tag.text })
     }
-  }, [tag.text, toast])
+  }, [tag.text])
 
   // Sync draft weight when tag changes externally
   useEffect(() => {
@@ -272,6 +288,8 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
   // Display-only: unescape booru parens/brackets (e.g. "\(alien stage\)" -> "(alien stage)").
   // The copied/committed value keeps the escapes (currentText / tag.text) for correct prompt syntax.
   const displayText = currentText.replace(/\\([()[\]])/g, "$1")
+  const spokenText = tag.text.replace(/\\([()[\]])/g, "$1")
+  const copyHint = finePointer ? "Right-click to copy" : undefined
 
   const isModified = currentWeight !== 1.0
   const isHeavy = currentWeight > 1.0
@@ -308,6 +326,8 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
           className={cn(
             "cursor-pointer px-0.5 -mx-0.5 pointer-coarse:py-1 rounded transition-colors duration-200 decoration-clone select-text outline-none focus-visible:ring-2 focus-visible:ring-ring inline relative border-none bg-transparent font-inherit whitespace-normal text-left break-words",
             textClass,
+            // Same family as the other "changed by an option" marks, but quieter: no fill, a dotted underline.
+            fromImage && "underline decoration-dotted decoration-info/70 underline-offset-[3px]",
             justCopied ? "!bg-success/25 ring-1 ring-success/50" : bgClass
           )}
           animate={
@@ -332,8 +352,9 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
               handleOpenChange(!isOpen)
             }
           }}
-          title={isGlobal ? "Global weight applied · Right-click to copy" : "Right-click to copy"}
-          aria-label={isGlobal ? `Edit weight for ${tag.text} (Global). Right-click to copy.` : `Edit weight for ${tag.text}. Right-click to copy.`}
+          title={[isGlobal ? "Global weight applied" : null, fromImage ? IMAGE_TAG_HINT : null, copyHint].filter(Boolean).join(" · ") || undefined}
+          aria-label={`${spokenText}${isGlobal ? ", global weight" : ""}, edit weight`}
+          aria-description={[fromImage ? IMAGE_TAG_HINT : null, copyHint].filter(Boolean).join(". ") || undefined}
         >
           {displayText}
           {isGlobal && (
@@ -381,7 +402,13 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
             {isGlobal && (
               <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-primary-text bg-primary/10 rounded-sm mb-0.5">
                 <Globe className="h-3 w-3" />
-                <span className="font-medium">Global Weight</span>
+                <span className="font-medium">Global weight</span>
+              </div>
+            )}
+            {fromImage && (
+              <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-info-text bg-info-soft rounded-sm mb-0.5">
+                <ImagePlus className="h-3 w-3" aria-hidden="true" />
+                <span>{IMAGE_TAG_HINT}</span>
               </div>
             )}
 
@@ -454,7 +481,7 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
                       setIsOpen(false)
                     }}
                     aria-label={isGlobal ? "Remove global weight" : "Set as global weight"}
-                    title={isGlobal ? "Remove Global Weight" : "Set as Global Weight"}
+                    title={isGlobal ? "Remove global weight" : "Set as global weight"}
                   >
                     <Globe className="h-3.5 w-3.5" />
                   </Button>
@@ -473,7 +500,7 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
                 }}
               >
                 <Copy className="h-3 w-3 mr-2" />
-                Copy Tag
+                Copy tag
               </Button>
               
               {onSearchTag && (
@@ -487,7 +514,7 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
                   }}
                 >
                   <Search className="h-3 w-3 mr-2" />
-                  Search Tag
+                  Search for this tag
                 </Button>
               )}
             </div>

@@ -63,7 +63,7 @@ export function VercelPauseCurtain() {
                 <Globe className="h-5 w-5" />
               </div>
               <p className="text-sm leading-relaxed text-foreground/90">
-                Please switch to the <strong className="text-foreground font-semibold">Netlify mirror</strong> to continue using the app.
+                Switch to the <strong className="text-foreground font-semibold">Netlify mirror</strong> to continue using the app.
               </p>
             </div>
           </CardContent>
