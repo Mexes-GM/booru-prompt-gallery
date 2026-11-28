@@ -1902,7 +1902,7 @@ function Results({
   const allCopyNote = [copyNote, unsizedCopied > 0 ? SIZE_TEXT.unsized(unsizedCopied) : null].filter(Boolean).join(" ") || undefined
 
   // ComfyUI mode: each row sends what its Copy copies, in the pack's format, without the
-  // "[WIDTHxHEIGHT] " prefix; the suggested size goes as the image size (packSendRequest).
+  // "[WIDTHxHEIGHT] " prefix; the suggested size goes as the exact image size (packSendRequest).
   const comfy = usePackComfySend()
   const { sendOne, sendAll: sendRows, dismiss: dismissSend } = comfy
   const sendRowOf = useCallback((index: number, warn: () => void, copyInstead: () => void): PackSendRow | null => {

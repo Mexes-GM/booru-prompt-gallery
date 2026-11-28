@@ -9,19 +9,23 @@ import type { PackPrompt } from './pack-generator'
 export interface PackSendRequest {
   /** The prompt as Copy copies it, in the pack's format. */
   prompt: string
-  /** The prompt's suggested size: used when the ComfyUI option to match the size is on. */
-  sourceWidth?: number
-  sourceHeight?: number
+  /**
+   * The size the row shows, already worked out with the pack's resolution settings.
+   * Sent as it is (not as a post's size, which would be computed again), and only
+   * when the ComfyUI option to match the size is on.
+   */
+  exactWidth?: number
+  exactHeight?: number
 }
 
 /**
  * One pack prompt as ComfyUI gets it. `body` is the prompt in the chosen format, the
  * text Copy copies. The "[WIDTHxHEIGHT] " prefix the copy can add is a line format
  * for the extension's Import List, so it never goes into the prompt: the suggested
- * size goes as the image size instead, as a card's post size does.
+ * size goes as the image size instead, exactly as the row shows it.
  */
 export function packSendRequest(p: Pick<PackPrompt, 'width' | 'height'>, body: string): PackSendRequest {
-  return p.width && p.height ? { prompt: body, sourceWidth: p.width, sourceHeight: p.height } : { prompt: body }
+  return p.width && p.height ? { prompt: body, exactWidth: p.width, exactHeight: p.height } : { prompt: body }
 }
 
 export interface SendAllProgress {

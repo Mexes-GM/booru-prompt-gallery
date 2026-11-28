@@ -27,7 +27,7 @@ function eq(actual: unknown, expected: unknown, label: string) {
 async function main() {
   // ── packSendRequest ──────────────────────────────────────────────────────────
   const sized = { width: 1728, height: 1344 }
-  eq(packSendRequest(sized, "1girl, solo"), { prompt: "1girl, solo", sourceWidth: 1728, sourceHeight: 1344 }, "a sized prompt sends its size")
+  eq(packSendRequest(sized, "1girl, solo"), { prompt: "1girl, solo", exactWidth: 1728, exactHeight: 1344 }, "a sized prompt sends its size as the exact size")
   eq(packSendRequest({}, "1girl, solo"), { prompt: "1girl, solo" }, "a prompt without a size sends none")
   eq(packSendRequest({ width: 1024 }, "a"), { prompt: "a" }, "half a size is no size")
   // The text is the copy's body, never the Import List prefix the copy can add.
