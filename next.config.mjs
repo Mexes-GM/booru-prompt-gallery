@@ -43,11 +43,16 @@ const PROXY_ORIGINS = [
   ),
 ].join(' ')
 
+// PostHog goes through the Worker (/ingest), and posthog-js loads its extensions
+// (web vitals, exception and dead-click capture, remote config) as scripts from there.
+const SCRIPT_PROXY_ORIGIN = originOf(process.env.NEXT_PUBLIC_IMAGE_PROXY_URL)
+const SCRIPT_PROXY = SCRIPT_PROXY_ORIGIN ? `${SCRIPT_PROXY_ORIGIN} ` : ''
+
 /** @param {string} [frameAncestors] */
 function contentSecurityPolicy(frameAncestors = '') {
   return `
  default-src 'self';
- script-src 'self' ${SCRIPT_EVAL}${SCRIPT_WASM}'unsafe-inline' https://vercel.live https://netlify-cdp.netlify.app https://challenges.cloudflare.com;
+ script-src 'self' ${SCRIPT_EVAL}${SCRIPT_WASM}'unsafe-inline' ${SCRIPT_PROXY}https://vercel.live https://netlify-cdp.netlify.app https://challenges.cloudflare.com;
  style-src 'self' 'unsafe-inline';
  img-src 'self' blob: data: https://www.google.com https://*.google.com https://*.googleusercontent.com https://*.gstatic.com https://danbooru.donmai.us https://cdn.donmai.us https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://floofgens.net https://*.floofgens.net https://*.donmai.us https://*.buymeacoffee.com https://gelbooru.com https://*.gelbooru.com ${PROXY_ORIGINS} http://127.0.0.1:* http://localhost:*;
  font-src 'self';

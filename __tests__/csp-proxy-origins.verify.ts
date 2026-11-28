@@ -2,7 +2,8 @@
  * Verification script for the page CSP in next.config.mjs:
  *   - the image/API proxies are allowed by their exact origins (taken from the
  *     NEXT_PUBLIC_* vars), never by *.workers.dev or *.cloudfront.net
- *   - script-src allows no proxy at all: nothing loads scripts from them
+ *   - script-src allows only the Worker's exact origin (posthog-js loads its
+ *     extensions from the Worker's /ingest proxy), never a CDN
  *   - an empty var adds nothing, and a malformed one fails the build
  *
  * next.config.mjs is an ES module that reads env vars at import time, so each
@@ -83,7 +84,8 @@ const GELBOORU_CDN = 'https://gelbooru-test.cloudfront.net'
     assert(!all.some((v) => v.includes('*.workers.dev')), 'no *.workers.dev wildcard anywhere')
     assert(!all.some((v) => v.includes('*.cloudfront.net')), 'no *.cloudfront.net wildcard anywhere')
     const scripts = directives['script-src'] ?? []
-    assert(!scripts.some((v) => v.includes('workers.dev') || v.includes('cloudfront')), 'script-src allows no proxy')
+    assert(new Set(scripts).has(WORKER), 'script-src allows the Worker origin (PostHog extensions)')
+    assert(!scripts.some((v) => v.includes('cloudfront') || (v.includes('workers.dev') && v !== WORKER)), 'script-src allows no other proxy')
     assert(new Set(scripts).has('https://challenges.cloudflare.com'), 'script-src still allows Turnstile')
   }
 }
