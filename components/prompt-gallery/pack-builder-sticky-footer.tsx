@@ -478,7 +478,7 @@ const PackResultsList = memo(({
     }
 
     // ComfyUI mode: a row sends what its Copy copies, in the chosen format, without the
-    // "[WIDTHxHEIGHT] " prefix; the suggested size goes as the image size (packSendRequest).
+    // "[WIDTHxHEIGHT] " prefix; the suggested size goes as the exact image size (packSendRequest).
     const comfy = usePackComfySend()
     const { sendOne, sendAll: sendRows, dismiss: dismissSend } = comfy
     const sendRowOf = (index: number, warn: () => void, copyInstead: () => void): PackSendRow | null => {

@@ -15,7 +15,8 @@ import { randomSeed } from "@/lib/comfyui/roles"
 import { getComfyJobSnapshot, getComfySession, type ComfySession } from "@/lib/comfyui/session"
 import { getComfyStatus, refreshComfyStatus } from "@/lib/comfyui/status"
 import { ComfyError, type ApiWorkflow, type Diagnosis } from "@/lib/comfyui/types"
-import { clampMaxLongSide, computeGenerationResolution } from "@/lib/extension/generation-resolution"
+import { chooseSendSize, type SendSizePrefs } from "@/lib/comfyui/send-size"
+import { clampMaxLongSide } from "@/lib/extension/generation-resolution"
 import { userPreferences } from "@/lib/storage"
 
 export interface ComfySendRequest {
@@ -24,6 +25,13 @@ export interface ComfySendRequest {
   /** The post's image size, for "Match the post's size". */
   sourceWidth?: number
   sourceHeight?: number
+  /**
+   * A size that is already final, as Pack shows it on a row. Sent as it is: the
+   * match-the-size computation doesn't run again. Still only sent when the option
+   * to match the size is on and the workflow has width and height roles.
+   */
+  exactWidth?: number
+  exactHeight?: number
   /**
    * The job this button showed before. Sending again replaces it: a job still
    * in the queue is canceled, one already generating finishes in ComfyUI but
@@ -94,19 +102,18 @@ function replacePrevious(session: ComfySession, jobId: string) {
   }
 }
 
-function sizeFor(req: ComfySendRequest): { width?: number; height?: number } {
-  let maxLongSide = 1536
-  let strictCap = false
-  let snapToBucket = false
+function sizePrefs(): SendSizePrefs {
+  let prefs: SendSizePrefs = { maxLongSide: 1536, strictCap: false, snapToBucket: false }
   try {
-    maxLongSide = clampMaxLongSide(userPreferences.getMatchResolutionMaxLongSide())
-    strictCap = userPreferences.getMatchResolutionStrictCap()
-    snapToBucket = userPreferences.getMatchResolutionSnapToBucket()
+    prefs = {
+      maxLongSide: clampMaxLongSide(userPreferences.getMatchResolutionMaxLongSide()),
+      strictCap: userPreferences.getMatchResolutionStrictCap(),
+      snapToBucket: userPreferences.getMatchResolutionSnapToBucket(),
+    }
   } catch {
     // Defaults above.
   }
-  const size = computeGenerationResolution(req.sourceWidth, req.sourceHeight, { maxLongSide, strictCap, snapToBucket })
-  return size ?? {}
+  return prefs
 }
 
 /**
@@ -126,7 +133,7 @@ export async function sendToComfy(req: ComfySendRequest): Promise<ComfySent | nu
   }
 
   const { roles } = workflow
-  const size = options.matchPostResolution && roles.width && roles.height ? sizeFor(req) : {}
+  const size = chooseSendSize(req, options.matchPostResolution, roles, sizePrefs())
   const session = getComfySession(url)
 
   try {
