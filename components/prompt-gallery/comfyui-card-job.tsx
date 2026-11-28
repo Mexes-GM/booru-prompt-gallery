@@ -13,13 +13,14 @@
  */
 import { memo, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type RefObject } from "react"
 import { AnimatePresence, motion, usePresence, type Variants } from "framer-motion"
-import { AlertCircle, ExternalLink, Loader2, X } from "lucide-react"
+import { AlertCircle, Loader2, Maximize2, X } from "lucide-react"
 import { useComfyJob } from "@/hooks/use-comfyui-job"
 import { getComfyUISettings } from "@/hooks/use-comfyui-settings"
 import { announcement, errorLine, queueLabel, stepLabel, stepProgress } from "@/lib/comfyui/job-copy"
 import { getComfySession, type ComfyJob } from "@/lib/comfyui/session"
 import type { ApiWorkflow } from "@/lib/comfyui/types"
 import { cn } from "@/lib/utils"
+import { ComfyImageViewer, VIEWER_TEXT } from "./comfyui-image-viewer"
 import { COMFY_EASE, developProps, iconProps, swapProps, useComfyMotion, type ComfyMotion } from "./comfyui-motion"
 
 export interface ComfyCardJobProps {
@@ -155,7 +156,7 @@ function ChipContent({
 }
 
 /**
- * Swap with the post, open full size, close. A narrow column, so it never
+ * Swap with the post, view full size in the app, close. A narrow column, so it never
  * reaches the card's buttons in the other corner.
  */
 function ResultControls({
@@ -178,6 +179,8 @@ function ResultControls({
   onClose: () => void
 }) {
   const swapLabel = swapped ? "Show the generated image" : "Show the original image"
+  const [viewing, setViewing] = useState(false)
+  const viewRef = useRef<HTMLButtonElement>(null)
   return (
     <>
       <button
@@ -198,9 +201,10 @@ function ResultControls({
           className={cn("h-full w-full object-cover object-top", !thumbVisible && "opacity-0")}
         />
       </button>
-      <a href={imageUrl} target="_blank" rel="noreferrer" aria-label="Open the generated image in a new tab" title="Open full size" className={ICON_BUTTON}>
-        <ExternalLink aria-hidden className="h-3.5 w-3.5" />
-      </a>
+      <button ref={viewRef} type="button" onClick={() => setViewing(true)} aria-label={VIEWER_TEXT.open} title={VIEWER_TEXT.open} className={ICON_BUTTON}>
+        <Maximize2 aria-hidden className="h-3.5 w-3.5" />
+      </button>
+      <ComfyImageViewer url={imageUrl} open={viewing} onOpenChange={setViewing} returnFocusRef={viewRef} />
       <button type="button" onClick={onClose} aria-label="Close the generated image" title="Close" className={ICON_BUTTON}>
         <X aria-hidden className="h-3.5 w-3.5" />
       </button>
